@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breeding Lab</title>
+<style>
+@font-face { font-family: "Press Start 2P"; src: url("assets/fonts/PressStart2P-Regular.ttf") format("truetype"); }
+:root { --paper: #f5e6c3; --paper2: #efdcb0; --paper3: #e4cf9f; --ink: #3b2314; --ink2: #8a6a44; --line: #c9a86c; --gold: #f6c453; --green: #7fb04a; --red: #d9453d; }
+html, body { margin: 0; background: #2b4a26; color: var(--ink); font-family: "Press Start 2P", monospace; font-size: 9px; line-height: 1.7; }
+body { padding: 20px; }
+h1 { font-size: 14px; margin: 0 0 4px; color: var(--paper); text-shadow: 3px 3px 0 #1d2f19; }
+.sub { color: #cfe3b6; margin-bottom: 16px; }
+.panel { background: var(--paper); border: 3px solid var(--ink); box-shadow: 0 0 0 3px #8c5a2b, 0 0 0 6px var(--ink), 8px 10px 0 6px rgba(0,0,0,.25); padding: 14px; margin: 12px 6px 22px 6px; }
+.row { display: flex; gap: 18px; align-items: stretch; flex-wrap: wrap; }
+.card { flex: 1; min-width: 300px; background: var(--paper2); border: 2px solid var(--line); padding: 10px; }
+.card h2 { font-size: 10px; margin: 0 0 8px; color: var(--ink2); letter-spacing: 1px; text-transform: uppercase; }
+.op { display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--paper); text-shadow: 3px 3px 0 #1d2f19; min-width: 30px; }
+.name { font-size: 11px; margin: 4px 0; }
+.muted { color: var(--ink2); }
+.strip { display: flex; gap: 6px; align-items: flex-end; margin: 8px 0; }
+.strip canvas { image-rendering: pixelated; background: #9c6b3f; border: 2px solid var(--ink); }
+.strip .lbl { font-size: 7px; color: var(--ink2); text-align: center; }
+.kv { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dotted var(--line); padding: 2px 0; }
+select, input, button { font-family: inherit; font-size: 9px; color: var(--ink); background: var(--paper3); border: 2px solid var(--ink); padding: 5px 8px; }
+button { cursor: pointer; box-shadow: 2px 2px 0 var(--ink); }
+button:hover { background: var(--gold); }
+button.primary { background: var(--green); }
+button:active { transform: translate(2px, 2px); box-shadow: none; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 12px; }
+.banner { padding: 10px 12px; border: 3px solid var(--ink); margin: 10px 0; font-size: 10px; }
+.banner.success { background: #cfe6a8; } .banner.sterile { background: #e9d8a8; } .banner.wither { background: #e6b3a8; } .banner.revert { background: #d6d0c0; }
+table { border-collapse: collapse; width: 100%; font-size: 8px; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--ink2); font-weight: normal; text-transform: uppercase; letter-spacing: 1px; font-size: 7px; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.mut td { background: #fde9a5; }
+tr.trait-got td { background: #ffd98a; }
+.sw { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--ink); vertical-align: middle; margin-right: 4px; }
+.tag { display: inline-block; padding: 1px 5px; border: 1px solid var(--ink); font-size: 7px; margin-left: 4px; }
+.tag.A { background: #bcd8f0; } .tag.B { background: #f0c9b8; } .tag.blend { background: #d9d0f0; } .tag.mut { background: var(--gold); }
+.tier-common { color: #4d4d4d; } .tier-uncommon { color: #3f7a1f; } .tier-rare { color: #2a5f9a; } .tier-epic { color: #7a2a9a; } .tier-legendary { color: #a86a00; }
+.pickers { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.picker { flex: 1; min-width: 300px; }
+.plabel { color: var(--ink2); font-size: 8px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+.pgrid { display: flex; flex-wrap: wrap; gap: 6px; }
+.pgrid .pb { width: 44px; cursor: pointer; text-align: center; border: 2px solid transparent; padding: 2px; }
+.pgrid .pb canvas { image-rendering: pixelated; background: #9c6b3f; border: 2px solid var(--ink); display: block; margin: 0 auto; }
+.pgrid .pb div { font-size: 6px; line-height: 1.3; margin-top: 2px; height: 16px; overflow: hidden; }
+.pgrid .pb:hover { background: var(--paper3); }
+.pgrid .pb.on { border-color: var(--ink); background: var(--gold); }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, 76px); gap: 10px; }
+.gallery .g { text-align: center; }
+.gallery canvas { image-rendering: pixelated; background: #9c6b3f; border: 2px solid var(--ink); }
+.gallery .g div { font-size: 6px; line-height: 1.4; margin-top: 2px; height: 26px; overflow: hidden; }
+.bar { height: 10px; background: #d9c59a; border: 1px solid var(--ink); position: relative; margin: 4px 0; }
+.bar > div { position: absolute; top: 0; left: 0; bottom: 0; }
+.bar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+#sheetTable canvas { image-rendering: pixelated; background: #9c6b3f; border: 2px solid var(--ink); vertical-align: middle; margin-right: 3px; }
+#sheetTable td { font-size: 8px; } #sheetTable td:nth-child(2) { white-space: nowrap; }
+.cols { display: flex; gap: 18px; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 300px; }
+</style>
+</head>
+<body>
+<h1>Breeding Lab</h1>
+<div class="sub">Runs the game's real cross() and crop renderer. Click a parent in each row, press Breed, read every gene decision. Children can be added to the pool and bred again.</div>
+
+<div id="protoWarn" class="panel" style="display:none; background:#e6b3a8">This page must be opened through the game server, not as a file. Run <b>npm start</b> and open <b>http://localhost:8080/lab.html</b>.</div>
+<script>if (location.protocol === 'file:') document.getElementById('protoWarn').style.display = '';</script>
+
+<div class="panel">
+  <div class="pickers">
+    <div class="picker"><div class="plabel">Parent A — click one</div><div class="pgrid" id="pickA"></div></div>
+    <div class="picker"><div class="plabel">Parent B — click one</div><div class="pgrid" id="pickB"></div></div>
+  </div>
+  <div class="controls">
+    <select id="selA" style="display:none"></select>
+    <select id="selB" style="display:none"></select>
+    <label>Seed <input id="seed" type="number" value="1" style="width:90px"></label>
+    <button id="reroll">Reroll</button>
+    <button id="breed" class="primary">Breed</button>
+    <button id="gallery">Gallery ×48</button>
+    <button id="stats">Stats ×500</button>
+    <button id="sheet">Species sheet</button>
+    <span class="muted" id="poolNote"></span>
+  </div>
+  <div class="row">
+    <div class="card" id="cardA"><h2>Parent A</h2></div>
+    <div class="op">×</div>
+    <div class="card" id="cardB"><h2>Parent B</h2></div>
+    <div class="op">=</div>
+    <div class="card" id="cardC"><h2>Child</h2><div class="muted">Press Breed.</div></div>
+  </div>
+</div>
+
+<div class="panel" id="result" style="display:none">
+  <div id="banner" class="banner"></div>
+  <div class="cols">
+    <div>
+      <h2 class="muted" style="font-size:9px">Instability → outcome</h2>
+      <div id="instab"></div>
+      <h2 class="muted" style="font-size:9px; margin-top:14px">Rare traits</h2>
+      <table id="traits"></table>
+      <h2 class="muted" style="font-size:9px; margin-top:14px">Rarity → tier → price</h2>
+      <div id="rarity"></div>
+    </div>
+    <div>
+      <h2 class="muted" style="font-size:9px">Genes (highlighted rows mutated)</h2>
+      <table id="genes"></table>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="sheetPanel" style="display:none">
+  <h2 class="muted" style="font-size:9px">Every species in the pool, cheapest first. Four stages and the produce icon at 6×.</h2>
+  <table id="sheetTable"></table>
+</div>
+
+<div class="panel" id="galleryPanel" style="display:none">
+  <h2 class="muted" style="font-size:9px">48 children of the same parents, seeds 1–48, ripe stage. Red border = sterile, grey = failed.</h2>
+  <div class="gallery" id="galleryGrid"></div>
+</div>
+
+<div class="panel" id="statsPanel" style="display:none">
+  <h2 class="muted" style="font-size:9px">500 crosses of the same parents</h2>
+  <div id="statsBody"></div>
+</div>
+
+<script type="module" src="src/lab.js"></script>
+</body>
+</html>

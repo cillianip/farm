@@ -1,0 +1,626 @@
+// DOM UI: HUD, hotbar, hover card, toasts and the panels (catalogue, chest, crate, seed rack, bench, compost, seed book, morning, settings).
+import { CONFIG } from './config.js';
+import * as S from './sim.js';
+import { itemName, itemKey } from './items.js';
+import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
+import { cropSprite, produceSprite } from './render/crops.js';
+import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite } from './render/sprites.js';
+import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
+import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
+import { growRealMinutes } from './genetics.js';
+
+const $ = id => document.getElementById(id);
+// money a day for the cards: short, no cents past $10
+const perDay = v => (v >= 1000 ? formatMoney(v) : '$' + (v >= 10 ? Math.round(v) : v.toFixed(1))) + ' a day';
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+export function itemIcon(item, species, size = 48) {
+  const c = document.createElement('canvas'); c.width = size; c.height = size;
+  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  let src = null;
+  if (item.kind === 'tool') src = toolIcon(item.tool);
+  else if (item.kind === 'seed') { const g = species[item.species]?.genome; src = g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
+  else if (item.kind === 'crop') { const sp = species[item.species]; src = sp ? produceSprite(sp) : null; }
+  else if (item.kind === 'fert') src = fertIcon();
+  else if (item.kind === 'sprinkler') src = sprinklerSprite(0);
+  else if (item.kind === 'pipe') src = pipeSprite(10);
+  else if (item.kind === 'withered') src = witheredSprite();
+  else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
+  if (src) ctx.drawImage(src, 0, 0, size, size);
+  return c;
+}
+
+export class UI {
+  constructor(game) {
+    this.game = game;
+    this.held = null;   // {inv, index} item picked up in a slot UI
+    this.openPanel = null;
+    $('panel-close').onclick = () => this.closePanel();
+    $('panel').addEventListener('mousedown', e => { if (e.target === $('panel')) this.closePanel(); });
+  }
+  get state() { return this.game.state; }
+
+  // ---------- HUD ----------
+  updateHud() {
+    if (!$('money')) return;
+    const s = this.state;
+    $('money').textContent = formatMoney(s.money);
+    $('title').textContent = titleFor(s.lifetime) + (seedBookBonus(s) ? ` · seed book +${Math.round(seedBookBonus(s) * 100)}%` : '');
+    $('clock').textContent = S.clockText(s) + (s.rainToday ? ' ☂' : '');
+    const pct = Math.max(0, s.energy / s.energyMax * 100);
+    $('energy-fill').style.width = pct + '%';
+    $('energy-fill').style.background = pct < 20 ? 'var(--red)' : pct < 50 ? 'var(--gold)' : 'var(--green)';
+    $('energy-text').textContent = `${Math.round(s.energy)} / ${s.energyMax}`;
+  }
+  renderHotbar() {
+    const bar = $('hotbar'); if (!bar) return; bar.innerHTML = '';
+    for (let i = 0; i < CONFIG.inventory.hotbar; i++) {
+      const slot = this.slotEl(this.state.inventory, i, i === this.game.selected, String(i + 1));
+      slot.onclick = () => { this.game.selected = i; this.renderHotbar(); };
+      bar.appendChild(slot);
+    }
+  }
+  slotEl(inv, i, active, key) {
+    const it = inv.slots[i];
+    const d = el('div', 'slot' + (active ? ' active' : ''));
+    if (key) d.appendChild(el('span', 'key', key));
+    if (it) {
+      d.appendChild(itemIcon(it, this.state.species));
+      if (it.kind !== 'tool') d.appendChild(el('span', 'qty', it.qty));
+      d.title = itemName(it, this.state.species) + (it.kind === 'fert' ? ` (${GRADE_WORD[fertGrade(it.fert)]}): ` + fertDescribe(it.fert) : '');
+    }
+    return d;
+  }
+  toast(msg) { if (!msg) return; const t = el('div', 'toast', esc(msg)); $('toasts').appendChild(t); setTimeout(() => t.remove(), 3000); }
+
+  // ---------- hover card: everything on the tile, layered ----------
+  hover(tile, x, y, screenX, screenY) {
+    const card = $('hover-card');
+    const s = this.state;
+    if (!tile || this.game.hit?.kind === 'eat') { card.classList.add('hidden'); return; }
+    const info = this.game.tileInfo(x, y);
+    let html = `<div class="pc-title">${esc(info.title)}</div>`;
+    if (info.sub) html += `<div class="pc-sub">${esc(info.sub)}</div>`;
+    if (tile.t === 'grass' && tile.tilled) {
+      const m = Math.round(S.moistureOf(tile)), st = S.moistureState(tile);
+      const col = { dry: '#c98a3c', moist: '#7fb04a', wet: '#3f8fd6', soggy: '#5a4ea8' }[st];
+      const note = { dry: 'Too dry to grow. Water it.', moist: 'Growing slowly. A little more water.', wet: 'Just right.', soggy: 'Waterlogged: roots can\'t breathe.' }[st];
+      html += `<div class="pc-sec">Soil</div><div class="pc-row"><span>Moisture</span><span>${m}% · ${st}</span></div>${bar(m, col)}<div class="pc-note">${note}</div>`;
+      if (tile.fert) html += `<div class="pc-row"><span>Fertiliser</span><span>${esc(tile.fert.name)}</span></div><div class="pc-note">${esc(fertDescribe(tile.fert))}</div>`;
+    }
+    if (tile.crop) {
+      const c = tile.crop, sp = s.species[c.speciesId], g = sp.genome, stage = S.cropStage(c);
+      const m = S.feltMoisture(tile, g), factor = S.moistureGrowthFactor(m);
+      let name, hint = '';
+      if (c.dead) name = c.unknown ? 'A withered plant' : `Withered ${sp.name}`;
+      else if (c.unknown) { name = stage === 0 ? 'A seed' : stage === 1 ? 'An unknown sprout' : `Looks like a ${FAMILY_WORD[g.family]}`; hint = c.fromBird && stage === 0 ? 'Dropped by a bird. Keep the soil moist.' : stage === 1 ? 'Too small to tell yet.' : 'You\'ll know it when it ripens.'; }
+      else name = sp.name;
+      html += `<div class="pc-sec">${stage === 0 ? 'In the soil' : 'Plant'}</div><div class="pc-name tier-${c.unknown ? 'unknown' : sp.tier}">${esc(name)}</div>`;
+      if (hint) html += `<div class="pc-note">${esc(hint)}</div>`;
+      if (!c.dead) {
+        const stageName = stage === 3 ? (S.rotFactor(s, c) < 1 ? `Rotting (${Math.round(S.rotFactor(s, c) * 100)}%)` : 'Ripe') : ['Seed', 'Sprout', 'Growing'][stage];
+        html += `<div class="pc-row"><span>${stageName}</span><span>${Math.floor(c.growth)}%</span></div>${bar(c.growth, '#5cb85c')}`;
+        html += `<div class="pc-row"><span>Health</span><span>${Math.round(c.health)}%</span></div>${bar(c.health, c.health > 50 ? '#5cb85c' : '#d9453d')}`;
+        if (stage === 3) html += `<div class="pc-note">Ripe. Click it to harvest.</div>`;
+        const f = tile.fert?.stats || {}, fmtMin = v => v < 1 ? 'under a minute' : `~${Math.ceil(v)} min`;
+        if (stage < 3) { const base = factor > 0 ? ((100 - c.growth) / 100) * growRealMinutes(g) / factor : null, mins = base == null ? null : base / (1 + (f.speed || 0)); html += `<div class="pc-row"><span>Ripe in</span><span>${mins == null ? 'not growing (dry)' : f.speed && fmtMin(base) !== fmtMin(mins) ? `${fmtMin(base)} → ${fmtMin(mins)}` : fmtMin(mins)}</span></div>`; }
+        if (!c.unknown) { const n = g.count + (f.yield || 0) * 3, nStr = Number.isInteger(n) ? `${n}` : n.toFixed(1); html += `<div class="pc-row"><span>Harvest</span><span>${f.yield ? `${g.count}× → ${nStr}×` : `${g.count}×`} · ${formatMoney(salePrice(s, { species: sp.id }))} each</span></div>`; }
+        if (f.quality) html += `<div class="pc-row"><span>Stars</span><span>none → up to ${'★'.repeat(Math.min(3, Math.ceil(f.quality * 4)))}</span></div>`;
+        if (!c.unknown) html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>` + traitRows(sp);
+      }
+    }
+    if (tile.t === 'seedrack' && S.activeTray(s)) {
+      s.seedRack.trays.forEach((tr, k) => {
+        if (!tr.item) return;
+        const sp = s.species[tr.item.species], [lo, hi] = S.seedRange(sp), ready = S.trayReady(s, tr), pct = Math.round(S.trayProgress(s, tr) * 100);
+        const realMin = Math.max(0, tr.readyAt - s.minutes) / S.gameMinutesPerRealSecond() / 60;
+        html += `<div class="pc-sec">Tray ${k + 1}</div><div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div>`;
+        if (ready) html += `<div class="pc-row"><span>Dried</span><span>${tr.item.seeds} seeds</span></div><div class="pc-note">Click to take them.</div>`;
+        else html += `<div class="pc-row"><span>Drying</span><span>${pct}%</span></div>${bar(pct, '#e8a23b')}<div class="pc-row"><span>Ready in</span><span>${realMin < 1 ? 'under a minute' : `~${Math.ceil(realMin)} min`}</span></div><div class="pc-row"><span>Will give</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`;
+      });
+    }
+    if (tile.t === 'crate') {
+      const n = S.crateCount(s);
+      html += `<div class="pc-sec">Inside</div><div class="pc-row"><span>Filled</span><span>${n} / ${s.crate.capacity}</span></div>${bar(n / s.crate.capacity * 100, '#f6c453')}`;
+      const P = S.priceCrate(s, s.crate.items);
+      for (const l of P.lines) { html += `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>`; if (l.cut) html += `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>`; }
+      if (n) { html += `<div class="pc-row"><span>Tonight</span><span>+${formatMoney(P.total)}</span></div>`; if (P.lines.some(l => l.cut)) html += `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price; the rest sell on cheaper.</div>`; }
+      else if (s.crate.lastSale) html += `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>`;
+      else html += `<div class="pc-note">Empty. Harvest something and drop it in.</div>`;
+    }
+    if (tile.tilled && !tile.obj && S.sprinklerCovers(s, x, y)) html += `<div class="pc-note">Under a sprinkler: topped up while you are awake.</div>`;
+    if (html !== this.lastCard) { card.innerHTML = html; this.lastCard = html; }
+    card.classList.remove('hidden');
+    const gw = $('game').clientWidth, gh = $('game').clientHeight;
+    card.style.left = Math.min(gw - card.offsetWidth - 8, screenX + 24) + 'px';
+    card.style.top = Math.min(gh - card.offsetHeight - 8, Math.max(8, screenY - 12)) + 'px';
+  }
+  hideHover() { $('hover-card').classList.add('hidden'); this.panelHover = false; }
+  // the hotbar card: what the thing in your hand is and the few numbers that matter
+  hoverItem(it, screenX, screenY) {
+    const card = $('hover-card'), s = this.state, sp = it.species ? s.species[it.species] : null, g = sp?.genome;
+    let html = `<div class="pc-title${sp ? ' tier-' + sp.tier : ''}">${esc(itemName(it, s.species))}${it.qty > 1 && it.kind !== 'tool' ? ` <span class="muted">×${it.qty}</span>` : ''}</div>`;
+    if (it.kind === 'crop' && sp) {
+      const hunger = CONFIG.needs.eatBase + CONFIG.needs.eatPerSize * g.size, energy = Math.round(hunger * CONFIG.needs.eatEnergyPerHunger), [lo, hi] = S.seedRange(sp);
+      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
+      html += `<div class="pc-row"><span>Sells for</span><span>${formatMoney(salePrice(s, it))}${it.qty > 1 ? ` <span class="muted">×${it.qty} = ${formatMoney(salePrice(s, it) * it.qty)}</span>` : ''}</span></div>`;
+      html += `<div class="pc-row"><span>Eat</span><span>+${Math.round(hunger)} food · +${energy} energy</span></div>`;
+      html += sp.sterile ? `<div class="pc-row"><span>Dries into</span><span>nothing (sterile)</span></div>` : `<div class="pc-row"><span>Dries into</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`;
+      html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>`;
+      html += `<div class="pc-note">Click yourself to eat it. Drop it in the crate to sell.</div>`;
+    } else if (it.kind === 'seed' && sp) {
+      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
+      html += `<div class="pc-row"><span>Ripens in</span><span>${growRealMinutes(g).toFixed(1)} min</span></div>`;
+      html += `<div class="pc-row"><span>Harvest</span><span>${g.count} × ${formatMoney(salePrice(s, { species: sp.id }))}</span></div>`;
+      html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>`;
+      html += `<div class="pc-note">Click a tilled bed to plant.</div>`;
+    } else if (it.kind === 'fert') {
+      const n = fertGrade(it.fert);
+      html += `<div class="pc-row"><span>Grade</span><span>${'●'.repeat(n)}${'○'.repeat(3 - n)} ${GRADE_WORD[n]}</span></div><div class="pc-note">${esc(fertDescribe(it.fert))}</div><div class="pc-note">Click a tilled bed to work it in. One bag per bed.</div>`;
+    } else if (it.kind === 'sprinkler') {
+      const R = CONFIG.sprinkler.radius, n = (2 * R + 1) ** 2 - 1;
+      html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on a pipe the well feeds. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
+    } else if (it.kind === 'pipe') {
+      html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the well and run it out to the field, over clear ground, never through a bed. Fed pipe shows a blue core. The hoe picks a section up.</div>`;
+    } else if (it.kind === 'tool' && it.tool === 'can') {
+      html += `<div class="pc-row"><span>Water</span><span>${s.can.water} / ${s.can.capacity} pours</span></div>${bar(s.can.water / s.can.capacity * 100, '#3f8fd6')}<div class="pc-note">Fill it at the well. One pour per bed. A second pour on a wet bed waterlogs it: turn it with the hoe.</div>`;
+    } else if (it.kind === 'tool' && it.tool === 'hoe') {
+      html += `<div class="pc-row"><span>Level</span><span>${S.hoeLevel(s) + 1} · ${S.hoeSeconds(s)}s a bed</span></div><div class="pc-row"><span>Energy</span><span>${S.hoeEnergy(s)} a bed</span></div><div class="pc-note">Tills grass. Turns a waterlogged bed. Digs up a plant: a seed comes back as a seed, anything bigger is pulled up for the compost.</div>`;
+    } else if (it.kind === 'withered' || it.kind === 'pulled') {
+      html += `<div class="pc-note">${it.kind === 'pulled' ? 'Dug up before it ripened. It won\'t grow again.' : 'Dried out and died in the bed.'} Drop it in the compost bin: it rots down into fertiliser.</div>`;
+    }
+    if (html !== this.lastCard) { card.innerHTML = html; this.lastCard = html; } card.classList.remove('hidden');
+    const gw = $('game').clientWidth, gh = $('game').clientHeight;
+    card.style.left = Math.min(gw - card.offsetWidth - 8, Math.max(8, screenX - card.offsetWidth / 2)) + 'px';
+    card.style.top = Math.max(8, Math.min(gh - card.offsetHeight - 8, screenY - card.offsetHeight - 28)) + 'px';
+  }
+
+  // ---------- panels ----------
+  closePanel() { if (this.openPanel) this.game.sound.play('close'); const pn = $('panel'); pn.classList.remove('open'); setTimeout(() => { if (!this.openPanel) pn.classList.add('hidden'); }, 220); this.openPanel = null; this.held = null; this.renderHotbar(); }
+  show(title, builder, key = null) {
+    $('panel-title').textContent = title; const body = $('panel-body'); body.innerHTML = '';
+    if (!this.openPanel) this.game.sound.play(key === 'chest' ? 'chest' : 'ui');
+    builder(body); const pn = $('panel'); pn.classList.remove('hidden');
+    body.onmouseover = e => { const t = e.target.closest('.pslot, .cat-row, .lin-row, button'); if (t && t !== this.lastOver && !t.classList.contains('empty')) this.game.sound.play('hover'); this.lastOver = t; }; requestAnimationFrame(() => requestAnimationFrame(() => pn.classList.add('open')));
+    this.openPanel = { title, builder, key }; this.renderHotbar();
+  }
+  refresh() { if (this.openPanel) { const b = $('panel-body'); const sc = b.scrollTop; b.innerHTML = ''; this.openPanel.builder(b); b.scrollTop = sc; } this.renderHotbar(); this.updateHud(); }
+
+
+  // Compost bin: the heap on the left (click a plant to take it back), what it will make on the right, your crops and
+  // withered plants below (click to add one, shift-click the stack). The lid shuts at bedtime; the bags wait by morning.
+  openCompost() {
+    const s = this.state, g = this.game, cp = s.compost, F = CONFIG.fertiliser;
+    let details;
+    const gradeRow = f => { const n = fertGrade(f); return `<div class="pc-row"><span>Grade</span><span>${'●'.repeat(n)}${'○'.repeat(3 - n)} ${GRADE_WORD[n]}</span></div>`; };
+    const binDetails = () => {
+      if (cp.ready) return `<div class="pc-name">${esc(cp.ready.name)} ×${cp.readyCount || 1}</div>${gradeRow(cp.ready)}<div class="pc-note">${esc(fertDescribe(cp.ready))}</div><div class="pc-note">Click the bag to take it. Click a tilled bed with it in hand to work it in.</div>`;
+      if (cp.running) return `<div class="pc-name">Rotting down</div><div class="pc-row"><span>Will make</span><span>${esc(cp.running.fert.name)} ×${cp.running.count}</span></div>${gradeRow(cp.running.fert)}<div class="pc-note">${esc(fertDescribe(cp.running.fert))}</div><div class="pc-note">Ready by morning.</div>`;
+      const n = S.compostCount(s), pv = S.compostPreview(s);
+      if (!pv) return `<div class="pc-name">Empty</div><div class="pc-note">Takes spare crops and the plants the hoe pulls up or clears. ${F.compostMinInputs} or more rot down into fertiliser overnight: one bag for every three.</div><div class="pc-note">First win: Speed compost on the bed of your best seller. Rarer crops make Quality, and Quality means stars.</div>`;
+      const short = Math.max(0, F.compostMinInputs - n), bags = S.compostBags(n);
+      return `<div class="pc-name">${esc(pv.name)}</div><div class="pc-row"><span>Will give</span><span>${bags} ${bags === 1 ? 'bag' : 'bags'}</span></div>${gradeRow(pv)}<div class="pc-note">${esc(fertDescribe(pv))}</div>` + (short ? `<div class="pc-note">${short} more and it starts at bedtime.</div>` : `<div class="pc-note">The lid shuts when you sleep. Ready by morning.</div>`);
+    };
+    const produceDetails = it => { const sp = it.kind === 'crop' ? s.species[it.species] : null, c = contributions(sp); return `<div class="pc-name${sp ? ' tier-' + sp.tier : ''}">${esc(sp ? sp.name : itemName(it, s.species))}</div><div class="pc-row"><span>Adds</span><span>${esc(c.join(', ')) || 'bulk'}</span></div><div class="pc-note">Click to drop one in. Shift-click for the stack.</div>`; };
+    this.show('Compost bin', body => {
+      const info = el('button', 'info-btn', 'i'); info.title = 'How it works'; body.appendChild(info);
+      const row = el('div', 'station-row');
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', cp.ready ? 'Ready' : cp.running ? 'Rotting down' : `In the bin · ${S.compostCount(s)} / ${F.compostMax}`));
+      const heap = el('div', 'pslots');
+      if (cp.ready) { const sl = this.pslot({ kind: 'fert', fert: cp.ready, qty: cp.readyCount || 1 }, s.species, { cls: 'ready' }); sl.onclick = () => { const r = S.takeCompost(s); if (r.msg) this.toast(r.msg); if (r.float) { g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); g.sound.play('harvest'); } this.refresh(); }; heap.appendChild(sl); }
+      else if (cp.running) heap.appendChild(this.pslot(null, s.species, { hint: 'lid shut', cls: 'locked' }));
+      else if (!cp.inputs.length) heap.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
+      else cp.inputs.forEach((inp, k) => {
+        const sl = this.pslot(inp.species ? { kind: 'crop', species: inp.species, q: inp.q || 0, qty: inp.qty } : { kind: 'withered', qty: inp.qty }, s.species);
+        sl.title = 'Click to take one back'; sl.onclick = () => { const r = S.takeFromCompost(s, k); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); };
+        heap.appendChild(sl);
+      });
+      left.appendChild(heap);
+      details = el('div', 'details'); details.innerHTML = binDetails();
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      body.appendChild(el('div', 'pc-sec', 'Your produce'));
+      const grid = el('div', 'pslots'); let any = false; const open = S.canCompost(s).ok;
+      s.inventory.slots.forEach((it, i) => {
+        if (!it || !S.COMPOSTABLE.includes(it.kind)) return; any = true;
+        const sl = this.pslot(it, s.species, { cls: open ? '' : 'locked' });
+        sl.onmouseenter = () => { details.innerHTML = produceDetails(it); }; sl.onmouseleave = () => { details.innerHTML = binDetails(); };
+        sl.onclick = e => { const r = S.addToCompost(s, i, e.shiftKey ? it.qty : 1); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); };
+        grid.appendChild(sl);
+      });
+      if (!any) grid.appendChild(el('div', 'muted', 'Nothing in your pockets to rot down. Spare crops, or the plants the hoe pulls up.'));
+      body.appendChild(grid);
+      const box = el('div', 'info-box hidden', `What goes in sets what comes out. Fast crops give <b>Speed</b> (plants grow faster), many-fruited give <b>Yield</b> (more per harvest), hardy give <b>Hardiness</b>, low-thirst give <b>Water keep</b> (the bed dries slower), rarer crops give <b>Quality</b> (stars on the harvest, each worth +${Math.round(F.qualityStarValue * 100)}%), bred crops give <b>Mutation</b>. Feeding one kind concentrates the power; mixing spreads it thin. The grade (I to III) is how much power the batch holds: more plants and rarer plants make a richer batch. A bag works into one tilled bed and lasts until that plant is pulled.`);
+      info.onclick = () => box.classList.toggle('hidden'); body.appendChild(box);
+    }, 'compost');
+  }
+
+
+  // A slot showing an item (or a hint when empty).
+  pslot(item, species, opts = {}) {
+    const sl = el('div', 'pslot' + (item ? '' : ' empty') + (opts.cls ? ' ' + opts.cls : ''));
+    if (item) { sl.appendChild(itemIcon(item, species, 44)); if (item.qty > 1) sl.appendChild(el('div', 'qty', `×${item.qty}`)); }
+    else if (opts.hint) sl.appendChild(el('div', 'hint', opts.hint));
+    if (item && opts.hover) {   // the same card as the hotbar, over the slot
+      const at = e => { const r = $('game').getBoundingClientRect(); this.panelHover = true; this.hoverItem(item, e.clientX - r.left, e.clientY - r.top); };
+      sl.onmouseenter = at; sl.onmousemove = at; sl.onmouseleave = () => { this.panelHover = false; this.hideHover(); };
+    }
+    return sl;
+  }
+  // Seed rack: tray slots on the left, a details box on the right, your produce as slots below. Click a crop to dry it,
+  // click a finished tray to take the seeds. The (i) button shows how it works.
+  openSeedRack() {
+    const s = this.state, g = this.game, trays = s.seedRack.trays;
+    let details, bars = [], lastReady = S.seedRackReady(s), focus = -1;
+    const trayDetails = k => {
+      const R = trays[k];
+      if (!R.item) return `<div class="muted">Tray ${k + 1}: empty. Click a crop below to dry it here.</div>`;
+      const sp = s.species[R.item.species], [lo, hi] = S.seedRange(sp), ready = S.trayReady(s, R), pct = Math.round(S.trayProgress(s, R) * 100), realMin = Math.max(0, R.readyAt - s.minutes) / S.gameMinutesPerRealSecond() / 60;
+      return `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div>` + (ready
+        ? `<div class="pc-row"><span>Dried</span><span><b>${R.item.seeds} seeds</b></span></div><div class="pc-note">Click the tray to take them.</div>`
+        : `<div class="pc-row"><span>Drying</span><span>${pct}%</span></div>${bar(pct, '#e8a23b')}<div class="pc-row"><span>Ready in</span><span>${realMin < 1 ? 'under a minute' : `~${Math.ceil(realMin)} min`}</span></div><div class="pc-row"><span>Will give</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`);
+    };
+    const defaultDetails = () => { const k = trays.findIndex(t => t.item); return trayDetails(k < 0 ? 0 : k); };
+    const produceDetails = sp => { const [lo, hi] = S.seedRange(sp), secs = Math.round(S.dryHoursFor(sp) * 60 / S.gameMinutesPerRealSecond()); return `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div>` + (sp.sterile ? `<div class="pc-note">Sterile: its seeds are dead.</div>` : `<div class="pc-row"><span>Seeds</span><span>${lo === hi ? lo : `${lo}–${hi}`}</span></div><div class="pc-row"><span>Drying time</span><span>${secs} s</span></div><div class="pc-note">Click to lay one on a free tray.</div>`); };
+    const freeTray = () => trays.some(t => !t.item);
+    this.show('Seed rack', body => {
+      const info = el('button', 'info-btn', 'i'); info.title = 'How it works'; body.appendChild(info);
+      const row = el('div', 'station-row');
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', `Trays · ${trays.length}`));
+      const slots = el('div', 'pslots'); bars = [];
+      trays.forEach((R, k) => {
+        const ready = S.trayReady(s, R);
+        const sl = this.pslot(R.item ? { kind: ready ? 'seed' : 'crop', species: R.item.species, qty: ready ? R.item.seeds : 1 } : null, s.species, { hint: `tray ${k + 1}`, cls: ready ? 'ready' : '' });
+        if (R.item && !ready) { const b = el('div', 'pslot-bar'); const inner = el('div'); inner.style.width = Math.round(S.trayProgress(s, R) * 100) + '%'; b.appendChild(inner); sl.appendChild(b); bars[k] = inner; }
+        sl.onmouseenter = () => { focus = k; details.innerHTML = trayDetails(k); }; sl.onmouseleave = () => { focus = -1; details.innerHTML = defaultDetails(); };
+        sl.onclick = () => { if (!S.trayReady(s, R)) return; const r = S.takeSeeds(s); this.toast(r.msg); if (r.float) g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
+        slots.appendChild(sl);
+      });
+      if (trays.length < 4) slots.appendChild(this.pslot(null, s.species, { hint: 'order a tray', cls: 'locked' }));
+      left.appendChild(slots);
+      details = el('div', 'details'); details.innerHTML = defaultDetails();
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      body.appendChild(el('div', 'pc-sec', 'Your produce'));
+      const grid = el('div', 'pslots'); let any = false;
+      s.inventory.slots.forEach((it, i) => {
+        if (!it || it.kind !== 'crop') return; any = true;
+        const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: !freeTray() || sp.sterile ? 'locked' : '' });
+        sl.onmouseenter = () => { details.innerHTML = produceDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = defaultDetails(); };
+        sl.onclick = () => { const r = S.putOnSeedRack(s, i); this.toast(r.msg); this.refresh(); };
+        grid.appendChild(sl);
+      });
+      if (!any) grid.appendChild(el('div', 'muted', 'Nothing to dry. Harvest something first.'));
+      body.appendChild(grid);
+      const box = el('div', 'info-box hidden', `One crop dries into seeds: about fruits-per-harvest × ${CONFIG.seedRack.seedsPerFruit}, give or take ${Math.round(CONFIG.seedRack.seedVariance * 100)}%, never under ${CONFIG.seedRack.minSeeds}. Big juicy fruit dries slowly, small dry grain fast. Sterile crops give none. More trays come from the cart catalogue.`);
+      info.onclick = () => box.classList.toggle('hidden'); body.appendChild(box);
+    }, 'seedrack');
+    this.openPanel.tick = () => {
+      const ready = S.seedRackReady(s); if (ready !== lastReady) { lastReady = ready; this.refresh(); return; }
+      trays.forEach((R, k) => { if (bars[k] && R.item) bars[k].style.width = Math.round(S.trayProgress(s, R) * 100) + '%'; });
+      if (details && details.innerHTML.includes('Drying')) details.innerHTML = focus >= 0 ? trayDetails(focus) : defaultDetails();
+    };
+  }
+  // Breeding bench: two parent slots, a verdict box, your seeds and produce to pick parents from. Breed runs overnight.
+  openBench() {
+    const s = this.state, g = this.game, b = s.breeder;
+    let details;
+    const spDetails = sp => `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div><div class="pc-note">${sp.tier} · gen ${sp.genome.gen || 0}</div><div class="pc-row"><span>Harvest</span><span>${sp.genome.count} × ${formatMoney(salePrice(s, { species: sp.id }))}</span></div><div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(sp.genome)} pours/day</span></div><div class="pc-note">${esc(traitList(sp).join(' · '))}</div>${sp.sterile ? '<div class="pc-note">Sterile: cannot breed.</div>' : ''}` + traitRows(sp);
+    const verdict = () => {
+      if (b.running) { const A = s.species[b.running.a], B = s.species[b.running.b]; return `<div class="pc-name">${esc(A.name)} × ${esc(B.name)}</div><div class="pc-note">A seedling is under the glass. Sleep to see what it becomes.</div>`; }
+      if (b.result) { const sp = s.species[b.result.species]; return `<div class="pc-name tier-${sp?.tier}">${esc(sp?.name || '?')}</div><div class="pc-row"><span>On the bench</span><span><b>${b.result.seeds} seeds</b></span></div><div class="pc-note">Click the glowing slot to take them.</div>`; }
+      if (!b.a && !b.b) return `<div class="muted">Pick two parents below. Seeds or produce both work: one of each is used up.</div>`;
+      if (!b.a || !b.b) return `<div class="muted">One more parent.</div>`;
+      const pv = S.breedPreview(s); if (!pv) return '';
+      const risk = Math.round(pv.instability * 100);
+      return `<div class="pc-name">${esc(s.species[b.a.species].name)} × ${esc(s.species[b.b.species].name)}</div><div class="pc-row"><span>Risk of failure</span><span><b>${risk}%</b></span></div>${bar(risk, risk > 50 ? '#d9453d' : '#e8a23b')}<div class="pc-row"><span>Cost</span><span>${formatMoney(pv.cost)}</span></div><div class="pc-note">${pv.crossFamily ? 'Different families: riskier, and the only way a rare trait appears from nothing.' : 'Same family: safer. Rare traits only pass down, never appear.'}</div>`;
+    };
+    this.show('Breeding bench', body => {
+      const info = el('button', 'info-btn', 'i'); body.appendChild(info);
+      const row = el('div', 'station-row');
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', 'Parents'));
+      const slots = el('div', 'pslots');
+      for (const which of ['a', 'b']) {
+        const it = b.running ? { kind: 'seed', species: b.running[which], qty: 1 } : b[which];
+        const sl = this.pslot(it, s.species, { hint: which === 'a' ? 'parent A' : 'parent B', cls: b.running ? 'locked' : '' });
+        if (it) { const sp = s.species[it.species]; sl.onmouseenter = () => { details.innerHTML = spDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = verdict(); }; }
+        if (!b.running && it) sl.onclick = () => { S.clearBreederParent(s, which); this.refresh(); };
+        slots.appendChild(sl);
+      }
+      left.appendChild(slots);
+      if (b.result) {   // the morning's seeds, waiting to be taken
+        const sp = s.species[b.result.species], rs = this.pslot({ kind: 'seed', species: b.result.species, qty: b.result.seeds }, s.species, { cls: 'ready' });
+        rs.onclick = () => { const r = S.takeBreedResult(s); if (r.msg) this.toast(r.msg); if (r.float) g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
+        rs.onmouseenter = () => { if (sp) details.innerHTML = spDetails(sp) + `<div class="pc-note">${b.result.seeds} seeds. Click to take them.</div>`; }; rs.onmouseleave = () => { details.innerHTML = verdict(); };
+        slots.appendChild(rs);
+      }
+      const go = el('button', 'primary', b.running ? 'Breeding…' : 'Breed overnight'); go.disabled = !!b.running || !b.a || !b.b; go.style.marginTop = '6px';
+      go.onclick = () => { const r = S.startBreed(s); this.toast(r.msg); this.refresh(); };
+      left.appendChild(go);
+      const book = el('button', null, 'Seed book'); book.style.margin = '6px 0 0 6px'; book.onclick = () => this.openLineage(); left.appendChild(book);
+      details = el('div', 'details'); details.innerHTML = verdict();
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      body.appendChild(el('div', 'pc-sec', 'Your seeds and produce · click to set as a parent'));
+      const grid = el('div', 'pslots'); let any = false;
+      s.inventory.slots.forEach((it, i) => {
+        if (!it || (it.kind !== 'seed' && it.kind !== 'crop')) return; any = true;
+        const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: b.running || sp.sterile ? 'locked' : '' });
+        sl.onmouseenter = () => { details.innerHTML = spDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = verdict(); };
+        sl.onclick = () => { if (b.running) return; const which = !b.a ? 'a' : 'b'; const r = S.setBreederParent(s, which, i); if (r.msg) this.toast(r.msg); this.refresh(); };
+        grid.appendChild(sl);
+      });
+      if (!any) grid.appendChild(el('div', 'muted', 'Nothing to breed with. Seeds or produce go here.'));
+      body.appendChild(grid);
+      const box = el('div', 'info-box hidden', `Two parents make one child overnight. Every gene comes from one parent, the other, or a blend, with a small chance to mutate. A rare trait (golden, glowing, regrowing, frost-hardy) passes down from a parent that has it, and appears from nothing only when the parents are from different families. Each generation adds rarity, and rarity sets the price. A cross between families also carries hybrid vigour: a step on the price that passes down and grows with each cross-family generation, and fades in same-family crosses. Cheap parents drag a child down, so cross your two dearest crops from different families. The cart's buyer takes 8 of a kind a night at full price and sells the rest on cheaper, so a new species is worth more than another row of the old one. Needing little water or shrugging off drought does not change the price; it saves your time. Risk comes from mutations, from crossing different families and from the parents' own rarity: a failed cross withers, reverts to parent A, or gives a sterile plant that grows and sells but makes no seeds. The seeds wait on the bench in the morning.`);
+      info.onclick = () => box.classList.toggle('hidden'); body.appendChild(box);
+    }, 'bench');
+  }
+  // The cart catalogue at the delivery sign: order now, pay now, it arrives tonight.
+  openCatalogue() {
+    const s = this.state;
+    const icon = item => {
+      const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'sprinkler' ? sprinklerSprite(1) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
+      return c;
+    };
+    this.show('Cart catalogue', body => {
+      const head = el('div', 'cat-head', `<span>Pay now. The cart brings it overnight.</span><span class="cat-money">${formatMoney(s.money)}</span>`); body.appendChild(head);
+      // tonight's cart
+      const cart = el('div', 'cart-box');
+      if (s.orders.length) {
+        cart.appendChild(el('div', 'pc-sec', `Your orders · arrive tomorrow morning · ${formatMoney(s.orders.reduce((v, o) => v + o.price, 0))}`));
+        s.orders.forEach((o, i) => { const r = el('div', 'cat-row small' + (this.justOrdered === o.id && i === s.orders.length - 1 ? ' slide-in' : '')); r.appendChild(el('div', 'grow', esc(o.name))); r.appendChild(el('div', 'cat-price', formatMoney(o.price))); const b = el('button', null, 'Cancel'); b.onclick = () => { this.toast(cancelOrder(s, i).msg); this.refresh(); }; r.appendChild(b); cart.appendChild(r); });
+      } else cart.appendChild(el('div', 'muted', `No orders yet. Everything below is always available; the seed packets change every ${CONFIG.catalogSeedDays} days.`));
+      body.appendChild(cart);
+      if (s.deeds > 0) {   // a deed in hand: claim first, shop after
+        const r = el('div', 'cat-row afford deed-row'); r.appendChild(icon({ id: 'deed' }));
+        r.appendChild(el('div', 'grow', `<b>Land deed ${s.deeds > 1 ? '×' + s.deeds : ''}</b><br><span class="muted">Claim one 4×4 plot next to your land. The trees on it come down.</span>`));
+        const b = el('button', 'primary', 'Claim'); b.onclick = () => { this.game.landMode = true; this.closePanel(); this.toast('Click a highlighted plot to claim it (Esc = later)'); }; r.appendChild(b); body.appendChild(r);
+      }
+      // the catalogue by group
+      const items = catalog(s), groups = ['Tools', 'Stations', 'Automation', 'Land', 'Seeds'];
+      for (const gname of groups) {
+        const list = items.filter(i => i.group === gname); if (!list.length) continue;
+        body.appendChild(el('div', 'pc-sec', gname === 'Seeds' ? `Seeds <span class="muted">· new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}</span>` : gname));
+        for (const item of list) {
+          const row = el('div', 'cat-row' + (item.blocked ? ' blocked' : item.afford ? ' afford' : ' cant'));
+          row.appendChild(icon(item));
+          row.appendChild(el('div', 'grow', `<b>${esc(item.name)}</b>${item.level ? ` <span class="muted">${esc(item.level)}</span>` : ''}<br><span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
+          row.appendChild(el('div', 'cat-price', item.blocked ? '' : item.afford ? formatMoney(item.price) : `${formatMoney(item.price)}<br><span class="gap">${formatMoney(item.price - s.money)} to go</span>`));
+          const b = el('button', item.blocked || s.money < item.price ? null : 'primary', item.blocked ? '—' : 'Order'); b.disabled = !!item.blocked || s.money < item.price;
+          b.onclick = () => {
+            const r = placeOrder(s, item.id); if (!r.ok) { this.toast(r.msg); return; }
+            // the row lights up, the price floats away, the order slides into the cart box
+            row.classList.add('bought'); b.textContent = 'Ordered'; b.disabled = true;
+            const fl = el('div', 'cat-float', `−${formatMoney(item.price)}`); const pr = row.querySelector('.cat-price').getBoundingClientRect(), pb = $('panel-body').getBoundingClientRect();
+            fl.style.left = (pr.left - pb.left) + 'px'; fl.style.top = (pr.top - pb.top + $('panel-body').scrollTop) + 'px'; $('panel-body').appendChild(fl);
+            this.game.onPurchase(); this.justOrdered = item.id;
+            setTimeout(() => { fl.remove(); this.refresh(); }, 520);
+          };
+          row.appendChild(b); body.appendChild(row);
+        }
+      }
+    }, 'catalogue');
+  }
+  // The chest by the porch: your five pockets on top, the chest below. Click moves a stack across, right-click moves one.
+  openChest() {
+    const s = this.state;
+    const grid = (inv, other, hintWord) => {
+      const g = el('div', 'pslots');
+      inv.slots.forEach((it, i) => {
+        const sl = this.pslot(it, s.species, { hint: hintWord ? `${hintWord} ${i + 1}` : '', cls: it?.kind === 'tool' ? 'locked' : '', hover: true });
+        if (it) {
+          sl.onclick = () => { const r = S.moveSome(s, inv, i, other, Infinity); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
+          sl.oncontextmenu = e => { e.preventDefault(); const r = S.moveSome(s, inv, i, other, 1); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
+        }
+        g.appendChild(sl);
+      });
+      return g;
+    };
+    this.show('Chest', body => {
+      body.appendChild(el('div', 'pc-sec', `Pockets · ${S.carriedCount(s)} things${S.isHeavy(s) ? ' · heavy' : ''}`));
+      body.appendChild(grid(s.inventory, s.chest, 'pocket'));
+      const used = s.chest.slots.filter(Boolean).length;
+      body.appendChild(el('div', 'pc-sec', `Chest · ${used} / ${s.chest.slots.length} slots`));
+      body.appendChild(grid(s.chest, s.inventory, ''));
+      body.appendChild(el('div', 'pc-note', 'Click a stack to move it across. Right-click moves one. Tools stay on the rack.'));
+    }, 'chest');
+  }
+  // Delivery crate: what is inside and what it pays tonight, your produce as slots to add.
+  openCrate() {
+    const s = this.state, g = this.game;
+    this.show('Delivery crate', body => {
+      const row = el('div', 'station-row');
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', `Inside · ${S.crateCount(s)} / ${s.crate.capacity}`));
+      const inside = el('div', 'pslots');
+      for (const it of s.crate.items) inside.appendChild(this.pslot({ kind: 'crop', species: it.species, q: it.q, qty: it.qty }, s.species));
+      if (!s.crate.items.length) inside.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
+      left.appendChild(inside);
+      const details = el('div', 'details');
+      const sum = () => { const P = S.priceCrate(s, s.crate.items); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };
+      details.innerHTML = sum();
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      const amt = this.crateAmount || 1;
+      const amtRow = el('div', 'pc-sec amt-row'); amtRow.appendChild(el('span', null, 'Your produce · click adds '));
+      for (const n of [1, 5, 'all']) { const bb = el('button', n === amt ? 'primary small' : 'small', String(n)); bb.onclick = () => { this.crateAmount = n; this.refresh(); }; amtRow.appendChild(bb); }
+      body.appendChild(amtRow);
+      const grid = el('div', 'pslots'); let any = false;
+      s.inventory.slots.forEach((it, i) => {
+        if (!it || it.kind !== 'crop') return; any = true;
+        const sp = s.species[it.species], sl = this.pslot(it, s.species);
+        sl.onmouseenter = () => { details.innerHTML = `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div><div class="pc-row"><span>Each</span><span>${formatMoney(salePrice(s, it))}</span></div><div class="pc-row"><span>Stack</span><span>${formatMoney(salePrice(s, it) * it.qty)}</span></div>`; };
+        sl.onmouseleave = () => { details.innerHTML = sum(); };
+        sl.onclick = () => { const r = S.putInCrate(s, i, amt === 'all' ? Infinity : amt); this.toast(r.msg); this.refresh(); };
+        grid.appendChild(sl);
+      });
+      if (!any) grid.appendChild(el('div', 'muted', 'Nothing to sell. Harvest something first.'));
+      body.appendChild(grid);
+    }, 'crate');
+  }
+  openMorning(report) {
+    const s = this.state;
+    this.game.sound.play('morning');
+    this.show(`Day ${report.day}`, body => {
+      const sec = (icon, title, ...nodes) => { const d = el('div', 'mr-sec'); d.appendChild(el('div', 'mr-head', `<span class="mr-icon">${icon}</span>${esc(title)}`)); for (const n of nodes) if (n) d.appendChild(typeof n === 'string' ? el('div', 'mr-line', esc(n)) : n); body.appendChild(d); return d; };
+      // the night
+      const nightLines = [report.night || 'You slept well.'];
+      if (report.rain) nightLines.push('It rained overnight. Every bed is watered and the air is heavy.');
+      else if (report.humidity != null) nightLines.push(`${S.humidityWord(report.humidity)[0].toUpperCase() + S.humidityWord(report.humidity).slice(1)} air today (${report.humidity}% humidity): beds ${report.humidity >= 65 ? 'hold their water' : report.humidity < 40 ? 'dry out fast' : 'dry at the usual pace'}.`);
+      sec(report.rain ? '☂' : '☾', 'The night', ...nightLines);
+      // the cart
+      const cartNodes = [];
+      if (report.sale) {
+        const box = el('div', 'sale');
+        for (const l of report.sale.lines) { box.appendChild(el('div', 'pc-row', `<span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span>`)); if (l.cut) box.appendChild(el('div', 'pc-row muted', `<span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span>`)); }
+        if (seedBookBonus(s)) box.appendChild(el('div', 'pc-row muted', `<span>Seed book: ${s.discovered.length} species known</span><span class="up">+${Math.round(seedBookBonus(s) * 100)}% on every sale</span>`));
+        box.appendChild(el('div', 'pc-row total', `<span>Paid</span><span>+${formatMoney(report.sale.total)}</span>`));
+        if (report.water) box.appendChild(el('div', 'pc-row', `<span>Water bill · ${report.water.pours} sprinkler pours</span><span class="down">−${formatMoney(report.water.bill)}</span></div>`));
+        if (report.dayBefore) { const d = report.sale.total - report.dayBefore.sale; box.appendChild(el('div', 'pc-row muted', `<span>Day before: ${formatMoney(report.dayBefore.sale)}</span><span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${formatMoney(Math.abs(d))}</span>`)); }
+        cartNodes.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate.`, box);
+      } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : ''));
+      if (report.delivery?.count) { const list = el('ul', 'mr-list'); for (const p of s.parcels || []) list.appendChild(el('li', null, esc(p.name))); cartNodes.push(`It left ${report.delivery.count === 1 ? 'a parcel' : report.delivery.count + ' parcels'} in the crate. Click the crate to open ${report.delivery.count === 1 ? 'it' : 'them'}.`, list); }
+      sec('⛟', 'The cart', ...cartNodes);
+      if (report.breeder) {
+        const r = report.breeder, sp = r.species ? s.species[r.species] : null;
+        const d = sec('✿', 'The breeder');
+        if (sp && (r.outcome === 'success' || r.outcome === 'sterile' || r.outcome === 'revert')) {
+          const card = el('div', 'mr-breed');
+          const c = document.createElement('canvas'); c.width = 64; c.height = 64; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(cropSprite(sp, 3), 0, 0, 64, 64); ctx.drawImage(produceSprite(sp), 36, 0, 28, 28);
+          card.appendChild(c);
+          const txt = el('div', 'grow');
+          const head = r.outcome === 'revert' ? `It reverted to <b class="tier-${sp.tier}">${esc(sp.name)}</b>.` : r.outcome === 'sterile' ? `<b class="tier-${sp.tier}">${esc(sp.name)}</b>, sterile.` : r.isNew ? `New species: <b class="tier-${sp.tier}">${esc(sp.name)}</b>` : `<b class="tier-${sp.tier}">${esc(sp.name)}</b> again.`;
+          txt.appendChild(el('div', 'mr-breed-name', head));
+          txt.appendChild(el('div', 'mr-line muted', `${esc(r.parents[0])} × ${esc(r.parents[1])}`));
+          txt.appendChild(el('div', 'pc-row', `<span>Sells</span><span>${formatMoney(sp.value)} × ${sp.genome.count} a harvest</span>`));
+          { const ps = (sp.parents || []).map(id => s.species[id]).filter(Boolean); if (ps.length) { const best = Math.max(...ps.map(p => p.value)), step = sp.value / Math.max(0.01, best);
+            txt.appendChild(el('div', 'pc-row', `<span>Parents</span><span>${ps.map(p => `${esc(p.name)} ${formatMoney(p.value)} × ${p.genome.count}`).join(' · ')}</span>`));
+            txt.appendChild(el('div', 'pc-row', `<span>Each crop sells</span><span class="${step >= 1 ? 'up' : 'down'}">${step >= 1 ? '▲' : '▼'} ×${step.toFixed(1)} the dearer parent</span></div>`)); } }
+          txt.appendChild(el('div', 'pc-row', `<span>Ripens</span><span>${growRealMinutes(sp.genome).toFixed(1)} min</span>`));
+          txt.appendChild(el('div', 'pc-row', `<span>Tier</span><span class="tier-${sp.tier}">${esc(sp.tier)} · gen ${sp.genome.gen || 0}</span>`));
+          if (r.mutations?.length) { const line = el('div', 'mr-line muted', 'Changed: '); for (const m of r.mutations) line.appendChild(el('span', 'chip', esc(mutationWord(m)))); txt.appendChild(line); }
+          txt.appendChild(el('div', 'mr-line', `<b>${r.seeds} seeds</b> wait on the bench.`));
+          card.appendChild(txt); d.appendChild(card);
+        } else d.appendChild(el('div', 'mr-line', esc(describeBreed(s, r))));
+      }
+      if (report.compost) sec('♻', 'Compost', `The heap rotted down overnight: ${esc(report.compost)} waits in the bin.`);
+      const ok = el('button', 'primary', 'Good morning'); ok.style.marginTop = '12px'; ok.onclick = () => { this.closePanel(); this.game.afterMorning(); }; body.appendChild(ok);
+    });
+  }
+
+  // The seed book: every species you know, bred ones under their parents, so you can see the line you have made.
+  openLineage() {
+    const s = this.state;
+    this.show('Seed book', body => {
+      const known = Object.values(s.species).filter(sp => s.discovered.includes(sp.id) || sp.sterile);
+      const bred = known.filter(sp => sp.parents), base = known.filter(sp => !sp.parents);
+      body.appendChild(el('div', 'muted', `${known.length} species known · ${bred.length} bred by you`));
+      body.appendChild(el('div', 'pc-note', `Every species beyond the starters adds +${Math.round(CONFIG.economy.seedBookBonusPerSpecies * 100)}% to every sale. Right now: <b class="up">+${Math.round(seedBookBonus(s) * 100)}%</b>. Each generation of breeding steps the price up about ×1.5.`));
+      const icon = sp => { const c = document.createElement('canvas'); c.width = 40; c.height = 40; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(cropSprite(sp, 3), 0, 0, 40, 40); return c; };
+      const row = (sp, depth) => {
+        const r = el('div', 'lin-row'); r.style.marginLeft = (depth * 22) + 'px';
+        if (depth) r.appendChild(el('span', 'lin-branch', '└'));
+        r.appendChild(icon(sp));
+        const g = sp.genome, from = sp.parents ? `from ${sp.parents.map(p => esc(s.species[p]?.name || '?')).join(' × ')} · day ${sp.discoveredDay ?? '?'}` : sp.wild ? 'brought by a bird' : 'starter';
+        r.appendChild(el('div', 'grow', `<b class="tier-${sp.tier}">${esc(sp.name)}</b> <span class="muted">${sp.tier} · gen ${g.gen || 0}</span><br><span class="muted">${from} · ${formatMoney(sp.value)} × ${g.count} · ${growRealMinutes(g).toFixed(1)} min</span>`));
+        return r;
+      };
+      const childrenOf = id => bred.filter(c => c.parents[0] === id || c.parents[1] === id);
+      const seen = new Set();
+      const walk = (sp, depth) => { if (seen.has(sp.id)) return; seen.add(sp.id); body.appendChild(row(sp, depth)); for (const c of childrenOf(sp.id)) walk(c, depth + 1); };
+      body.appendChild(el('div', 'pc-sec', 'Your lines'));
+      const parentsUsed = new Set(bred.flatMap(c => c.parents));
+      const roots = base.filter(sp => parentsUsed.has(sp.id));
+      if (!roots.length) body.appendChild(el('div', 'muted', 'Nothing bred yet. Two parents on the bench, one child by morning.'));
+      for (const sp of roots) walk(sp, 0);
+      for (const sp of bred) if (!seen.has(sp.id)) walk(sp, 0);
+      body.appendChild(el('div', 'pc-sec', 'Not yet crossed'));
+      for (const sp of base) if (!seen.has(sp.id)) body.appendChild(row(sp, 0));
+    }, 'lineage');
+  }
+
+  openSettings() {
+    const g = this.game;
+    this.show('Settings', body => {
+      // sound: three sliders and a mute, kept in the browser rather than the save
+      const snd = g.sound, P = snd.prefs;
+      body.appendChild(el('div', 'pc-sec', 'Sound'));
+      const slider = (label, key) => {
+        const row = el('div', 'set-row'); row.appendChild(el('span', null, label));
+        const r = el('input'); r.type = 'range'; r.min = 0; r.max = 100; r.value = Math.round(P[key] * 100);
+        const val = el('span', 'set-val', `${r.value}%`);
+        r.oninput = () => { snd.set(key, r.value / 100); val.textContent = `${r.value}%`; }; r.onchange = () => { snd.unlock(); if (key !== 'music') snd.play('coin'); };
+        row.appendChild(r); row.appendChild(val); body.appendChild(row);
+      };
+      slider('Master', 'master'); slider('Effects', 'sfx'); slider('Music', 'music');
+      const mute = el('label', 'set-row'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!P.muted; cb.onchange = () => snd.set('muted', cb.checked);
+      mute.appendChild(cb); mute.appendChild(el('span', null, 'Mute everything')); body.appendChild(mute);
+      body.appendChild(el('div', 'pc-note', 'All sound is made by the game as it plays: no recordings. The theme loops while you farm.'));
+      // view: how big a tile is. Wide suits a half-screen window beside a video.
+      body.appendChild(el('div', 'pc-sec', 'View'));
+      const vrow = el('div', 'set-row'); vrow.appendChild(el('span', null, 'Zoom'));
+      for (const [label, sc] of [['Close', 4], ['Wide', 3]]) { const b = el('button', CONFIG.scale === sc ? 'primary small' : 'small', label); b.onclick = () => { try { localStorage.setItem('farm-scale', String(sc)); } catch {} g.save(); location.reload(); }; vrow.appendChild(b); }
+      vrow.appendChild(el('span', 'muted', 'reloads the page'));
+      body.appendChild(vrow);
+      const rrow = el('div', 'set-row'); rrow.appendChild(el('span', null, 'Drawing'));
+      for (const [label, mode] of [['Sharp', 'sharp'], ['Fast', 'fast']]) { const b = el('button', CONFIG.render === mode ? 'primary small' : 'small', label); b.onclick = () => { try { localStorage.setItem('farm-render', mode); } catch {} g.save(); location.reload(); }; rrow.appendChild(b); }
+      rrow.appendChild(el('span', 'muted', 'Fast helps an old machine'));
+      body.appendChild(rrow);
+      body.appendChild(el('div', 'pc-sec', 'Save'));
+      body.appendChild(el('div', null, 'The game saves when you sleep and every 30 seconds. Offline time counts (growth, drying) up to one game day.'));
+      const row = el('div'); row.style.margin = '8px 0';
+      const save = el('button', null, 'Save now'); save.onclick = () => { g.save(); this.toast('Saved'); };
+      const exp = el('button', null, 'Export to text'); exp.onclick = () => { ta.value = g.exportSave(); ta.select(); };
+      const imp = el('button', null, 'Import from text'); imp.onclick = () => { try { g.importSave(ta.value); this.toast('Imported'); this.closePanel(); } catch (e) { this.toast('Import failed: ' + e.message); } };
+      const reset = el('button', null, 'New farm (wipe save)'); reset.onclick = () => { if (confirm('Start over? This deletes your farm.')) g.newGame(); };
+      for (const b of [save, exp, imp, reset]) { row.appendChild(b); row.appendChild(document.createTextNode(' ')); }
+      body.appendChild(row);
+      const ta = el('textarea'); ta.placeholder = 'Save text appears here / paste a save here'; body.appendChild(ta);
+      const st = g.state.stats;
+      body.appendChild(el('div', 'muted', `Day ${S.dayOf(g.state)} · harvests ${st.harvests} · sold ${st.sold} · earned ${formatMoney(g.state.lifetime)} · breeds ${st.breeds} · discoveries ${st.discoveries}`));
+    });
+  }
+}
+
+const FAMILY_WORD = { root: 'root vegetable', bush: 'fruit bush', vine: 'climbing vine', grain: 'grain', flower: 'flower', gourd: 'leafy sprawler' };
+function bar(pct, color) { return `<div class="pc-bar"><div style="width:${Math.max(0, Math.min(100, pct))}%;background:${color}"></div></div>`; }
+// The genes that matter to the farmer, each with a mark (▲ good, ▼ bad) and what it does. Shown as rows on the cards.
+export function traitNotes(sp) {
+  const g = sp.genome, out = [];
+  if (g.thirst < 0.3) out.push({ word: 'low water', good: 1, why: 'fewer pours a day' });
+  else if (g.thirst > 0.7) out.push({ word: 'thirsty', good: -1, why: 'dries the bed fast' });
+  if (g.hardiness > 0.7) out.push({ word: 'hardy', good: 1, why: 'rarely withers' });
+  else if (g.hardiness < 0.3) out.push({ word: 'fragile', good: -1, why: 'withers when dry or soggy' });
+  if (g.size > 0.75) out.push({ word: 'big', good: 1, why: 'sells dearer' }); else if (g.size < 0.25) out.push({ word: 'small', good: -1, why: 'sells cheaper' });
+  if (g.regrow) out.push({ word: 'regrows', good: 1, why: 'picks again, no replanting' });
+  if ((g.vigor || 0) >= 0.05) out.push({ word: 'hybrid vigour', good: 1, why: `sells ×${(1 + CONFIG.genetics.vigorValue * g.vigor).toFixed(2)}` });
+  const T = { golden: 'sells for 3×', glowing: 'rare: sells dearer', multiHarvest: 'regrows after each pick', frostHardy: 'rare: sells dearer' };
+  for (const [k, v] of Object.entries(g.traits)) if (v) out.push({ word: '★ ' + k.replace(/([A-Z])/g, ' $1').toLowerCase(), good: 1, why: T[k] || 'rare' });
+  if (sp.sterile) out.push({ word: 'sterile', good: -1, why: 'its seeds are dead' });
+  return out;
+}
+export const traitRows = sp => traitNotes(sp).map(n => `<div class="pc-row trait ${n.good > 0 ? 'good' : 'bad'}"><span>${n.good > 0 ? '▲' : '▼'} ${esc(n.word)}</span><span>${esc(n.why)}</span></div>`).join('');
+export function traitList(sp) {
+  const g = sp.genome, out = [];
+  out.push(`${g.archetype} ${g.family}`);
+  if (g.pattern !== 'none') out.push(g.pattern);
+  if (g.regrow) out.push('regrows');
+  if (g.thirst < 0.3) out.push('needs little water'); else if (g.thirst > 0.7) out.push('thirsty');
+  if (g.hardiness > 0.7) out.push('hardy'); else if (g.hardiness < 0.3) out.push('fragile');
+  if (g.size > 0.75) out.push('big'); else if (g.size < 0.25) out.push('small');
+  for (const [k, v] of Object.entries(g.traits)) if (v) out.push('★ ' + k.replace(/([A-Z])/g, ' $1').toLowerCase());
+  if (sp.sterile) out.push('sterile');
+  return out;
+}
+// a gene name as a farmer would say it
+const MUT_WORD = { family: 'new family', archetype: 'new shape', pattern: 'new pattern', hue1: 'colour', sat1: 'colour', light1: 'colour', hue2: 'second colour', sat2: 'second colour', light2: 'second colour', leafHue: 'leaf colour', leafShape: 'leaf shape', leafDensity: 'leafiness', size: 'size', count: 'yield', growHours: 'growth speed', thirst: 'thirst', hardiness: 'hardiness', regrow: 'regrowth', elongation: 'shape', width: 'shape', tip: 'shape', curve: 'shape', ribs: 'shape', bumpiness: 'shape', height: 'height', top: 'top', ripeHours: 'ripening' };
+export function mutationWord(m) { if (m.startsWith('trait:')) return '★ ' + m.slice(6).replace(/([A-Z])/g, ' $1').toLowerCase(); return MUT_WORD[m] || m; }
+export function describeBreed(s, r) {
+  const name = r.species ? s.species[r.species]?.name : '';
+  switch (r.outcome) {
+    case 'success': return `${r.parents.join(' × ')} → ${r.isNew ? 'new species: ' : ''}${name}. ${r.seeds} seeds wait on the bench.${r.mutations.length ? ' Changed: ' + r.mutations.map(mutationWord).join(', ') + '.' : ''}`;
+    case 'sterile': return `${r.parents.join(' × ')} → ${name}. It grows, but makes no seeds. 1 seed waits on the bench.`;
+    case 'wither': return `${r.parents.join(' × ')} → the seedling withered. Nothing survived.`;
+    case 'revert': return `${r.parents.join(' × ')} → it reverted to ${name}. 2 seeds wait on the bench.`;
+  }
+  return '';
+}

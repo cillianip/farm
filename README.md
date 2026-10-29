@@ -1,0 +1,193 @@
+# Farm — build 1
+
+A browser farming game: Stardew on the surface, Cookie Clicker underneath, crops bred from genes. See `PLAN.md` for the design.
+
+## Run
+```
+npm start          # node server.js → http://localhost:8080  (any static server works too)
+npm test           # rule tests in Node, no browser: node tests/run.js
+node tests/render-smoke.js   # draws 200+ genomes through every stage with a stub canvas
+```
+No build step, no dependencies. Vanilla ES modules + Canvas 2D. Saves to localStorage (export/import under `P`).
+
+## Controls
+WASD / arrows move; number keys 1–5, scrolling or clicking pick a hotbar slot (5 slots); E opens the station you stand
+by (seed rack, crate, sign) or closes a panel, silently does nothing elsewhere; Esc closes a panel; everything else is
+left click. Click a rack while holding its tool to hang it back up (the can keeps its water). Hold left click on a movable
+object (tool racks, seed rack) for half a second to lift it: you carry it above your head at half speed, and a click
+on open grass in reach puts it down. The seed rack panel (E) shows the tray, drying progress, what it will give, and
+your produce with a "Dry one" button per crop.
+Two racks in front of the house hold the hoe and the watering can: click one to take its tool. Empty hands on a ripe crop
+harvests it. Empty hands on the well drinks (thirst). Click your own character while holding produce to eat it (hunger);
+sleeping does not refill either. Click the house door after 6pm to sleep. The house's porch row is walkable; only the
+walls are solid. Click grass in reach with the hoe: a three-swing
+animation with a progress bar, then tilled soil. Click the well holding the can to draw water (8 pours). Click tilled soil
+with the can to pour. Hover anything for the layered card (tile, soil moisture, what's in the soil, plant, health, time
+to ripe). Once there is bare tilled soil a bird comes by ONCE (the starter event) and drops a wild seed on it; it stays
+unknown until it ripens. Harvesting never gives seeds: lay one produce on the seed rack and it dries into seeds. Seeds
+are fruits-per-harvest × 2 rolled within ±35 % (`seedRack.seedVariance`), never under 2, counted when the tray is done;
+sterile species give none. Drying takes 4 game hours scaled by the fruit: big and juicy (size, thirst genes) dries
+slowly, small dry grain fast. Hover the rack or press E for progress, click it when the seeds are ready.
+Soil moisture is 0–100 %: plants grow from 20 %, fastest at 40–85 %, suffer drought below 15 % and waterlogging above 90 %.
+
+Build 5 adds selling: the delivery crate at the end of the track on the east edge of the clearing. Harvest a ripe crop
+(click it with the hoe), select the produce in the hotbar, click the crate: a short drop animation and it goes in
+(capacity 12, `crate.capacity`). Hover the crate to see what is inside and what it will pay. Click the house door after
+6pm to sleep; the cart collects overnight and the morning report lists the sale. Scaling (bigger crate, more crates,
+more pickups) is deliberately not built yet; see the note in `config.js`.
+
+Build 17: playtest fixes. Humidity (`state.humidity`, rolled each morning; rain days 85–98%) scales evaporation
+(`evaporationFactor`), shows in the date panel and tints rain days blue with glints. The hoe now turns a waterlogged
+bed to drain it (`drainSoil`) and clears withered plants; live plants are safe from it. Eating is a hit-test target
+(outline + "Eat the X" prompt), harvest wins when a ripe crop is under the cursor; eating takes 1.6 s with bites and
+crumbs. Hovering a hotbar item shows its card (sell price, food/energy, seeds; grow time and water for seeds; can
+level, hoe level). A label names what you pick up. Floats use the HUD font and last 2.2 s. Crate contents and parcels
+are clipped inside the crate behind the front boards. Crate drops are one per click, held LMB keeps dropping; the
+crate panel has 1 / 5 / all. The morning report is sectioned (The night, The cart, The breeder) with one honest line
+about sleep. Seed packets rotate every 3 days. Catalogue: summary line removed, purchase animation (row flash, price
+float, money counter rolls). Seed rack and bench feet sit on the tile line like the racks. "In the ground" is the value of one harvest of everything planted (no replanting assumed).
+
+Build 16: the number purchases move. A day ledger (`state.ledger`) records each day's sale, well trips, beds tilled,
+plantings, harvests, the hour the crate filled and how many crops it turned away, busy-tray attempts and empty beds at
+bedtime. The money panel shows "Sold last night", "Field grows $X a day" (`fieldRate`: value × fruits ÷ grow time of
+every live crop) and "Next: <cheapest thing you can't afford> $N to go". The morning sale box compares with the day
+before. Catalogue rows are bright with a gold border when affordable and muted with "$N to go" when not, and each row
+carries a green "yesterday:" line naming the bottleneck it lifts, measured from the ledger. The delivery sign grows a
+gold pennant and the money panel flashes when something new becomes affordable; reading the sign clears it. New item:
+Sharper hoe ($30, $90): 0.9 → 0.6 → 0.4 s a bed and 2 → 1.5 → 1 energy (`CONFIG.hoe`). No automation yet.
+
+Build 15: the breeding bench. Order it from the catalogue ($35). Orders now arrive as parcels in the crate: click the
+crate in the morning to collect; small upgrades apply on the spot, the bench is handed to you to carry and place.
+Press E at the bench: pick two parents from your seeds or produce (one of each is used), the box shows the pairing's
+risk of failure and the cost, Breed overnight, and the morning report shows the child with its sprite, name, tier and
+seeds (2–4 on success, 1 sterile, 2 of parent A on a revert, nothing on a wither). Seed packets in the catalogue now
+carry role tags (fast, regrows, seed-rich, needs little water, big fruit, breeding stock, flower). Breeding costs
+$5 + rarity, cheap on purpose so the habit starts early.
+
+Build 14: the cart catalogue (`src/catalog.js`), the game's only shop. E at the DELIVERY sign (or click it) opens it:
+pay now, the cart drops the order off while you sleep, the morning report lists it, cancel before bed for a refund.
+Items: drying tray (seed rack now has tray slots, up to 4), bigger watering can (8 → 14 → 24 pours), crate extension
+(+12 each, up to 3), land deed (claim one highlighted 4×4 plot the next morning, Esc to postpone, E at the sign to
+resume), three basic seed packets that rotate daily, and the breeding bench shown but not yet orderable. Prices rise
+per level. There is no bag panel by design: five hotbar slots, storage comes as a station later.
+
+Build 13: food and water feed energy. Eating gives energy at once (60 % of the hunger it restores), a drink gives 5.
+Waking energy is 100 % only when you went to bed fed and watered; it falls toward 40 % (`needs.wakeFloor`) as the lower
+of hunger and thirst drops, and the morning report says so. Zero energy means you cannot work until you eat or sleep.
+
+Build 12: shorter, rounder farmer (22 px) with poses for carrying, holding (facing down only the hand shows, item in
+front), drinking and planting; planting is an animated action with a seed dropping into the bed; drinking shows sips
+and the well bucket moving. The house blocks by its wall pixels (`HOUSE_WALLS` in world.js), not by tiles: steps and
+the grass beside the foundation are open. Plants keep growing while you sleep, at the night rate (`crop.nightGrowth`
+0.5 from 8pm to 6am, awake or asleep), and hunger/thirst drain at half rate in bed; no bird while asleep. Hotbar slots
+can be dragged onto each other to swap. Seeds draw as loose seeds. The crate shows tiny icons of what is actually
+inside. Ground patches sit under each leg. Seed rack panel: finished tray shows the seeds, progress bar starts at the
+right width. Shorter hoe. Energy costs (`energy` in config): hoe 2, water 1, plant 0.5, harvest 1, clear 1, place 1.
+
+Build 11: station panels are slot based (tray slots with progress, a details box that follows the hover, your produce
+as slots, an (i) button for the explanation); the crate has the same panel; the sign opens a readable notice. Player
+poses: arms up while carrying, one arm out holding produce; held items ride the walk bob. Worn dirt patches under the
+racks, seed rack, well and sign. House foundation row is solid except the steps. Soil beds have no edge lines. Food
+icon is an apple. Under 25 % hunger or thirst you walk at 70 % speed.
+
+Build 9: the OS cursor is hidden over the game and a pixel arrow is drawn instead. Over anything clickable (door, well,
+racks, seed rack, crate, sign, a ripe crop) it becomes a hand, the object itself is outlined (the door, not the house)
+and a prompt says what a click does ("Sleep", "Draw water", "Take the hoe", "Harvest"). Objects are hit by their sprite
+rectangle, so clicking the well's roof works. The delivery area is plain cart track with a smaller crate and a sign
+that reads DELIVERY; the track is the road the cart comes up at night and leads out of the clearing.
+
+Build 8 (playtest fixes): layout moved (house left, well with space, racks and seed rack in the open), house side wall
+simplified, taller seed rack, crate on a plank platform with a signpost, softer trees, less liny soil, redrawn tool
+icons, the held tool or item drawn in the player's hand, bigger harvest arrow, smooth dusk/night/dawn tint with a warm
+band at sunset and sunrise, animated morning panel, energy bar icon is a bolt.
+
+Build 7: the crop renderer was redrawn so every archetype reads as its vegetable at 16 px (carrot rings, potato eyes,
+onion skin, pumpkin ribs and stem, corn husk and silk, wheat spike, lettuce layers, pea pod with peas, lavender spike,
+radish with a white tip) with shading, outlines and frost/glow markers for traits. The `selfWatering` trait is gone:
+water need is the `thirst` gene. A plant drinks `soil.uptakePerHour × thirst` from its tile while growing and reads the
+soil `thirstShift × (0.5 − thirst)` wetter than it is, so low-thirst plants grow in drier beds.
+
+`lab.html` is the breeding lab: a standalone page that runs the real `cross()` and crop renderer. Pick two parents,
+breed with a seed, and read every gene decision (from A / from B / blend / mutated), the rare-trait rolls, the
+instability breakdown and roll, and how rarity becomes tier and price. Gallery ×48 draws 48 children at once; Stats
+×500 summarises outcomes and tiers. Species sheet lists every species in the pool, cheapest first, with all stages at 6×.
+Children can be added to the pool and bred again.
+Shop, breeder and compost are still in `src/sim.js` and tested; they return as each piece is designed.
+
+Scene: a near-fullscreen canvas at 64 px per tile (`scale` in config), a 64×48 map that is all forest except the clearing:
+the house and the 2×2 chunks of 4×4 tiles (8×8) you own. Buying a chunk clears its trees. HUD is drawn on the canvas in a
+wooden pixel style with the open-licensed Press Start 2P font (`assets/fonts`): money, day and time with a sun/moon/rain
+icon, health / hunger / thirst bars (hunger and thirst drain over 36 h and 24 h; at zero they drain energy; sleep refills
+them until food exists), and an empty hotbar.
+
+Hoe tills (hoe again flattens; on a ripe crop it harvests; on a withered one it clears). Watering can wets tilled soil for
+10 game hours. Seeds plant on tilled soil. Any tool on a ripe crop harvests it. Fertiliser goes on tilled soil before
+planting. Sprinklers are placed on free farmland and water their 3×3 each morning.
+
+## What is in
+- Stage 1–3: grid farm, energy, day clock (8 real minutes per day, forced sleep at 2am), growth only while wet, drying →
+  health loss → withering, ripe window → rot → death, rain, land chunks, can upgrades (1 → 3 → 9 tiles), chest + chest
+  upgrades, energy upgrades, sprinklers, instant sell at the stall, seed drops on harvest, regrowing crops, neighbour bonus.
+- Stage 4: the Breeder. Genome of 26 genes + 5 recessive rare traits, blend/pick inheritance, mutation, instability →
+  success / sterile / wither / revert, generated names, rarity tiers, price from genes with no cap (coins per minute =
+  rateBase × rateGrowth^rarity, and rarity keeps rising with generations and traits), seed book with a +2 % sale bonus.
+- Compost bin → six-stat fertilisers with a power budget derived from what you put in, fertiliser book.
+- Save/load with offline progress (capped at one game day), export/import.
+- Code-drawn pixel art: 7 shop species (3 at the start, 4 unlocked by land) and every bred species drawn from genes
+  across 4 stages + withered.
+
+## Where to tweak
+- `src/config.js` — every number: day length, soil wet time, death/rot rates, energy costs, prices and cost growth,
+  tier thresholds and coins-per-minute per tier, mutation and instability, seed drops, compost budget.
+- `src/genetics.js` — gene table and rarity weights (`GENES`), starter genomes (`STARTER_GENOMES`), naming tables
+  (`NOUNS`, colour words), `produceValue`.
+- `src/render/crops.js` — how genes become pixels: `drawFoliage` per family, `drawProduce` per archetype, `PLACES`.
+- `src/render/sprites.js`, `src/render/palette.js` — tiles, buildings, player, palette.
+- `src/world.js` — map layout, building positions, chunk range.
+- `src/sim.js` — the rules (tick, actions, sleep, shop, breeder, compost). `src/ui.js` — panels. `src/game.js` — loop/render.
+
+## Likely first tweaks
+Breeding currently succeeds ~80 % of the time with starters and discoveries come fast; raise `genetics.mutationInstability`
+or `rarityInstability` to slow it. Land cost growth (`economy.landGrowth`) and tier rates (`tiers.ratePerMinute`) set the
+pace of the whole economy.
+
+**Build 18.** Playtest fixes. The date panel is bigger and the humidity row is labelled. Low energy is a real state: under 20 energy you are *tired* (red bar and a TIRED tag, the farmer slumps and sweats, walking is 0.6× and every action takes 1.5× longer). "Too tired" now blocks the pour before the bed gets wet (it used to wet the bed and keep the water). The cursor prompt no longer stretches off to the right (the HUD left the canvas text alignment at "right" whenever the fifth pocket held a stack; the prompt now sets its own). Tilled beds spill a ragged lip of dirt onto the grass around them. Seed dots land in one of four spots per bed. Hovering a stack shows the stack's total next to the unit price. The catalogue's dead (i) button and the HUD's "Next" line are gone. What you carry is now the five pockets of the hotbar, nothing hidden behind them, and a **chest** sits by the porch from day one: click it holding something to put the stack away, E to open and move things both ways (right-click moves one). Sixty or more things in your pockets makes you heavy and slow. Old saves keep working: the chest tile is added and anything hiding past the fifth pocket is moved into the chest.
+
+**Build 19.** Breeding playtest fixes. The freeze: changing the hotbar slot mid-eat made the eat animation read an empty slot and throw every frame, which killed the render loop. Actions now remember the slot they started with, the item sprite tolerates an empty slot, and a thrown frame is logged instead of stopping the game. Sleep is a slow dusk with zzz instead of a cut to black. Holding the mouse on the crate drops the rest of a stack fast. The open chest has no gap under its lid. The lettuce head has a darker heart and leaf veins, and no longer looks like an orb in the hand. Drinking at a full thirst bar gives no energy (it scales with how thirsty you were). The seed rack lays every tray's crop flat, shows a finished tray's seeds in that species' colour, and gets the ripe-crop arrow when seeds are ready. Bred seeds are no longer handed to you: they wait on the bench (arrow, glowing slot, "Take the seeds"). The morning report's breeder section is a card: sprite, parents, price, ripening, tier, what changed in plain words, seeds waiting. A **Seed book** button on the bench shows every species you know with bred ones nested under their parents. Rain days now rain: slanted streaks and splashes all day. When the tab is hidden the farm pauses and catches up on return, capped like offline time.
+
+**Build 20.** The family is a branch, not a gene: a child is always in one parent's family, so Lettuce × Potato gives a root crop or a leafy one, never something from a third family. Tier 2 scaling begins with the **midday pickup** ($150, catalogue): the cart also comes at noon, rolls up the track, empties the crate, pays on the spot with a float and a toast, and backs out. The money panel shows the crate: filled / capacity and when it is collected. The ledger counts both sales in the day.
+
+**Build 21.** Names and sound. A bred child is named after its parents, head of one and tail of the other: Lettuce × Potato is a Lettato, Turnip × Tomato a Turnato, Potato × Pumpkin a Potkin. Prefix words and "(sterile)" are dropped before blending; a taken name still gets a variant word in front. Sound arrives, all synthesised in `src/audio.js` with the Web Audio API, no files: dig, pour, fill, plant, harvest, eat, drink, drop, coin, purchase, chest, seeds, bird, cart, sleep and morning chimes, soft footsteps, a rain bed on rain days, and a looping 16-bar theme (plucked triangle lead, bass, a soft pad, a brush on the off-beats). Audio starts on the first click or key, as browsers require. **Esc** with nothing open now opens Settings: master, effects and music sliders and a mute, kept in the browser rather than the save.
+
+**Build 22.** Breeding pays. A generation used to add about 6% to the price; now each generation steps a harvest's value up about ×1.5 (`genetics.generationRarity` 3.5), so a gen 5 line is worth more than five starters and the curve keeps going. Rarity makes crosses a little less unstable than before to match. The morning breeder card shows what the parents' harvests sold for and the step up ("×2.1 the better parent"), plus the generation. The seed book bonus (+2% on every sale per species beyond the starters) is visible: in the Seed book, and as a row in the morning sale box. Claiming a plot gives a float and a sound. Land deeds were played end to end (order, parcel, highlight, claim) and work; a second crate was not added since the crate extension already carries capacity and a second crate would duplicate the whole interaction for the same number.
+
+**Build 23.** Drinking sounds like drinking: two watery swallows with a rising bubble each and a small breath, instead of two thuds. Pouring has splashes. Species bred before build 21 (Crimson Radish and friends) are renamed after their parents when the save loads, parents before children, so a lineage reads as a line. A blend that would land on a parent's own name tries the other order and then takes a variant word.
+
+**Build 24.** Small windows. Settings has a View row: **Close** (64 px tiles, the default) or **Wide** (48 px tiles), kept in the browser and applied on reload, so the game sits in half a screen beside a video with the whole farm in view. On windows under 1000 px wide, toasts drop below the HUD panels instead of covering the money.
+
+**Build 25.** Playtest fixes. Sound: drinking, eating and pouring make no sound now; the cursor ticks as it lands on each thing (world objects, hotbar, panel slots, catalogue rows, buttons) and moving an item between pockets or into the chest has its own sound. Putting crops in the crate takes 0.35 s each again, held or not; **Quick hands** in the catalogue (Tools, two levels) buys 0.22 s then 0.12 s, the Cookie Clicker way. Seed packets and seed icons are drawn in the species' own colour instead of a grey. The catalogue rows no longer carry "yesterday:" lines. Sweetcorn's harvested cob is slimmer with the husk wrapped round its lower two thirds. A leafy head in the root family (Lettuce × Potato) now draws as a small tight head of leaves on a short pale taproot rather than a radish bulb; the wild radish became a bulb so it keeps its look. The bench details line no longer wraps. Performance: the catalogue flag is computed once a second instead of every frame, the hover card only touches the DOM when its text changes, and Settings has **Drawing: Sharp / Fast** (Fast renders at one pixel per CSS pixel, a quarter of the work on a retina screen).
+
+**Build 26.** The compost bin. It is a catalogue item (Stations, $60) delivered as a parcel you carry and put down like the bench. Click it holding a crop or a withered plant to drop one in (0.35 s each, held or not, Quick hands speeds it); it takes 12. The lid shuts when you sleep and a heap of 3 or more has rotted down by morning into bags of fertiliser, one per three plants, waiting in the bin with an arrow over it. Take them with empty hands; click a tilled bed with a bag in hand to work it in, and the bed shows dark crumbs until that plant is pulled. What goes in sets what comes out: fast crops give Speed, many-fruited give Yield, hardy give Hardiness, low-thirst give Water keep, rarer crops give Quality (stars on the harvest, each +30% on the price, starred crops stack apart), bred give Mutation. E opens the bin: the heap on the left (click a plant to take it back), what it will make on the right, your produce below, with the usual (i) explainer. Two short of a heap at bedtime and the morning says so. An empty bin can be picked up and moved. Tests: 61. Fertiliser carries a grade, I to III (thin, good, rich), set by how much power the batch holds: three common crops make a thin batch, a full bin or rarer crops a rich one. The grade sits in the name and the panel, as filled dots. 62 tests.
+
+**Build 27.** Breeding has more than one answer. The price now pays for care: a plant that needs little water or shrugs off drought sells up to 30% and 20% dearer (`genetics.valuePremium`), so a low-care line is worth breeding, not just a slow-and-big one. Rare traits (golden, glowing, regrowing, frost-hardy) appear from nothing only when the parents are from different families; same-family crosses only pass them down. That makes the cross-family gamble a distinct strategy with its own prize, and the bench says so. Every species card, in the hand, in the ground and on the bench, shows two time-cost numbers: what a bed of it earns per game day if replanted as it ripens (plants slow at night; regrowing plants count their shorter later cycles) and about how many pours a day it wants. The bench details lost the rarity number (tier and gen are enough) so they fit on one line. The compost panel's empty state tells you the first win (Speed compost on your best seller) and where stars come from. No odds wheel on the bench: the single risk number stays, the sterile / wither / throwback split stays hidden, so a cross still feels like a gamble. Tests: 65.
+
+**Build 28.** Three playtest fixes. Hovering a stack in the chest (pockets or chest) shows the same card as the hotbar, fertiliser included (grade dots and what it does). A land deed you put off is no longer a trap: the sign opens the catalogue as always, and while a deed waits a Claim row sits at the top of it; morning still drops you straight into claim mode. In claim mode the land you own is outlined, so the one-tile grass ring around it reads as what it is, a walkway that belongs to no plot; a plot you claim takes that strip in (it becomes tillable) and pushes a new strip out beyond it, which is why the highlight sits one tile inside the tree line. Tests: 65.
+
+**Build 29.** The walkway ring is gone: the trees now stand right at the edge of the plots you own, so a plot to claim starts at the tree line and what you see is what you get (the yard grew one row so the house still joins the first plots; a station left on the old ring is walked to the nearest clear tile when an old save loads). The care genes on every card (hand, ground, bench) are rows with a mark and a reason: ▲ hardy, hard to kill · +16% price; ▲ low water, fewer pours · +24% price; ▼ thirsty, ▼ fragile, ▼ sterile; ★ golden, sells for 3×. Tests: 66.
+
+**Build 30.** The cart pays for what it can see. The care premium from Build 27 is gone: a plant that needs little water or shrugs off drought sells for the same as one that does not, and those genes no longer count toward rarity either. They pay in your time instead, and the soil now makes that real: the sun takes less from a bed and the plant drinks more (`soil.evaporationPerHour` 2, `nightDry` 15, `uptakePerHour` 7), so a low-water line wants about 1.5 pours a day and a thirsty one 3.5 to 4, where before every line sat at 2 or 3. The card rows say what the genes do for you: ▲ low water, fewer pours a day; ▲ hardy, rarely withers. Tests: 66.
+
+**Build 31.** Playtest fixes. The money counter shows the dollar sign. The hoe digs up a living plant (it takes twice a bed's hoe time, so a slip does not do it; a ripe plant says to pick it first), which is how a regrowing bed like strawberries is moved to its own place. The breeder's morning verdict compares each crop's price to the dearer parent instead of a whole harvest, because the crate takes crops, not harvests: a Turnip × Sweetcorn that sells two for $5.62 is ▼ ×0.6 of sweetcorn, not ▲ ×1.2. The strawberry has its own shape (archetype `berry`): round shoulders, a blunt point, seeds in a loose grid, a leafy calyx; it was a long wedge with diagonal spots. Tests: 67.
+
+**Build 32.** Clean-up, no change to the game. The catalogue replaced the shop in Build 19, but the shop stayed in the code: a shop panel, a bag panel, the first breeder panel, a seed-book panel and a notice panel in the UI; nine buy functions, the pocket-selling path and the shop-unlock helpers in the rules; five cost helpers; nine config knobs; six upgrade flags on the save; four CSS rules and a sprite constant. All gone, about 190 lines plus 480 characters of CSS, and the tests that only tested the shop were rewritten against the live paths (sale price with stars and the seed book, a deed claim, the can's reach). The old sprinkler item and its morning pass stay, because stage 3 builds on them. Every panel was opened in a headless browser afterwards. Tests: 66.
+
+**Build 33.** Stage 3 begins: the sprinkler, the first automation. It is a catalogue item in a new Automation group ($140, each one you own makes the next 15% dearer), delivered to a pocket. Click a free tile of your land to set it down; it takes that tile. Once a game hour while you are awake it gives one pour to any bed within one tile that holds a living plant and has dried below the growing band, and never more, so it cannot waterlog (rain still can). The water is metered: $0.05 a pour at first (raised to $0.20 in Build 34), added up through the day and taken out of the night's money, shown on the morning card under the cart's sale. So a thirsty line under a sprinkler costs more to run than a low-water one, which is the thirst gene's money meaning now that the buyer no longer pays for it. Holding a sprinkler shows its reach under the cursor, pointing at a placed one shows the same, and it sprays visibly when it has just poured. The hoe picks it up. Tests: 68.
+
+**Build 34.** Playtest fixes. The hoe now swings when it digs up, clears, or turns a bed, not only when it tills. Digging up a living plant gives you something: a plant still at the seed stage comes back as the seed (float "Seed back"), anything bigger is a new pocket item, "Pulled Carrot" and so on, drawn as the young plant, which the compost bin takes like a withered one. With no free pocket the plant stays in the ground. A second pour on a wet bed still waterlogs it (the user's call: the hoe turns it dry, so a misclick is recoverable); the can's hand card now says so. The growth percent on the ground card is floored, so a plant that still needs water reads 99%, not 100%. The carrot's point is shorter and rounder. Old saves' wild strawberries (and any other bird-dropped wild species) take their base's shape genes on load, so the berry shape shows up in the pocket. The compost bin, which sits flat, gets one worn strip under the whole box instead of two leg marks. The water bill is $0.20 a pour: one sprinkler over carrots runs about $4 against an $18 crate night, over tomatoes about $5.60 against $48, and four sprinklers over 32 tomato beds about $22 against a 12-crop crate, so automating beds the cart cannot sell loses money. Tests: 69.
+
+**Build 35.** Playtest fixes around the sprinkler and fertiliser. The sprinkler no longer waits for the hour: every tick while you are awake it tops up any bed around it the moment it drops below the growing band, planted or not, so a bed is already wet when you plant into it (the reason it seemed to wait for 0% was that it only watered planted beds, once an hour). It is called Sprinkler I now, in the catalogue and the pocket, with stronger ones to come, and the price is flat: no growth per sprinkler owned (the user wants scaling to come from upgrades and infrastructure instead). The sprite is smaller and rounder: a short post with a round head lit from the top left, standing in its own shadow; while it sprays, eight solid streams reach across the whole 3×3, turning between two frames, with no dots anywhere. A fertilised bed is a plain lighter shade instead of dark spots (the user has trypophobia). The ground card on a fertilised bed shows what the bag changes as before → after: ripening time, harvest count (2× → 3.2×), and stars. The ripening estimate now includes the fertiliser's speed. The catalogue's Seeds header says when the packets change (every 3 days). Tests: 69.
+
+**Build 36.** Pipes: the infrastructure under the sprinklers, the base of the "make it physical" pivot. The catalogue's Automation group sells Pipe ×10 for $20, delivered to a pocket. Holding pipe, click a clear tile to lay one section there (yard or your land, never a bed, never the track): it costs one section and a little energy, and the hoe picks a section back up. Pipe tiles join up on the ground automatically, and a section with an unbroken line back to the well shows a blue core; a loose one is plain grey. Sprinkler I runs only on a fed pipe tile: set on bare ground it says "Dry: it needs pipe under it that reaches the well", the ground card on it says Running or Dry, and the "Under a sprinkler" note on a bed appears only when the sprinkler is really running. Saves with sprinklers set before pipes existed find two packs in the chest. The sprinkler price stays flat at $140: the limit on automation is now how far you can lay pipe, not a rising price. Pumps (hand, windmill, engine) that set how many sprinklers one line can carry, Sprinkler II and III, and wiring for stage-4 machines come after this has been played. Tests: 71.
+
+**Build 37.** The economy answers "why breed when sweetcorn pays best". Two changes. The cart's buyer has a daily order per kind: in one pickup the first 8 of a species fetch the full price, the next 8 fetch 60%, and the rest 40%; the cart sells the surplus on cheaper. A crate of 24 of one crop pays two thirds of full; three kinds of eight pay full; starred crops go to the buyer first. The crate card, the crate panel and the morning card show it per line ("8 at the buyer's price, 16 sold on cheaper"). And hybrid vigour: a new vigour gene (0–1) that a cross between families sets to the better parent's plus a step of about 0.3, and a same-family cross lets fade; each point adds 50% to the price, so a first cross-family child sells about 15–22% dearer than its blend of parents alone, and the step passes down and grows. It shows as "▲ hybrid vigour · sells ×1.18" on the cards, and the bench's (i) text says the recipe: cross your two dearest crops from different families, because cheap parents drag a child down. Old saves get vigour 0 on load. Tests: 73.
+
