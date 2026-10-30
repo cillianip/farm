@@ -774,8 +774,8 @@ await test('the catalogue sells sprinklers at a flat price and the cart delivers
   const { catalog, placeOrder } = await import('../src/catalog.js');
   const s = arm(S.createState(1)); s.money = 1e6;
   const price = () => catalog(s).find(i => i.id === 'sprinkler').price;
-  const p0 = price(); assert.equal(p0, CONFIG.sprinkler.cost);
-  assert.ok(placeOrder(s, 'sprinkler').ok); assert.equal(price(), r2(p0 * CONFIG.sprinkler.costGrowth), 'the next one follows costGrowth (flat for now)');
+  const p0 = price(); assert.equal(p0, CONFIG.sprinkler.tiers[0].price);
+  assert.ok(placeOrder(s, 'sprinkler').ok); assert.equal(price(), p0, 'flat: the next one costs the same');
   S.sleep(s); assert.ok(s.parcels.some(p => p.id === 'sprinkler'));
   const r = S.collectParcels(s); assert.ok(r.ok, r.msg);
   assert.ok(s.inventory.slots.some(i => i?.kind === 'sprinkler') || s.chest.slots.some(i => i?.kind === 'sprinkler'));
@@ -910,6 +910,26 @@ await test('the catalogue sells the three pumps and the cart delivers them to a 
   S.sleep(s); assert.ok(s.parcels.some(p => p.id === 'pump1')); S.collectParcels(s);
   const it = [...s.inventory.slots, ...s.chest.slots].find(i => i?.kind === 'pump'); assert.ok(it && it.level === 1, JSON.stringify(it));
   assert.equal(itemKey(it), 'pump::0::1'); assert.notEqual(itemKey(it), itemKey({ kind: 'pump', level: 0, qty: 1 }), 'tiers stack apart');
+});
+await test('Sprinkler II and III reach 2 and 3 tiles and draw more of the line: a III on the bare well has no pressure, a hand pump runs it', async () => {
+  const s = arm(S.createState(1)); const W = s.world, well = WB.well, tile = (x, y) => W.tiles[y * W.w + x]; s.humidity = 50;
+  const row = Y + 1; for (let y = well.y + 1; y <= row; y++) tile(well.x, y).pipe = true; for (let x = X; x <= well.x; x++) tile(x, row).pipe = true;
+  addItem(s.inventory, { kind: 'sprinkler', level: 2, qty: 1 }); const slot = () => s.inventory.slots.findIndex(i => i?.kind === 'sprinkler');
+  s.player.x = X + 0.5; s.player.y = row + 1.5;
+  let r = S.useItem(s, slot(), X, row); assert.ok(r.ok && /No pressure/.test(r.msg), JSON.stringify(r)); assert.equal(tile(X, row).obj.level, 2);
+  assert.equal(S.pressure(s).used, 0); assert.ok(!S.sprinklerCovers(s, X + 3, row + 3));
+  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0 }; s.pipeRev++;
+  assert.ok(S.sprinklerFed(s, X, row)); assert.equal(S.pressure(s).used, CONFIG.sprinkler.tiers[2].draw);
+  assert.ok(S.sprinklerCovers(s, X + 3, row + 3) && !S.sprinklerCovers(s, X + 4, row), 'reach 3');
+  s.player.x = X + 3.5; s.player.y = row + 4.5; assert.ok(S.useItem(s, 0, X + 3, row + 3).ok, 'hoe');
+  tickMinutes(s, 0.05); assert.ok(S.moistureOf(tile(X + 3, row + 3)) > 0, 'a III waters three tiles out');
+  s.player.x = X + 0.5; s.player.y = row + 1.5; r = S.useItem(s, 0, X, row); assert.ok(r.ok && s.inventory.slots.some(i => i?.kind === 'sprinkler' && i.level === 2), 'the hoe takes it back as a III');
+  tile(well.x, well.y + 1).obj = null; s.inventory.slots[slot()] = { kind: 'sprinkler', level: 1, qty: 1 }; s.pipeRev++;
+  r = S.useItem(s, slot(), X, row); assert.ok(r.ok && r.msg === '', 'a II runs on the well alone: ' + JSON.stringify(r)); assert.ok(S.sprinklerCovers(s, X + 2, row + 2) && !S.sprinklerCovers(s, X + 3, row), 'reach 2');
+  const { catalog, placeOrder } = await import('../src/catalog.js'); s.money = 2000;
+  const rows = catalog(s).filter(i => i.id.startsWith('sprinkler')); assert.deepEqual(rows.map(i => i.price), CONFIG.sprinkler.tiers.map(t => t.price));
+  assert.ok(placeOrder(s, 'sprinkler2').ok); S.sleep(s); S.collectParcels(s);
+  assert.ok([...s.inventory.slots, ...s.chest.slots].some(i => i?.kind === 'sprinkler' && i.level === 2), 'a III arrives as a III');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

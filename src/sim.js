@@ -418,7 +418,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : 'Set it on your own land');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler' }; state.pipeRev = (state.pipeRev || 0) + 1;
+    t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
     return { ok: true, msg: !pipeFed(state, x, y) ? 'Dry: it needs pipe under it that reaches the well' : sprinklerFed(state, x, y) ? '' : 'No pressure: the line runs all it can. A pump on the line adds more', float: 'Set' };
   }
   if (item.kind === 'pump') {
@@ -568,6 +568,7 @@ export function takeSeeds(state) {
 
 // ---------- sprinklers ----------
 export const isSprinkler = t => t?.obj?.kind === 'sprinkler';
+export const sprinklerTier = obj => CONFIG.sprinkler.tiers[obj?.level || 0];
 export const isPipe = t => !!t?.pipe;
 // The pipe network: which pipe tiles have an unbroken line back to the well, and how far down the line each one is.
 // Walked from the well's four neighbours, cached until a section, sprinkler or pump is laid or picked up (state.pipeRev).
@@ -599,15 +600,16 @@ export function pressure(state) {
   let cap = CONFIG.pump.wellFeeds, pumps = 0, running = 0;
   for (const { x, y, t } of pumpTiles(state)) if (net.set.has(idx(x, y))) { pumps++; if (pumpRunning(state, t)) { cap += pumpTier(t.obj).feeds; running++; } }
   const fed = sprinklerTiles(state).filter(({ x, y }) => net.set.has(idx(x, y))).sort((a, b) => net.dist.get(idx(a.x, a.y)) - net.dist.get(idx(b.x, b.y)));
-  const on = new Set(fed.slice(0, cap).map(({ x, y }) => idx(x, y)));
-  net.pressure = { cap, on, fed: fed.length, pumps, running }; net.pressureH = h;
+  const on = new Set(); let used = 0;   // each sprinkler draws its tier's share; the first that does not fit stops the line there
+  for (const { x, y } of fed) { const d = sprinklerTier(tileAt(w, x, y).obj).draw; if (used + d > cap) break; used += d; on.add(idx(x, y)); }
+  net.pressure = { cap, used, on, fed: fed.length, pumps, running }; net.pressureH = h;
   return net.pressure;
 }
 // a sprinkler that runs: on fed pipe, and within the line's pressure
 export const sprinklerFed = (state, x, y) => isSprinkler(tileAt(state.world, x, y)) && pressure(state).on.has(y * state.world.w + x);
 export function sprinklerTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) if (isSprinkler(w.tiles[y * w.w + x])) out.push({ x, y }); return out; }
 // true when a RUNNING sprinkler (on fed pipe) reaches this tile
-export function sprinklerCovers(state, x, y) { const R = CONFIG.sprinkler.radius; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (sprinklerFed(state, x + dx, y + dy)) return true; return false; }
+export function sprinklerCovers(state, x, y) { for (const { x: sx, y: sy } of sprinklerTiles(state)) { const R = sprinklerTier(tileAt(state.world, sx, sy).obj).radius; if (Math.abs(sx - x) <= R && Math.abs(sy - y) <= R && sprinklerFed(state, sx, sy)) return true; } return false; }
 // placed, in pockets, in the chest: what you own (the catalogue prices the next one from it)
 export function sprinklerCount(state) { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === 'sprinkler' ? it.qty : 0), 0); return sprinklerTiles(state).length + held(state.inventory) + held(state.chest); }
 export const waterBill = pours => Math.round(pours * CONFIG.sprinkler.pricePerPour * 100) / 100;
@@ -615,9 +617,10 @@ export const waterBill = pours => Math.round(pours * CONFIG.sprinkler.pricePerPo
 // withered plant is left alone). Called every tick, so a bed is topped up the moment it drops out of the band.
 export function sprinklerPass(state) {
   const h = hourOf(state); if (h < CONFIG.time.wakeHour || h >= 20) return 0;
-  const w = state.world, S0 = CONFIG.soil, R = CONFIG.sprinkler.radius; let pours = 0;
+  const w = state.world, S0 = CONFIG.soil; let pours = 0;
   for (const { x, y } of sprinklerTiles(state)) {
-    if (!sprinklerFed(state, x, y)) continue;   // dry (no line to the well) or past the line's pressure
+    if (!sprinklerFed(state, x, y)) continue;
+    const R = sprinklerTier(tileAt(w, x, y).obj).radius;   // dry (no line to the well) or past the line's pressure
     let sprayed = false;
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const t = tileAt(w, x + dx, y + dy);

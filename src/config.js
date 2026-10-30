@@ -45,9 +45,13 @@ export const CONFIG = {
   // any bed within radius the moment it dries below idealMin (planted or not, so a bed is wet when you plant it). It
   // never goes above the band, so it cannot waterlog. The water is metered: pricePerPour is charged against the night's sale. Sized so
   // a sprinkler over beds the cart can sell runs at 10–20% of what they earn, and one over beds it cannot sell loses
-  // money. The price is flat (costGrowth 1): the user wants scaling to come from upgrades and infrastructure, not a rising
-  // price tag.
-  sprinkler: { cost: 140, costGrowth: 1, radius: 1, pricePerPour: 0.2, sprayMinutes: 20 },
+  // money. Prices are flat per tier: scaling comes from the tiers and the infrastructure under them, not a rising price
+  // tag. II and III reach 2 and 3 tiles (24 and 48 beds) and draw 2 and 4 of the line's pressure (see `pump`).
+  sprinkler: { pricePerPour: 0.2, sprayMinutes: 20, tiers: [
+    { name: 'Sprinkler I', radius: 1, price: 140, draw: 1 },
+    { name: 'Sprinkler II', radius: 2, price: 350, draw: 2 },
+    { name: 'Sprinkler III', radius: 3, price: 900, draw: 4 },
+  ] },
   // Pipe: the infrastructure under the sprinklers. Sections come in packs; each one laid takes a clear tile (yard or
   // your land, never a bed). A sprinkler runs only on a pipe tile with an unbroken line back to the well. The limit on
   // automation is what you can lay and where, not a rising price tag.

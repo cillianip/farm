@@ -382,25 +382,44 @@ export function pipeSprite(mask = 0, fed = false) {
     P.rect(5, 11, 7, 1, 'rgba(30,20,10,0.22)');   // shadow under the run
   });
 }
-// Sprinkler I: a short post with a round head, lit from the top left, standing in its own shadow. Frames 1–2 wet the head.
-export function sprinklerSprite(frame = 0) {
-  return sprite(`sprinkler${frame}`, 16, 16, P => {
+// Sprinklers, lit from the top left, standing in their own shadow. Frames 1–2 wet the head. Level 0 (I): a short post
+// with a round head. Level 1 (II): a taller post with a wide two-nozzle head. Level 2 (III): a tripod under a tall
+// post and a big ringed head.
+export function sprinklerSprite(level = 0, frame = 0) {
+  return sprite(`sprinkler${level}_${frame}`, 16, 16, P => {
     P.rect(5, 12, 7, 2, 'rgba(30,20,10,0.28)'); P.rect(6, 11, 5, 1, 'rgba(30,20,10,0.2)');   // shadow on the ground
-    P.rect(7, 8, 2, 5, PAL.metalDark); P.px(7, 8, PAL.metal); P.px(7, 9, PAL.metal);           // post
-    P.rect(6, 5, 4, 3, PAL.metal); P.rect(7, 4, 2, 1, PAL.metal);                              // round head
-    P.px(6, 5, PAL.metalLight); P.px(7, 4, PAL.metalLight); P.px(7, 5, PAL.metalLight);        // light from the top left
-    P.px(9, 7, PAL.metalDark); P.px(9, 6, PAL.metalDark); P.px(8, 7, PAL.metalDark);           // shade on the right
-    P.px(8, 3, PAL.outline);                                                                     // the nozzle
-    if (frame) { P.px(7, 3, PAL.waterLight); P.px(9, 3, PAL.waterLight); P.px(8, 2, frame === 1 ? PAL.water : PAL.waterLight); P.px(5, 6, PAL.waterLight); P.px(10, 5, PAL.waterLight); }
+    if (level === 0) {
+      P.rect(7, 8, 2, 5, PAL.metalDark); P.px(7, 8, PAL.metal); P.px(7, 9, PAL.metal);           // post
+      P.rect(6, 5, 4, 3, PAL.metal); P.rect(7, 4, 2, 1, PAL.metal);                              // round head
+      P.px(6, 5, PAL.metalLight); P.px(7, 4, PAL.metalLight); P.px(7, 5, PAL.metalLight);        // light from the top left
+      P.px(9, 7, PAL.metalDark); P.px(9, 6, PAL.metalDark); P.px(8, 7, PAL.metalDark);           // shade on the right
+      P.px(8, 3, PAL.outline);                                                                     // the nozzle
+      if (frame) { P.px(7, 3, PAL.waterLight); P.px(9, 3, PAL.waterLight); P.px(8, 2, frame === 1 ? PAL.water : PAL.waterLight); P.px(5, 6, PAL.waterLight); P.px(10, 5, PAL.waterLight); }
+    } else if (level === 1) {
+      P.rect(7, 6, 2, 7, PAL.metalDark); P.rect(7, 6, 1, 7, PAL.metal);                          // a taller post
+      P.rect(5, 3, 6, 3, PAL.metal); P.rect(6, 2, 4, 1, PAL.metal);                              // the wide head
+      P.px(5, 3, PAL.metalLight); P.px(6, 2, PAL.metalLight); P.rect(6, 3, 2, 1, PAL.metalLight);
+      P.rect(10, 4, 1, 2, PAL.metalDark); P.px(9, 5, PAL.metalDark);
+      P.px(5, 1, PAL.outline); P.px(10, 1, PAL.outline);                                        // two nozzles
+      if (frame) { P.px(4, 1, PAL.waterLight); P.px(11, 1, PAL.waterLight); P.px(5, 0, frame === 1 ? PAL.water : PAL.waterLight); P.px(10, 0, frame === 2 ? PAL.water : PAL.waterLight); P.px(3, 4, PAL.waterLight); P.px(12, 4, PAL.waterLight); }
+    } else {
+      P.line(7, 7, 4, 13, PAL.metalDark); P.line(8, 7, 11, 13, PAL.metalDark); P.rect(7, 5, 2, 8, PAL.metalDark); P.px(7, 5, PAL.metal); P.px(7, 6, PAL.metal);   // the tripod and post
+      P.rect(4, 2, 8, 3, PAL.metal); P.rect(5, 1, 6, 1, PAL.metal); P.rect(5, 5, 6, 1, PAL.metalDark);   // the big head
+      P.px(4, 2, PAL.metalLight); P.rect(5, 1, 3, 1, PAL.metalLight); P.px(5, 2, PAL.metalLight);
+      P.rect(11, 3, 1, 2, PAL.metalDark); P.px(10, 4, PAL.metalDark);
+      P.rect(4, 0, 8, 1, PAL.metalDark); P.px(4, 0, PAL.outline); P.px(8, 0, PAL.outline); P.px(11, 0, PAL.outline);   // the ring with its nozzles
+      if (frame) { P.px(3, 0, PAL.waterLight); P.px(12, 0, PAL.waterLight); P.px(2, 3, PAL.waterLight); P.px(13, 3, PAL.waterLight); P.px(8, 0, frame === 1 ? PAL.water : PAL.waterLight); }
+    }
   });
 }
-// The spray: 48×48 over the sprinkler's 3×3, eight solid streams reaching every bed around it, no dots. The two frames
-// are the head a half-turn apart, so it reads as turning.
-export function spraySprite(frame = 0) {
-  return sprite(`spray${frame}`, 48, 48, P => {
-    const cx = 24, cy = 21;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + (frame ? Math.PI / 8 : 0), len = i % 2 ? 19 : 22;
+// The spray: over the sprinkler's reach (R tiles each way), solid streams reaching every bed around it, no dots. More
+// streams for a wider reach. The two frames are the head a half-turn apart, so it reads as turning.
+export function spraySprite(R = 1, frame = 0) {
+  const S = (2 * R + 1) * 16, n = 8 + (R - 1) * 4, L = R * 16 + 6;
+  return sprite(`spray${R}_${frame}`, S, S, P => {
+    const cx = S / 2, cy = S / 2 - 3;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + (frame ? Math.PI / n : 0), len = i % 2 ? L - 3 : L;
       const ex = cx + Math.cos(a) * len, ey = cy + Math.sin(a) * len * 0.8 + 3;
       P.line(cx + Math.cos(a) * 4, cy + Math.sin(a) * 3, ex, ey, PAL.water);                 // the stream
       P.line(cx + Math.cos(a) * 4, cy + Math.sin(a) * 3, cx + Math.cos(a) * (len * 0.55), cy + Math.sin(a) * len * 0.44 + 1, PAL.waterLight);   // lit near the head
@@ -437,6 +456,10 @@ export function pumpSprite(level = 0, frame = 0) {
       if (frame) { const y = frame === 1 ? 0 : 1; P.px(12, y, 'rgba(120,120,130,0.8)'); P.px(13, y, 'rgba(120,120,130,0.5)'); }   // a puff
     }
   });
+}
+// A pump as a pocket icon: the sprite scaled to fit a 16×16 slot (the windmill is two tiles tall).
+export function pumpIcon(level = 0) {
+  return sprite(`pumpIcon${level}`, 16, 16, (P, ctx) => { const img = pumpSprite(level, 0), sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export function witheredSprite() {
   return sprite('withered', 16, 16, P => {

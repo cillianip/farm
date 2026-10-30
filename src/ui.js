@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpSprite } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes } from './genetics.js';
@@ -23,9 +23,9 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'seed') { const g = species[item.species]?.genome; src = g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   else if (item.kind === 'crop') { const sp = species[item.species]; src = sp ? produceSprite(sp) : null; }
   else if (item.kind === 'fert') src = fertIcon();
-  else if (item.kind === 'sprinkler') src = sprinklerSprite(0);
+  else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
-  else if (item.kind === 'pump') src = pumpSprite(item.level || 0, 0);
+  else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
   if (src) ctx.drawImage(src, 0, 0, size, size);
@@ -160,8 +160,8 @@ export class UI {
       const n = fertGrade(it.fert);
       html += `<div class="pc-row"><span>Grade</span><span>${'●'.repeat(n)}${'○'.repeat(3 - n)} ${GRADE_WORD[n]}</span></div><div class="pc-note">${esc(fertDescribe(it.fert))}</div><div class="pc-note">Click a tilled bed to work it in. One bag per bed.</div>`;
     } else if (it.kind === 'sprinkler') {
-      const R = CONFIG.sprinkler.radius, n = (2 * R + 1) ** 2 - 1;
-      html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on a pipe the well feeds. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
+      const tier = CONFIG.sprinkler.tiers[it.level || 0], R = tier.radius, n = (2 * R + 1) ** 2 - 1;
+      html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Pressure</span><span>draws ${tier.draw} of the line's</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on a pipe the well feeds. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
     } else if (it.kind === 'pump') {
       const tier = CONFIG.pump.tiers[it.level || 0];
       html += `<div class="pc-row"><span>Runs</span><span>${tier.feeds} more sprinklers</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${formatMoney(tier.fuelPerDay)} a day</span></div>` : '') + `<div class="pc-note">Set it on a pipe the well feeds. The well pushes water to ${CONFIG.pump.wellFeeds} sprinklers on its own; past that the ones furthest down the line run dry.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''} The hoe picks it up.</div>`;
@@ -363,7 +363,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'sprinkler' ? sprinklerSprite(1) : item.id.startsWith('pump') ? pumpSprite(+item.id.slice(4) || 0, 1) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
