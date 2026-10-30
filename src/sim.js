@@ -196,7 +196,7 @@ export function tick(state, dtMinutes, opts = {}) {
   if (state.hunger <= 0 || state.thirst <= 0) state.energy = Math.max(0, state.energy - N.starvingEnergyPerHour * dtH);
   // the midday cart: when the clock crosses the pickup hour it empties the crate and pays on the spot
   if (state.crate.pickups) { const m = CONFIG.crate.middayHour * 60, before = (now - dtMinutes) % MIN_PER_DAY, after = now % MIN_PER_DAY;
-    if (before < m && after >= m && state.crate.items.length) { const sale = collectCrate(state); const D = today(state); D.sale += sale.total; D.sold += sale.count; D.pickups = (D.pickups || 0) + 1; state.crate.pendingPickup = sale; } }
+    if (before < m && after >= m) { const sale = collectCrate(state); if (sale) { const D = today(state); D.sale += sale.total; D.sold += sale.count; D.pickups = (D.pickups || 0) + 1; state.crate.pendingPickup = sale; } } }
   for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) {
     const t = w.tiles[y * w.w + x];
     const c = t.crop; if (!c || c.dead) continue;
@@ -222,7 +222,7 @@ export function tick(state, dtMinutes, opts = {}) {
     if (c.health <= 0) { c.dead = true; c.health = 0; }
   }
   // sprinklers: while you are awake, a pour for any bed in reach the moment it dries below the band
-  if (!opts.asleep) sprinklerPass(state);
+  if (!opts.asleep) { sprinklerPass(state); const hr0 = hourOf(state); if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state); }   // pickers work once an hour
   // evaporation (sun only: not at night)
   const hr = hourOf(state);
   if (hr >= 6 && hr < 20) { const ev = CONFIG.soil.evaporationPerHour * evaporationFactor(state) * dtH; for (const t of w.tiles) if (t.moisture > 0) t.moisture = Math.max(0, t.moisture - ev * (t.fert?.stats?.waterKeep ? 1 - t.fert.stats.waterKeep : 1)); }
@@ -339,6 +339,7 @@ export function putInCrate(state, slotIndex, n = Infinity) {
 }
 // The overnight pickup: everything in the crate is sold at today's prices.
 export function collectCrate(state) {
+  drainHoppers(state);   // the hoppers tip into the crate first, as much as fits
   if (!state.crate.items.length) return null;
   const { lines, total, count } = priceCrate(state, state.crate.items);
   state.money += total; state.lifetime += total; state.stats.sold += count; state.stats.earned += total;
@@ -380,8 +381,9 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Picked up' }; }
+    if (t.obj) { if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Picked up' }; }
     if (t.pipe) { if (!hasRoom(state.inventory, { kind: 'pipe', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'pipe', qty: 1 }); t.pipe = false; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Pipe up' }; }
+    if (t.line) { if (!hasRoom(state.inventory, { kind: 'line', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'line', qty: 1 }); t.line = false; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Line up' }; }
     if (t.track) return fail('The track stays a track');
     if (!isOwnedFarmland(state.world, x, y)) return fail(t.t === 'grass' ? 'Not your land' : '');
     if (t.tilled) { if (!spend(state, E.clear)) return fail('Too tired'); t.tilled = false; t.fert = null; return { ok: true, msg: 'Soil flattened' }; }
@@ -428,6 +430,30 @@ export function useItem(state, slotIndex, x, y) {
     t.obj = { kind: 'pump', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
     return { ok: true, msg: pipeFed(state, x, y) ? '' : 'Dry: this pipe has no line back to the well', float: 'Set' };
   }
+  if (item.kind === 'generator') {
+    if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.tilled = false; t.fert = null; t.obj = { kind: 'generator' }; state.lineRev = (state.lineRev || 0) + 1;
+    return { ok: true, msg: generatorLive(state, x, y) ? '' : 'Lay line from it: pickers and hoppers stand on the line', float: 'Set' };
+  }
+  if (item.kind === 'line') {
+    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Line goes on clear ground');
+    if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
+    if (t.line) return fail('Line is already laid here');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.line = true; state.lineRev = (state.lineRev || 0) + 1;
+    return { ok: true, msg: '', float: linePowered(state, x, y) ? 'Laid' : 'Laid (dead)' };
+  }
+  if (item.kind === 'picker' || item.kind === 'hopper') {
+    if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
+    if (item.kind === 'hopper') { const Cr = BUILDINGS.crate; if (Math.abs(x - Cr.x) > 1 || Math.abs(y - Cr.y) > 1) return fail('The hopper stands beside the crate'); }
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.obj = { kind: item.kind, held: [] }; state.lineRev = (state.lineRev || 0) + 1;
+    return { ok: true, msg: machinePowered(state, x, y) ? '' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
+  }
   if (item.kind === 'pipe') {
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Pipe goes on clear ground');
     if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
@@ -453,10 +479,9 @@ export function drainSoil(state, x, y) {
   t.moisture = Math.max(0, moistureOf(t) - CONFIG.weather.drainPerTurn);
   return { ok: true, msg: '', float: 'Drained' };
 }
-export function harvest(state, t, x, y) {
+// What a ripe plant gives: fruits by the count gene, fertiliser yield and stars, less when it has started to rot.
+export function harvestYield(state, t, x, y) {
   const c = t.crop, sp = state.species[c.speciesId];
-  if (!spend(state, CONFIG.energy.harvest)) return fail('Too tired');
-  today(state).harvested++;
   const r = makeRng(state.seed ^ hashString(`${x},${y},${state.minutes},${state.stats.harvests}`));
   const f = t.fert?.stats || {};
   const g = sp.genome;
@@ -465,13 +490,20 @@ export function harvest(state, t, x, y) {
   const q = f.quality ? Math.min(3, Math.floor(f.quality * 4) + (r.chance((f.quality * 4) % 1) ? 1 : 0)) : 0;
   const rot = rotFactor(state, c);
   if (rot < 0.5) count = Math.max(1, Math.round(count * rot * 2));
-  const produce = { kind: 'crop', species: sp.id, q, qty: count };
+  return { kind: 'crop', species: sp.id, q, qty: count };
+}
+// After the fruit is taken: a regrowing plant drops back, anything else is gone with its fertiliser.
+function clearReaped(t, g) { if (g.regrow) { t.crop.growth = CONFIG.crop.regrowResetTo; t.crop.ripeAt = null; } else { t.crop = null; t.fert = null; } }
+export function harvest(state, t, x, y) {
+  const c = t.crop, sp = state.species[c.speciesId];
+  if (!spend(state, CONFIG.energy.harvest)) return fail('Too tired');
+  today(state).harvested++;
+  const produce = harvestYield(state, t, x, y), count = produce.qty;
   const leftP = addItem(state.inventory, produce);
   if (leftP === count && count) { state.energy += CONFIG.energy.harvest; return fail('Bag is full'); }
   state.stats.harvests++;
   c.harvests++;
-  if (g.regrow) { c.growth = CONFIG.crop.regrowResetTo; c.ripeAt = null; }
-  else { t.crop = null; t.fert = null; }
+  clearReaped(t, sp.genome);
   const got = count - leftP;
   return { ok: true, msg: '', float: `+${got} ${sp.name}`, species: sp.id, count: got };
 }
@@ -633,6 +665,87 @@ export function sprinklerPass(state) {
   return pours;
 }
 
+// ---------- power ----------
+const N4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+export const isGenerator = t => t?.obj?.kind === 'generator';
+export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper';
+export const heldCount = held => (held || []).reduce((n, it) => n + it.qty, 0);
+function addHeld(held, it) { const key = `${it.species}:${it.q || 0}`; const have = held.find(h => `${h.species}:${h.q || 0}` === key); if (have) have.qty += it.qty; else held.push({ species: it.species, q: it.q || 0, qty: it.qty }); }
+export function generatorTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isGenerator(t)) out.push({ x, y, t }); } return out; }
+export function machineTiles(state, kind = null) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isMachine(t) && (!kind || t.obj.kind === kind)) out.push({ x, y, t }); } return out; }
+// The line network: connected runs of power line, each powered by the generators standing on or beside it (their
+// `powers` add up), machines on it nearest the generators first by line distance. Cached until a section, a generator
+// or a machine is laid or picked up (state.lineRev).
+const POW = new WeakMap();
+export function lineNet(state) {
+  const w = state.world, rev = state.lineRev || 0, hit = POW.get(state);
+  if (hit && hit.rev === rev && hit.w === w) return hit;
+  const idx = (x, y) => y * w.w + x, comp = new Map(); let nComp = 0;
+  for (let i = 0; i < w.tiles.length; i++) {
+    if (!w.tiles[i].line || comp.has(i)) continue;
+    const c = nComp++; comp.set(i, c); const q = [i];
+    while (q.length) { const j = q.pop(), x = j % w.w, y = (j - x) / w.w; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy); if (t?.line && !comp.has(idx(x + dx, y + dy))) { comp.set(idx(x + dx, y + dy), c); q.push(idx(x + dx, y + dy)); } } }
+  }
+  const cap = new Array(nComp).fill(0), dist = new Map(), queue = [];
+  for (const { x, y } of generatorTiles(state)) {
+    const seen = new Set();
+    for (const [dx, dy] of [[0, 0], ...N4]) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (!t?.line) continue; const c = comp.get(k); if (!seen.has(c)) { seen.add(c); cap[c] += CONFIG.power.generator.powers; } if (!dist.has(k)) { dist.set(k, 1); queue.push(k); } }
+  }
+  while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.line && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
+  const used = new Array(nComp).fill(0), on = new Set();
+  const machines = machineTiles(state).filter(({ x, y, t }) => t.line && dist.has(idx(x, y))).sort((a, b) => dist.get(idx(a.x, a.y)) - dist.get(idx(b.x, b.y)));
+  for (const { x, y } of machines) { const c = comp.get(idx(x, y)); if (used[c] < cap[c]) { used[c]++; on.add(idx(x, y)); } }
+  const net = { rev, w, comp, dist, cap, used, on }; POW.set(state, net);
+  return net;
+}
+export const linePowered = (state, x, y) => !!tileAt(state.world, x, y)?.line && lineNet(state).dist.has(y * state.world.w + x);
+export const machinePowered = (state, x, y) => lineNet(state).on.has(y * state.world.w + x);
+export const generatorLive = (state, x, y) => [[0, 0], ...N4].some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.line);
+const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
+// Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
+// in its reach into its basket, then hands the basket to a powered hopper on the same line. Returns crops picked.
+export function machinePass(state) {
+  const P = CONFIG.power.picker, net = lineNet(state), idx = (x, y) => y * state.world.w + x; let picked = 0;
+  const hoppers = {}; for (const { x, y, t } of machineTiles(state, 'hopper')) if (net.on.has(idx(x, y))) hoppers[net.comp.get(idx(x, y))] = t;
+  for (const { x, y, t } of machineTiles(state, 'picker')) {
+    if (!net.on.has(idx(x, y))) continue;
+    const held = t.obj.held = t.obj.held || [];
+    for (let n = 0; n < P.perHour && heldCount(held) < P.holds; n++) {
+      const bed = ripeBedNear(state, x, y, P.radius); if (!bed) break;
+      const g = state.species[bed.t.crop.speciesId]?.genome; if (!g) { bed.t.crop = null; continue; }
+      const produce = harvestYield(state, bed.t, bed.x, bed.y);
+      addHeld(held, produce); state.stats.harvests++; bed.t.crop.harvests++; clearReaped(bed.t, g); picked += produce.qty;
+    }
+    const hop = hoppers[net.comp.get(idx(x, y))];
+    if (hop && held.length) { const hh = hop.obj.held = hop.obj.held || []; while (held.length && heldCount(hh) < CONFIG.power.hopper.holds) { const it = held[0], take = Math.min(CONFIG.power.hopper.holds - heldCount(hh), it.qty); addHeld(hh, { ...it, qty: take }); it.qty -= take; if (!it.qty) held.shift(); } }
+  }
+  if (picked) { const D = today(state); D.picked = (D.picked || 0) + picked; }
+  return picked;
+}
+// The hoppers tip into the crate, as much as fits; the rest waits for the next cart.
+export function drainHoppers(state) {
+  let moved = 0;
+  for (const { t } of machineTiles(state, 'hopper')) {
+    const held = t.obj.held || [];
+    while (held.length) {
+      const room = state.crate.capacity - crateCount(state); if (room <= 0) return moved;
+      const it = held[0], take = Math.min(room, it.qty), key = `${it.species}:${it.q || 0}`;
+      const have = state.crate.items.find(c => `${c.species}:${c.q || 0}` === key);
+      if (have) have.qty += take; else state.crate.items.push({ species: it.species, q: it.q || 0, qty: take });
+      it.qty -= take; moved += take; if (!it.qty) held.shift();
+    }
+  }
+  return moved;
+}
+// Empty hands on a picker or hopper: its basket into your pockets, as much as fits.
+export function takeHeld(state, x, y) {
+  const t = tileAt(state.world, x, y); if (!isMachine(t) || !t.obj.held?.length) return fail('Nothing in it');
+  const held = t.obj.held; let taken = 0;
+  while (held.length) { const it = held[0], left = addItem(state.inventory, { kind: 'crop', species: it.species, q: it.q || 0, qty: it.qty }); taken += it.qty - left; if (left) { it.qty = left; break; } held.shift(); }
+  if (!taken) return fail('Your pockets are full');
+  return { ok: true, msg: '', float: `+${taken} ${taken === 1 ? 'crop' : 'crops'}`, taken };
+}
+
 // ---------- sleep ----------
 export function sleep(state, opts = {}) {
   const report = { day: dayOf(state) + 1, forced: !!opts.forced, rain: false, breeder: null, compost: null, lines: [] };
@@ -671,9 +784,10 @@ export function sleep(state, opts = {}) {
   { const pours = state.water?.pours || 0, bill = waterBill(pours);   // the water bill: the sprinklers' metered pours, taken out of the night's money
     if (pours) { state.money = Math.max(0, Math.round((state.money - bill) * 100) / 100); report.water = { pours, bill }; D.waterBill = bill; }
     state.water = { pours: 0 }; }
-  { const fuel = pumpTiles(state).filter(({ x, y, t }) => pipeFed(state, x, y) && pumpTier(t.obj).fuelPerDay).reduce((n, { t }) => n + pumpTier(t.obj).fuelPerDay, 0);   // engines on fed pipe burn fuel every day
+  { const fuel = pumpTiles(state).filter(({ x, y, t }) => pipeFed(state, x, y) && pumpTier(t.obj).fuelPerDay).reduce((n, { t }) => n + pumpTier(t.obj).fuelPerDay, 0)   // engines on fed pipe burn fuel every day
+      + generatorTiles(state).length * CONFIG.power.generator.fuelPerDay;   // and every generator, idle or not
     if (fuel) { state.money = Math.max(0, Math.round((state.money - fuel) * 100) / 100); report.fuel = fuel; D.fuelBill = fuel; } }
-  report.yesterday = D; report.dayBefore = L.yesterday;
+  report.yesterday = D; report.dayBefore = L.yesterday; report.picked = D.picked || 0;
   L.history.push(D); if (L.history.length > 7) L.history.shift();
   L.yesterday = D; L.today = freshDay();
   report.delivery = deliverOrders(state);
@@ -681,7 +795,8 @@ export function sleep(state, opts = {}) {
   if (report.sale) report.lines.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate: +${formatMoney(report.sale.total)}.`);
   if (report.rain) report.lines.push('It rained overnight: every field is watered.');
   if (report.water) report.lines.push(`Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.`);
-  if (report.fuel) report.lines.push(`Engine fuel: −${formatMoney(report.fuel)}.`);
+  if (report.fuel) report.lines.push(`Fuel: −${formatMoney(report.fuel)}.`);
+  if (report.picked) report.lines.push(`The pickers took ${report.picked} crops.`);
   // breeder
   if (state.breeder.running) { report.breeder = resolveBreed(state); }
   if (composting && cp.ready) report.compost = `${cp.ready.name} ×${cp.readyCount || 1}`;

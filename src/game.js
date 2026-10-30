@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, generatorSprite, pickerSprite, hopperSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite } from './render/crops.js';
@@ -161,7 +161,7 @@ export class Game {
     if (it.kind === 'tool' && it.tool === 'can') { if (!t?.tilled) return this.ui.toast('Only tilled soil takes water'); if (s.can.water <= 0) return this.ui.toast('The can is empty. Fill it at the well.'); return this.startAction('water', tx, ty, CONFIG.actions.waterSeconds); }
     if (it.kind === 'seed') { if (!t?.tilled) return this.ui.toast('Till the soil first'); if (t.crop) return this.ui.toast(''); return this.startAction('plant', tx, ty, CONFIG.actions.plantSeconds); }
     const r = S.useItem(s, this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, tx + 0.5, ty, '#ffffff');
-    if (r.ok && (it.kind === 'sprinkler' || it.kind === 'pipe' || it.kind === 'pump')) { this.sound.play('move'); this.save(); }
+    if (r.ok && ['sprinkler', 'pipe', 'pump', 'generator', 'line', 'picker', 'hopper'].includes(it.kind)) { this.sound.play('move'); this.save(); }
   }
   hotbarItem() { return this.state.inventory.slots[this.selected]; }
   // Everything clickable that is not a soil tile: a rect to highlight (world px, 16 per tile) and a prompt.
@@ -181,6 +181,7 @@ export class Game {
     const CP = S.objectPos(s, 'compost');
     if (CP && s.carrying !== 'compost') out.push({ kind: 'compost', near: { ...CP, w: 1, h: 1 }, rect: [CP.x * 16, (CP.y + 1) * 16 - 20 + 1, 16, 19], label: (s.compost.ready ? (it && it.kind !== 'fert' ? 'Compost ready: empty hands to take it' : 'Take the compost') : s.compost.running ? 'Rotting down, ready by morning' : it && S.COMPOSTABLE.includes(it.kind) ? (S.compostCount(s) >= CONFIG.fertiliser.compostMax ? 'The bin is full' : 'Drop it in') : 'Compost bin') + '  (E: open, hold: pick up)' });
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
+    for (const { x, y, t } of S.machineTiles(s)) if (t.obj.held?.length) { const n = S.heldCount(t.obj.held); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); }
     const Sg = B.sign; out.push({ kind: 'sign', near: null, rect: [Sg.x * 16 - 10, (Sg.y + 1) * 16 - 22, 36, 12], label: s.orders.length ? `Catalogue  (${s.orders.length} ordered)` : this.flag ? 'Catalogue  (new: you can afford something)' : 'Catalogue' });
     return out;
   }
@@ -228,6 +229,7 @@ export class Game {
         if (S.crateCount(s) >= s.crate.capacity) { this.ui.toast('The crate is full. The cart comes tonight.'); return true; }
         this.startAction('drop', BUILDINGS.crate.x, BUILDINGS.crate.y, S.dropSeconds(s)); return true;
       }
+      case 'machine': { if (it) { this.ui.toast('Empty hands to take the crops'); return true; } const r = S.takeHeld(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('harvest'); this.save(); } return true; }
       case 'sign': { this.openSign(); return true; }
       case 'chest': { if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BUILDINGS.chest.x + 0.5, BUILDINGS.chest.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(); return true; }
       case 'eat': { this.startAction('eat', Math.floor(s.player.x), Math.floor(s.player.y), CONFIG.actions.eatSeconds); return true; }
@@ -272,7 +274,10 @@ export class Game {
     if (t.t === 'crate') return { title: 'Delivery crate', sub: 'Drop crops in. The cart collects them at night and pays in the morning.' };
     if (t.obj?.kind === 'sprinkler') return { title: S.sprinklerTier(t.obj).name, sub: S.sprinklerFed(this.state, x, y) ? 'Running: tops up the beds around it while you are awake. The hoe picks it up.' : S.pipeFed(this.state, x, y) ? 'No pressure: the line already runs all it can. A pump on the line adds more.' : 'Dry. It needs pipe under it with a line back to the well.' };
     if (t.obj?.kind === 'pump') { const tier = S.pumpTier(t.obj), P = S.pressure(this.state); return { title: tier.name, sub: !S.pipeFed(this.state, x, y) ? 'Dry: this pipe has no line back to the well.' : !S.pumpRunning(this.state, t) ? 'Still: the air is calm today. It turns when the wind picks up.' : `Running: ${tier.feeds} more sprinklers. The line runs ${Math.min(P.fed, P.cap)} of ${P.fed}.${tier.fuelPerDay ? ` Burns ${formatMoney(tier.fuelPerDay)} of fuel a day.` : ''}` }; }
-    if (t.pipe) return { title: 'Pipe', sub: S.pipeFed(this.state, x, y) ? 'Fed from the well.' : 'Dry: no unbroken line back to the well.' };
+    if (t.obj?.kind === 'generator') { const G = CONFIG.power.generator; return { title: 'Generator', sub: S.generatorLive(this.state, x, y) ? `Running: powers ${G.powers} machines on its line. Burns ${formatMoney(G.fuelPerDay)} of fuel a night. The hoe picks it up.` : `Idle: no line beside it. Burns ${formatMoney(G.fuelPerDay)} of fuel a night all the same.` }; }
+    if (t.obj?.kind === 'picker' || t.obj?.kind === 'hopper') { const n = S.heldCount(t.obj.held), name = t.obj.kind === 'picker' ? 'Picker' : 'Hopper', what = t.obj.kind === 'picker' ? 'takes a ripe crop an hour from the beds around it and hands it down the line' : 'tips into the crate when the cart comes'; return { title: name, sub: (S.machinePowered(this.state, x, y) ? `Running: ${what}.` : S.linePowered(this.state, x, y) ? 'No power: the generator runs all it can.' : 'Dead: no generator on this line.') + (n ? ` Holding ${n}: empty hands take them.` : '') }; }
+    if (t.line && !t.pipe) return { title: 'Power line', sub: S.linePowered(this.state, x, y) ? 'Powered.' : 'Dead: no generator on this line.' };
+    if (t.pipe) return { title: t.line ? 'Pipe and power line' : 'Pipe', sub: S.pipeFed(this.state, x, y) ? 'Fed from the well.' : 'Dry: no unbroken line back to the well.' };
     if (t.track) return { title: 'Cart track', sub: 'The road the delivery cart comes up at night. It leads out of the clearing.' };
     if (isTree(w, x, y)) return { title: 'Forest', sub: 'Not your land yet.' };
     if (t.tilled) return { title: 'Tilled soil', sub: S.moistureOf(t) > CONFIG.soil.soggyAbove ? 'Waterlogged. Turn it with the hoe to drain.' : t.crop?.dead ? 'Clear it with the hoe.' : t.crop ? '' : 'Ready for a seed.' };
@@ -390,6 +395,7 @@ export class Game {
     const drawables = [];   // {y, draw} sorted by base y so taller things overlap correctly
     const sprays = [];      // sprinklers spraying right now: drawn over their 3×3 after the ground pass
     const fed = S.fedPipes(s), wellB = BUILDINGS.well, pipeOrWell = (x, y) => { const t = tileAt(w, x, y); return !!t?.pipe || (x === wellB.x && y === wellB.y); };
+    const net = S.lineNet(s), lineOrGen = (x, y) => { const t = tileAt(w, x, y); return !!t?.line || S.isGenerator(t); };
     // ground + flat things
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
       const t = w.tiles[y * w.w + x], sx = x * T - cx, sy = y * T - cy;
@@ -409,8 +415,12 @@ export class Game {
       if (tree) { ctx.fillStyle = 'rgba(20,40,20,0.35)'; ctx.fillRect(sx, sy, T, T); }
       if (t.fert && t.tilled) ctx.drawImage(fertOverlay(), sx, sy, T, T);
       if (t.pipe) ctx.drawImage(pipeSprite((pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0), fed.has(y * w.w + x)), sx, sy, T, T);
+      if (t.line) ctx.drawImage(lineSprite((lineOrGen(x, y - 1) ? 1 : 0) | (lineOrGen(x + 1, y) ? 2 : 0) | (lineOrGen(x, y + 1) ? 4 : 0) | (lineOrGen(x - 1, y) ? 8 : 0), net.dist.has(y * w.w + x)), sx, sy, T, T);
       if (tree) drawables.push({ y: y + 1 + t.jy / 16, draw: () => ctx.drawImage(treeSprite(t.v), sx - 2 * CONFIG.scale + t.jx * CONFIG.scale, sy - T + t.jy * CONFIG.scale, 20 * CONFIG.scale, 32 * CONFIG.scale) });
       if (t.obj?.kind === 'sprinkler') { const on = (t.obj.sprayUntil || 0) > s.minutes; ctx.drawImage(sprinklerSprite(t.obj.level || 0, on ? 1 + Math.floor(now / 160) % 2 : 0), sx, sy, T, T); if (on) sprays.push([sx, sy, S.sprinklerTier(t.obj).radius]); }
+      if (t.obj?.kind === 'generator') { const live = S.generatorLive(s, x, y); drawables.push({ y: y + 1, draw: () => ctx.drawImage(generatorSprite(live ? 1 + Math.floor(now / 200) % 2 : 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
+      if (t.obj?.kind === 'picker') { const on = S.machinePowered(s, x, y), full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => ctx.drawImage(pickerSprite(on ? Math.floor(now / 700) % 2 : 0, full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
+      if (t.obj?.kind === 'hopper') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => ctx.drawImage(hopperSprite(full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
       if (t.obj?.kind === 'pump') { const lv = t.obj.level || 0, run = fed.has(y * w.w + x) && S.pumpRunning(s, t), H = lv === 1 ? 32 : lv === 2 ? 20 : 16; drawables.push({ y: y + 1, draw: () => ctx.drawImage(pumpSprite(lv, run ? 1 + Math.floor(now / (lv === 1 ? 240 : 180)) % 2 : 0), sx, sy + T - H * CONFIG.scale, T, H * CONFIG.scale) }); }
       if (t.crop) {
         const sp = s.species[t.crop.speciesId]; if (!sp) continue;
@@ -526,10 +536,14 @@ export class Game {
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
     if (!this.ui.openPanel && this.mouse.inside && !s.carrying) {
       const it = this.hotbarItem(), mt = tileAt(w, this.mouse.tx, this.mouse.ty), R = it?.kind === 'sprinkler' && !this.hit ? CONFIG.sprinkler.tiers[it.level || 0].radius : mt?.obj?.kind === 'sprinkler' ? S.sprinklerTier(mt.obj).radius : 1;
-      if ((it?.kind === 'pipe' || it?.kind === 'pump') && !this.hit && mt) { const x0 = this.mouse.tx * T - cx, y0 = this.mouse.ty * T - cy; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, T - 2, T - 2); }
+      if (['pipe', 'pump', 'line', 'generator', 'hopper'].includes(it?.kind) && !this.hit && mt) { const x0 = this.mouse.tx * T - cx, y0 = this.mouse.ty * T - cy; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, T - 2, T - 2); }
       if ((it?.kind === 'sprinkler' && !this.hit) || mt?.obj?.kind === 'sprinkler') {
         const x0 = (this.mouse.tx - R) * T - cx, y0 = (this.mouse.ty - R) * T - cy, L = (2 * R + 1) * T;
         ctx.fillStyle = 'rgba(63,143,214,0.18)'; ctx.fillRect(x0, y0, L, L); ctx.strokeStyle = 'rgba(63,143,214,0.75)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, L - 2, L - 2);
+      }
+      if ((it?.kind === 'picker' && !this.hit) || mt?.obj?.kind === 'picker') {   // a picker's reach, in green
+        const R2 = CONFIG.power.picker.radius, x0 = (this.mouse.tx - R2) * T - cx, y0 = (this.mouse.ty - R2) * T - cy, L = (2 * R2 + 1) * T;
+        ctx.fillStyle = 'rgba(143,211,106,0.18)'; ctx.fillRect(x0, y0, L, L); ctx.strokeStyle = 'rgba(143,211,106,0.8)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, L - 2, L - 2);
       }
     }
     // land to claim: drawn over the trees so the plots read as plots

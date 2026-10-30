@@ -67,6 +67,12 @@ export function catalog(state) {
     const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
     items.push({ id: 'pump' + lv, group: 'Automation', name: tier.name, effect: `On fed pipe, runs ${tier.feeds} more sprinklers${tier.stillBelow != null ? '. Stands still when the air is calm' : tier.fuelPerDay ? `. Burns ${formatMoney(tier.fuelPerDay)} of fuel a day` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
+  { const PW = CONFIG.power, count = (kind) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === kind ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === kind).length + held(state.inventory) + held(state.chest); };
+    const owned = kind => { const n = count(kind) + pendingCount(state, kind); return n ? `${n} owned` : ''; };
+    items.push({ id: 'generator', group: 'Automation', name: 'Generator', effect: `Powers ${PW.generator.powers} machines on the line laid from it. Burns ${formatMoney(PW.generator.fuelPerDay)} of fuel a night`, level: owned('generator'), price: PW.generator.price, blocked: null });
+    items.push({ id: 'line', group: 'Automation', name: `Power line ×${PW.line.packSize}`, effect: 'Sections to lay from a generator, one a tile. Pickers and hoppers stand on it', level: '', price: PW.line.packPrice, blocked: null });
+    items.push({ id: 'picker', group: 'Automation', name: 'Picker', effect: `On powered line, takes ${PW.picker.perHour === 1 ? 'a ripe crop' : PW.picker.perHour + ' ripe crops'} an hour from the ${(2 * PW.picker.radius + 1) ** 2 - 1} beds around it and hands them down the line to a hopper`, level: owned('picker'), price: PW.picker.price, blocked: null });
+    items.push({ id: 'hopper', group: 'Automation', name: 'Hopper', effect: `On powered line beside the crate. Holds ${PW.hopper.holds} crops and tips them into the crate when the cart comes`, level: owned('hopper'), price: PW.hopper.price, blocked: null }); }
   for (const key of seedOffers(state)) {
     const sp = seedSpecies(state, key);
     items.push({ id: 'seeds:' + key, group: 'Seeds', name: `${sp.name} seeds ×3`, effect: roles(sp).join(' · '), level: '', price: r2(Math.max(1, sp.seedPrice * 3)), species: sp, blocked: null });
@@ -95,12 +101,12 @@ export function whyLine(state, id) {
 }
 // The cheapest thing you cannot buy yet, and how far off it is; null when everything open is affordable.
 export function nextTarget(state) {
-  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && i.id !== 'pipe').sort((a, b) => a.price - b.price);   // consumables (seeds, pipe) are never the target
+  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && i.id !== 'pipe' && i.id !== 'line').sort((a, b) => a.price - b.price);   // consumables (seeds, pipe) are never the target
   const miss = open.find(i => i.price > state.money);
   return miss ? { item: miss, gap: miss.price - state.money } : null;
 }
 // Which open items you can afford right now, as a key; the sign flags when this grows past what you last saw.
-export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && i.id !== 'pipe').map(i => i.id).sort().join(',');
+export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && i.id !== 'pipe' && i.id !== 'line').map(i => i.id).sort().join(',');
 export function catalogueFlag(state) { const k = affordableKey(state); return k !== '' && k !== (state.catalogueSeen || ''); }
 export function markCatalogueSeen(state) { state.catalogueSeen = affordableKey(state); }
 
@@ -152,6 +158,8 @@ export function collectParcels(state) {
     else if (o.id === 'pipe') { const it = { kind: 'pipe', qty: CONFIG.pipe.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Pipe: no room in your pockets or the chest'); continue; } lines.push(`Pipe ×${CONFIG.pipe.packSize}: lay it from the well, the hoe picks it up`); }
     else if (o.id.startsWith('sprinkler')) { const it = { kind: 'sprinkler', level: +o.id.slice(9) || 0, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(`${o.name}: set it on fed pipe, the hoe picks it up`); }
     else if (o.id.startsWith('pump')) { const it = { kind: 'pump', level: +o.id.slice(4) || 0, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(`${o.name}: set it on the pipe, the hoe picks it up`); }
+    else if (o.id === 'line') { const it = { kind: 'line', qty: CONFIG.power.line.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Power line: no room in your pockets or the chest'); continue; } lines.push(`Power line ×${CONFIG.power.line.packSize}: lay it from the generator, the hoe picks it up`); }
+    else if (o.id === 'generator' || o.id === 'picker' || o.id === 'hopper') { const it = { kind: o.id, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(o.id === 'generator' ? 'Generator: set it on your land and lay line from it' : o.id === 'picker' ? 'Picker: set it on powered line by the beds it should work' : 'Hopper: set it on powered line beside the crate'); }
     else if (o.id === 'pickup') { state.crate.pickups = 1; lines.push('Midday pickup: the cart now comes at noon too'); }
     else if (o.id === 'deed') { state.deeds = (state.deeds || 0) + 1; lines.push('Land deed: claim a plot'); }
     else if (o.id.startsWith('seeds:')) { const sp = seedSpecies(state, o.id.slice(6)); const left = addItem(state.inventory, { kind: 'seed', species: sp.id, qty: 3 }); if (left === 3) { keep.push(o); lines.push(`${sp.name} seeds: hands full, left in the crate`); continue; } lines.push(`${sp.name} seeds ×${3 - left}`); if (!state.discovered.includes(sp.id)) state.discovered.push(sp.id); }

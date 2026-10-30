@@ -457,9 +457,59 @@ export function pumpSprite(level = 0, frame = 0) {
     }
   });
 }
-// A pump as a pocket icon: the sprite scaled to fit a 16×16 slot (the windmill is two tiles tall).
-export function pumpIcon(level = 0) {
-  return sprite(`pumpIcon${level}`, 16, 16, (P, ctx) => { const img = pumpSprite(level, 0), sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
+// A tall sprite as a pocket icon: scaled to fit a 16×16 slot (the windmill is two tiles tall).
+export function fitIcon(key, img) {
+  return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
+}
+export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
+export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : lineSprite(10, false);
+// Power line: a short post with a wire to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left), low on the tile so
+// it can share one with pipe; a spark on the post when powered. A section with no neighbours is a loose coil.
+export function lineSprite(mask = 0, powered = false) {
+  return sprite(`line${mask}${powered ? 'p' : ''}`, 16, 16, P => {
+    const wire = '#3b2314';
+    if (mask & 8) P.rect(0, 12, 8, 1, wire); if (mask & 2) P.rect(8, 12, 8, 1, wire);
+    if (mask & 1) P.rect(8, 0, 1, 12, wire); if (mask & 4) P.rect(8, 12, 1, 4, wire);
+    P.rect(6, 15, 4, 1, 'rgba(30,20,10,0.25)');
+    P.rect(7, 10, 2, 5, PAL.woodDark); P.px(7, 10, PAL.woodLight);   // the post
+    if (!mask) { P.rect(4, 12, 8, 1, wire); P.rect(4, 11, 1, 3, wire); P.rect(11, 11, 1, 3, wire); }
+    if (powered) { P.px(8, 9, PAL.gold); P.px(7, 9, '#fff1b8'); }
+  });
+}
+// The generator (16×20): a boxed motor in red iron on skids, a coil window, a stack; frames puff.
+export function generatorSprite(frame = 0) {
+  return sprite(`generator${frame}`, 16, 20, P => {
+    P.rect(2, 18, 13, 2, 'rgba(30,20,10,0.28)');
+    P.rect(2, 9, 12, 9, PAL.roofDark); P.rect(3, 10, 10, 7, PAL.roof); P.rect(3, 10, 10, 1, '#d9736a');   // the block
+    P.rect(4, 12, 4, 4, PAL.metalDark); P.rect(5, 13, 2, 2, frame ? PAL.gold : PAL.metal);          // the coil window
+    P.rect(9, 12, 3, 1, PAL.metalDark); P.rect(9, 14, 3, 1, PAL.metalDark);                           // vents
+    P.rect(12, 3, 2, 7, PAL.metalDark); P.px(12, 3, PAL.metal); P.rect(11, 2, 4, 1, PAL.metalDark);   // the stack
+    P.rect(1, 15, 1, 3, PAL.woodDark); P.rect(14, 15, 1, 3, PAL.woodDark);                           // the skids
+    if (frame) { const y = frame === 1 ? 0 : 1; P.px(13, y, 'rgba(120,120,130,0.8)'); P.px(14, y, 'rgba(120,120,130,0.5)'); }   // a puff
+  });
+}
+// The picker (16×20): a post with a jointed arm and a basket at its foot; frames swing the arm; `full` shows crops.
+export function pickerSprite(frame = 0, full = false) {
+  return sprite(`picker${frame}${full ? 'f' : ''}`, 16, 20, P => {
+    P.rect(4, 18, 9, 2, 'rgba(30,20,10,0.28)');
+    P.rect(7, 6, 2, 12, PAL.metalDark); P.rect(7, 6, 1, 12, PAL.metal);                               // the post
+    P.rect(6, 5, 4, 2, PAL.metalDark); P.px(6, 5, PAL.metalLight);                                     // the joint
+    if (frame === 1) { P.line(8, 6, 13, 2, PAL.metal); P.line(13, 2, 15, 4, PAL.metalDark); P.px(15, 5, PAL.outline); }   // arm up and out
+    else { P.line(8, 6, 2, 9, PAL.metal); P.line(2, 9, 1, 13, PAL.metalDark); P.px(1, 14, PAL.outline); }             // arm down to a bed
+    P.rect(9, 13, 6, 5, PAL.woodDark); P.rect(10, 14, 4, 3, PAL.wood);                                // the basket
+    if (full) { P.px(10, 13, '#e86a6a'); P.px(12, 13, '#f6c453'); P.px(13, 13, '#8fd36a'); }
+  });
+}
+// The hopper (16×20): a funnel on legs with a spout; `full` shows crops at the lip.
+export function hopperSprite(full = false) {
+  return sprite(`hopper${full ? 'f' : ''}`, 16, 20, P => {
+    P.rect(3, 18, 11, 2, 'rgba(30,20,10,0.28)');
+    P.rect(2, 3, 12, 1, PAL.metalDark); P.rect(2, 4, 12, 6, PAL.metalDark); P.rect(3, 5, 10, 4, PAL.metal); P.rect(3, 5, 10, 1, PAL.metalLight);   // the mouth
+    P.rect(4, 10, 8, 3, PAL.metalDark); P.rect(5, 10, 6, 2, PAL.metal);                               // narrowing
+    P.rect(6, 13, 4, 3, PAL.metalDark); P.rect(7, 13, 2, 2, PAL.metal);                                // the spout
+    P.rect(2, 10, 1, 8, PAL.metalDark); P.rect(13, 10, 1, 8, PAL.metalDark);                           // legs
+    if (full) { P.px(5, 4, '#e86a6a'); P.px(7, 4, '#f6c453'); P.px(9, 4, '#8fd36a'); P.px(11, 4, '#e8a23b'); }
+  });
 }
 export function witheredSprite() {
   return sprite('withered', 16, 16, P => {
