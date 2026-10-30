@@ -146,8 +146,20 @@ await test('regrowing crops come back after harvest', () => {
   S.useItem(s, 0, X, Y); S.useItem(s, slot, X, Y);
   const t = s.world.tiles[Y * s.world.w + X]; wet(s, t);
   for (let m = 0; m < tomato.genome.growHours * 60 * 1.3; m += 60) { wet(s, t); tickMinutes(s, 60); }   // kept watered; long enough even with the slower night hours
+  t.fert = { name: 'Plain compost I', stats: {}, id: 'fx' };
   const r = S.useItem(s, 0, X, Y); assert.ok(r.ok && r.count === 3, JSON.stringify(r));
   assert.ok(t.crop && t.crop.growth === CONFIG.crop.regrowResetTo);
+  assert.equal(t.fert, null, 'the harvest spends the bag on a regrowing plant too');
+});
+await test('second-hand: machines, pipe, line and belt go in the crate and the cart pays half the list price', () => {
+  const s = arm(S.createState(1));
+  s.inventory.slots[2] = { kind: 'sprinkler', level: 1, qty: 1 }; s.inventory.slots[3] = { kind: 'pipe', qty: 4 }; s.inventory.slots[4] = { kind: 'fert', fert: { name: 'x', stats: {}, id: 'f' }, qty: 1 };
+  assert.equal(S.useItem.length, 4); assert.equal(S.putInCrate(s, 4).msg, 'Crops go in the crate, and machines to sell second-hand');
+  let r = S.putInCrate(s, 2); assert.ok(r.ok && r.float === '+1 Sprinkler II', JSON.stringify(r)); r = S.putInCrate(s, 3); assert.ok(r.ok && r.count === 4);
+  assert.equal(S.crateCount(s), 5); assert.equal(S.secondHand({ kind: 'sprinkler', level: 1 }), CONFIG.sprinkler.tiers[1].price / 2);
+  const P = S.priceCrate(s, s.crate.items); assert.equal(P.lines.length, 2); assert.equal(P.lines[0].name, 'Sprinkler II (second-hand)'); assert.equal(P.lines[0].total, CONFIG.sprinkler.tiers[1].price / 2);
+  assert.equal(P.lines[1].total, Math.round(CONFIG.pipe.packPrice / CONFIG.pipe.packSize / 2 * 4 * 100) / 100); assert.equal(P.count, 5);
+  const m = s.money, sale = S.collectCrate(s); assert.ok(Math.abs(s.money - m - P.total) < 1e-9 && sale.count === 5 && !s.crate.items.length);
 });
 await test('neighbouring different species grow faster', () => {
   const s = arm(S.createState(1)); s.player.x = X + 0.5; s.player.y = Y + 0.5;
@@ -753,19 +765,22 @@ await test('a sprinkler tops up every bed around it the moment it dries below th
   const tile = (x, y) => s.world.tiles[y * s.world.w + x];
   { const well = WB.well; for (let y = well.y + 1; y <= Y + 1; y++) tile(well.x, y).pipe = true; for (let x = X; x <= well.x; x++) tile(x, Y + 1).pipe = true; tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0 }; s.pipeRev = 1; }   // a pipe line from the well to the sprinkler, with a hand pump at the well: the farm is past the well's own reach
   assert.ok(S.sprinklerFed(s, X, Y + 1), 'fed');
-  tile(X + 1, Y + 1).moisture = 60;                       // already wet: no pour
-  tickMinutes(s, 0.05); tickMinutes(s, 0.05);             // two frames: a bone-dry bed takes two pours to reach the band
-  for (const [x, y] of [beds[0], beds[2], beds[3]]) { const mo = S.moistureOf(tile(x, y)); assert.ok(mo >= S0.idealMin && mo <= S0.idealMax, `bed ${x},${y} in the band: ${mo}`); }
-  assert.ok(S.moistureOf(tile(X + 1, Y + 1)) <= 60 && S.moistureOf(tile(X + 1, Y + 1)) > 55, 'wet bed left alone');
-  assert.equal(s.water.pours, 6, 'two pours for each of the three dry beds, the empty one included');
-  assert.ok(S.sprinklerCovers(s, X - 1, Y) && !S.sprinklerCovers(s, X + 3, Y));
+  tile(X + 1, Y + 1).moisture = 60;                       // already wet: no spray
+  const topTo = Math.min(S0.idealMax, S0.idealMin + S0.waterPerPour), perMin = S0.waterPerPour / CONFIG.sprinkler.sprayMinutes;
+  tickMinutes(s, 5);                                      // gradual: five minutes wets a bone-dry bed a quarter of a pour, not a pour at once
+  for (const [x, y] of [beds[0], beds[2], beds[3]]) assert.ok(Math.abs(S.moistureOf(tile(x, y)) - 5 * perMin) < 0.5 && tile(x, y).spray, `bed ${x},${y} after five minutes: ${S.moistureOf(tile(x, y))}`);
   assert.ok(tile(X, Y + 1).obj.sprayUntil > s.minutes, 'it is spraying');
-  tickMinutes(s, 60); assert.equal(s.water.pours, 6, 'an hour in the band: no pour');
-  tile(X - 1, Y).moisture = S0.idealMin - 1; tickMinutes(s, 0.05); assert.equal(s.water.pours, 7, 'the moment a bed dips under the band it gets a pour');
-  assert.ok(S.moistureOf(tile(X - 1, Y)) > S0.idealMin + 30);
-  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const m = s.money;
+  tickMinutes(s, 60);                                     // long enough to top up: it stops a pour above the band
+  for (const [x, y] of [beds[0], beds[2], beds[3]]) { const mo = S.moistureOf(tile(x, y)); assert.ok(mo > S0.idealMin && mo <= topTo && !tile(x, y).spray, `bed ${x},${y} topped up: ${mo}`); }
+  assert.ok(S.moistureOf(tile(X + 1, Y + 1)) <= 60 && S.moistureOf(tile(X + 1, Y + 1)) > 50, 'wet bed left alone');
+  assert.ok(Math.abs(s.water.pours - 3 * topTo / S0.waterPerPour) < 0.1, 'the meter counts the water: ' + s.water.pours);
+  assert.ok(S.sprinklerCovers(s, X - 1, Y) && !S.sprinklerCovers(s, X + 3, Y));
+  const p1 = s.water.pours; tickMinutes(s, 60); assert.equal(s.water.pours, p1, 'an hour in the band: nothing');
+  tile(X - 1, Y).moisture = S0.idealMin - 1; tickMinutes(s, 0.05); assert.ok(s.water.pours > p1 && s.water.pours < p1 + 0.01 && tile(X - 1, Y).spray, 'the moment a bed dips under the band the spray turns to it');
+  tickMinutes(s, 30); assert.ok(S.moistureOf(tile(X - 1, Y)) > S0.idealMin + 30 && !tile(X - 1, Y).spray, 'topped up in half an hour');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const m = s.money, tot = s.water.pours;
   const rep = S.sleep(s);
-  assert.ok(rep.water && rep.water.pours === 7 && Math.abs(rep.water.bill - 7 * CONFIG.sprinkler.pricePerPour) < 1e-9, JSON.stringify(rep.water));
+  assert.ok(rep.water && rep.water.pours === Math.round(tot) && Math.abs(rep.water.bill - Math.round(tot * CONFIG.sprinkler.pricePerPour * 100) / 100) < 1e-9, JSON.stringify(rep.water) + ' for ' + tot);
   assert.ok(Math.abs(s.money - (m - rep.water.bill)) < 1e-9, 'bill taken'); assert.equal(s.water.pours, 0);
   const r = S.useItem(s, 0, X, Y + 1);                    // the hoe picks it up
   assert.ok(r.ok && r.float === 'Picked up' && !tile(X, Y + 1).obj && s.inventory.slots.some(i => i?.kind === 'sprinkler'));
@@ -797,7 +812,10 @@ await test('pipe: laid from the well a tile at a time; a sprinkler runs only on 
   // a loose section away from the line is dry
   s.player.x = 28.5; s.player.y = 23.5; let r = S.useItem(s, pipe(), 28, 24); assert.ok(r.ok && r.float === 'Laid (dry)', JSON.stringify(r)); assert.ok(!S.pipeFed(s, 28, 24));
   // not through a bed, not on the track, not in the trees
-  assert.ok(S.useItem(s, 0, 28, 23).ok, 'hoe a bed'); assert.equal(S.useItem(s, pipe(), 28, 23).msg, 'Not through a bed: flatten it first');
+  // under a bed: the bed stays a bed; the hoe flattens it first and lifts the pipe second
+  assert.ok(S.useItem(s, 0, 28, 23).ok, 'hoe a bed'); r = S.useItem(s, pipe(), 28, 23); assert.ok(r.ok && r.float === 'Laid (dry) under the bed' && s.world.tiles[23 * s.world.w + 28].tilled && s.world.tiles[23 * s.world.w + 28].pipe, JSON.stringify(r));
+  r = S.useItem(s, 0, 28, 23); assert.ok(r.ok && r.float === 'Flattened' && r.msg === 'Flattened: the hoe lifts what ran under it next' && s.world.tiles[23 * s.world.w + 28].pipe, JSON.stringify(r));
+  r = S.useItem(s, 0, 28, 23); assert.ok(r.ok && r.float === 'Pipe up' && !s.world.tiles[23 * s.world.w + 28].pipe, JSON.stringify(r));
   s.player.x = 34.5; s.player.y = 26.5; assert.equal(S.useItem(s, pipe(), 34, 27).msg, 'Pipe goes on clear ground');
   // a sprinkler at the end of the line runs; one on the loose section is dry
   s.player.x = E.x + 0.5; s.player.y = E.y + 1.5; r = S.useItem(s, spr, E.x, E.y); assert.ok(r.ok && r.msg === '', JSON.stringify(r)); assert.ok(S.sprinklerFed(s, E.x, E.y));
@@ -1039,7 +1057,8 @@ await test('placing the chain: line and belt on clear ground only and never on e
   let r = S.useItem(s, slotOf('generator'), X, Y); assert.ok(r.ok && /Lay line/.test(r.msg), JSON.stringify(r)); tile(X, Y).obj.fuel = 4;
   r = S.useItem(s, slotOf('line'), X + 1, Y); assert.ok(r.ok && r.float === 'Laid', JSON.stringify(r));
   s.player.x = X + 3.5; s.player.y = Y + 1.5; r = S.useItem(s, slotOf('line'), X + 3, Y); assert.ok(r.ok && r.float === 'Laid (dead)', 'a loose section: ' + JSON.stringify(r));
-  assert.ok(S.useItem(s, 0, X + 2, Y + 1).ok, 'hoe a bed'); assert.equal(S.useItem(s, slotOf('line'), X + 2, Y + 1).msg, 'Not through a bed: flatten it first');
+  assert.ok(S.useItem(s, 0, X + 2, Y + 1).ok, 'hoe a bed'); r = S.useItem(s, slotOf('line'), X + 2, Y + 1); assert.ok(r.ok && r.float === 'Laid (dead) under the bed' && s.world.tiles[(Y + 1) * s.world.w + X + 2].tilled, 'line runs under a bed: ' + JSON.stringify(r));
+  r = S.useItem(s, 0, X + 2, Y + 1); assert.ok(r.ok && r.float === 'Flattened' && s.world.tiles[(Y + 1) * s.world.w + X + 2].line, 'flatten first'); r = S.useItem(s, 0, X + 2, Y + 1); assert.ok(r.ok && r.float === 'Line up', 'then lift');
   s.player.x = Cr.x - 0.5; s.player.y = Cr.y + 0.5; assert.equal(S.useItem(s, slotOf('line'), Cr.x, Cr.y).msg, 'Line goes on clear ground');
   s.inventory.slots[slotOf('generator') >= 0 ? slotOf('generator') : 4] = { kind: 'hopper', qty: 1 };
   s.player.x = X + 1.5; s.player.y = Y + 1.5;
@@ -1049,7 +1068,7 @@ await test('placing the chain: line and belt on clear ground only and never on e
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s); assert.ok(!rep.sale, 'away from the crate it is a store: the cart sees nothing'); assert.equal(S.heldCount(tile(X + 1, Y).obj.held), 3);
   // belt: clear ground, not a bed, not under a machine; it shares a tile with line; a machine cannot stand on it
   s.inventory.slots[s.inventory.slots.findIndex(i => !i)] = { kind: 'belt', qty: 10 };
-  assert.equal(S.useItem(s, slotOf('belt'), X + 2, Y + 1).msg, 'Not through a bed: flatten it first');
+  assert.ok(S.useItem(s, 0, X + 2, Y + 1).ok, 'hoe the bed again'); assert.equal(S.useItem(s, slotOf('belt'), X + 2, Y + 1).msg, 'Not through a bed: flatten it first');   // the belt stays on the surface
   assert.equal(S.useItem(s, slotOf('belt'), X + 1, Y).msg, 'Something stands there');
   r = S.useItem(s, slotOf('belt'), X + 2, Y); assert.ok(r.ok && r.float === 'Laid', 'beside the powered hopper, on its line tile, it runs at once: ' + JSON.stringify(r)); assert.ok(tile(X + 2, Y).belt && S.beltRunning(s, X + 2, Y));
   r = S.useItem(s, slotOf('belt'), X + 2, Y + 2); assert.ok(r.ok && r.float === 'Laid (still)', 'a loose section: ' + JSON.stringify(r));
@@ -1099,7 +1118,7 @@ await test('the hoe flattens an empty bed back to grass (and says when fertilise
   r = S.useItem(s, 0, X, Y); assert.ok(r.ok && /fertiliser is lost/.test(r.msg) && !tile(X, Y).fert, JSON.stringify(r));
   const { catalog } = await import('../src/catalog.js'); const items = catalog(s);
   assert.deepEqual(items.filter(i => i.family === 'Sprinkler').map(i => i.tier), ['I', 'II', 'III']);
-  assert.deepEqual(items.filter(i => i.family === 'Pump').map(i => i.tier), CONFIG.pump.tiers.map(t => t.name));
+  assert.deepEqual(items.filter(i => i.family === 'Pump').map(i => i.tier), CONFIG.pump.tiers.map(t => t.name.replace(' pump', '')));   // the chip says Hand, the row says Hand pump
   assert.equal(items.filter(i => i.family === 'Borrow').length, CONFIG.loan.sizes.length);
 });
 

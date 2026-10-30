@@ -355,10 +355,23 @@ export function compostSprite(level = 0) {
 }
 // Fertiliser worked into a bed: a scatter of dark crumbs and a fleck of green, drawn over the soil under the plant.
 // A fertilised bed is simply a shade lighter (worked compost), with no spots: a plain wash, a touch lighter at the top.
+// Fertilised soil: dark crumbs of compost worked in, and a few bits of straw. No wash over the tile.
 export function fertOverlay() {
   return sprite('fertOverlay', 16, 16, P => {
-    P.rect(0, 0, 16, 16, 'rgba(236,216,160,0.2)');
-    P.rect(1, 1, 14, 2, 'rgba(236,216,160,0.14)');
+    const dark = 'rgba(38,22,10,0.55)', straw = 'rgba(240,222,160,0.6)';
+    for (const [x, y] of [[2, 3], [9, 2], [13, 5], [5, 7], [11, 9], [1, 11], [7, 12], [14, 13], [4, 14]]) { P.rect(x, y, 2, 1, dark); P.px(x + 1, y + 1, dark); }
+    for (const [x, y] of [[6, 2], [12, 7], [3, 9], [9, 14]]) P.px(x, y, straw);
+  });
+}
+// Pipe or line under a bed: a seam of turned soil along its run, joined to each neighbour it meets.
+export function buriedSprite(mask = 0) {
+  return sprite(`buried${mask}`, 16, 16, P => {
+    const seam = 'rgba(52,32,16,0.5)', edge = 'rgba(120,84,48,0.35)';
+    const arm = (x, y, w, h) => { P.rect(x, y, w, h, seam); };
+    if (mask & 1) arm(7, 0, 3, 8); if (mask & 4) arm(7, 8, 3, 8); if (mask & 8) arm(0, 7, 8, 3); if (mask & 2) arm(8, 7, 8, 3);
+    if (!mask) arm(7, 7, 3, 3);
+    P.rect(7, 7, 3, 3, seam);
+    if (mask & 1) P.px(7, 2, edge); if (mask & 4) P.px(9, 13, edge); if (mask & 8) P.px(2, 7, edge); if (mask & 2) P.px(13, 9, edge);
   });
 }
 export function breederSprite(frame = 0) {

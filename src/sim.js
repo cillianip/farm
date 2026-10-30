@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
 import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared } from './world.js';
-import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom } from './items.js';
+import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney } from './economy.js';
 import { makeCompost } from './fertiliser.js';
@@ -224,7 +224,7 @@ export function tick(state, dtMinutes, opts = {}) {
   }
   // sprinklers: while you are awake, a pour for any bed in reach the moment it dries below the band
   if (!opts.asleep) {
-    sprinklerPass(state); const hr0 = hourOf(state);
+    sprinklerPass(state, dtMinutes); const hr0 = hourOf(state);
     if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // pickers work once an hour
     state.beltClock = (state.beltClock || 0) + dtMinutes; const step = CONFIG.power.belt.stepMinutes;   // the belts move a tile every few minutes
     if (state.beltClock >= step) { const n = Math.min(8, Math.floor(state.beltClock / step)); state.beltClock -= n * step; for (let i = 0; i < n; i++) beltStep(state); }
@@ -316,9 +316,14 @@ export function demandFactor(n) { const D = CONFIG.demand; if (n <= D.full) retu
 // What a pickup pays for these items: one line per species (the starred ones go to the buyer first).
 export function priceCrate(state, items) {
   const bySp = new Map();
-  for (const it of items) { if (!bySp.has(it.species)) bySp.set(it.species, []); bySp.get(it.species).push(it); }
+  for (const it of items) { const k = it.kind && it.kind !== 'crop' ? crateKey(it) : it.species; if (!bySp.has(k)) bySp.set(k, []); bySp.get(k).push(it); }
   const lines = [];
   for (const [id, its] of bySp) {
+    if (its[0].kind && its[0].kind !== 'crop') {   // second-hand: a flat price each, no buyer's limit
+      const n = its.reduce((a, b) => a + b.qty, 0), each = secondHand(its[0]);
+      lines.push({ name: `${itemName(its[0], state.species)} (second-hand)`, kind: its[0].kind, level: its[0].level || 0, qty: n, each, total: Math.round(each * n * 100) / 100, full: n, cut: 0 });
+      continue;
+    }
     let n = 0, total = 0, full = 0, cut = 0;
     for (const it of its.slice().sort((a, b) => (b.q || 0) - (a.q || 0))) { const each = salePrice(state, it); for (let i = 0; i < it.qty; i++) { n++; const f = demandFactor(n); total += each * f; if (f === 1) full++; else cut++; } }
     total = Math.round(total * 100) / 100;
@@ -327,21 +332,38 @@ export function priceCrate(state, items) {
   return { lines, total: Math.round(lines.reduce((v, l) => v + l.total, 0) * 100) / 100, count: lines.reduce((n, l) => n + l.qty, 0) };
 }
 export const crateValue = state => priceCrate(state, state.crate.items).total;
-// Move crops from a bag slot into the crate (as many as fit). Only crops: the cart buys produce, nothing else.
+// Second-hand: the cart buys machines, pipe, line and belt back at a share of the list price. Each takes a crate place.
+export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'pipe', 'line', 'belt'];
+export function listPrice(it) {
+  const C = CONFIG;
+  switch (it.kind) {
+    case 'sprinkler': return C.sprinkler.tiers[it.level || 0].price;
+    case 'pump': return C.pump.tiers[it.level || 0].price;
+    case 'generator': return C.power.generator.price;
+    case 'picker': return C.power.picker.price;
+    case 'hopper': return C.power.hopper.price;
+    case 'pipe': return C.pipe.packPrice / C.pipe.packSize;
+    case 'line': return C.power.line.packPrice / C.power.line.packSize;
+    case 'belt': return C.power.belt.packPrice / C.power.belt.packSize;
+  }
+  return 0;
+}
+export const secondHand = it => Math.round(listPrice(it) * CONFIG.crate.secondHand * 100) / 100;
+const crateKey = it => it.kind && it.kind !== 'crop' ? `${it.kind}:${it.level || 0}` : `${it.species}:${it.q || 0}`;
+// Move crops, or machines for the second-hand price, from a bag slot into the crate (as many as fit).
 export function putInCrate(state, slotIndex, n = Infinity) {
   const it = state.inventory.slots[slotIndex];
-  if (!it || it.kind !== 'crop') return fail('Only crops go in the crate');
+  if (!it || (it.kind !== 'crop' && !SELLABLE.includes(it.kind))) return fail('Crops go in the crate, and machines to sell second-hand');
   const room = state.crate.capacity - crateCount(state);
   if (room <= 0) { today(state).crateRefused++; return fail('The crate is full. The cart comes tonight.'); }
   const take = Math.min(n, it.qty, room);
   removeFromSlot(state.inventory, slotIndex, take);
-  const key = `${it.species}:${it.q || 0}`;
-  const have = state.crate.items.find(c => `${c.species}:${c.q || 0}` === key);
-  if (have) have.qty += take; else state.crate.items.push({ species: it.species, q: it.q || 0, qty: take });
-  const sp = state.species[it.species];
+  const key = crateKey(it), have = state.crate.items.find(c => crateKey(c) === key);
+  if (have) have.qty += take; else state.crate.items.push(it.kind === 'crop' ? { species: it.species, q: it.q || 0, qty: take } : { kind: it.kind, level: it.level || 0, qty: take });
+  const name = it.kind === 'crop' ? state.species[it.species]?.name || 'crop' : itemName(it, state.species);
   const full = crateCount(state) >= state.crate.capacity;
   if (full && today(state).crateFullAt == null) today(state).crateFullAt = hourOf(state);
-  return { ok: true, msg: '', float: `+${take} ${sp?.name || 'crop'}`, count: take, full };
+  return { ok: true, msg: '', float: `+${take} ${name}`, count: take, full };
 }
 // The overnight pickup: everything in the crate is sold at today's prices.
 export function collectCrate(state) {
@@ -390,11 +412,12 @@ export function useItem(state, slotIndex, x, y) {
     if (t.obj) { if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
-    if (t.pipe) { if (!hasRoom(state.inventory, { kind: 'pipe', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'pipe', qty: 1 }); t.pipe = false; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Pipe up' }; }
-    if (t.line) { if (!hasRoom(state.inventory, { kind: 'line', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'line', qty: 1 }); t.line = false; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Line up' }; }
+    // under a bed they stay put: flatten the bed first, then the hoe lifts them
+    if (t.pipe && !t.tilled) { if (!hasRoom(state.inventory, { kind: 'pipe', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'pipe', qty: 1 }); t.pipe = false; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Pipe up' }; }
+    if (t.line && !t.tilled) { if (!hasRoom(state.inventory, { kind: 'line', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'line', qty: 1 }); t.line = false; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Line up' }; }
     if (t.track) return fail('The track stays a track');
     if (!isOwnedFarmland(state.world, x, y)) return fail(t.t === 'grass' ? 'Not your land' : '');
-    if (t.tilled) { if (!spend(state, E.clear)) return fail('Too tired'); const fert = !!t.fert; t.tilled = false; t.fert = null; return { ok: true, msg: fert ? 'Soil flattened: the fertiliser is lost' : '', float: 'Flattened' }; }
+    if (t.tilled) { if (!spend(state, E.clear)) return fail('Too tired'); const fert = !!t.fert; t.tilled = false; t.fert = null; t.spray = false; return { ok: true, msg: fert ? 'Soil flattened: the fertiliser is lost' : t.pipe || t.line ? 'Flattened: the hoe lifts what ran under it next' : '', float: 'Flattened' }; }
     if (!spend(state, hoeEnergy(state))) return fail('Too tired');
     t.tilled = true; t.moisture = t.moisture || 0; today(state).hoed++; return { ok: true, msg: '' };
   }
@@ -445,14 +468,13 @@ export function useItem(state, slotIndex, x, y) {
     t.tilled = false; t.fert = null; t.obj = { kind: 'generator' }; state.lineRev = (state.lineRev || 0) + 1;
     return { ok: true, msg: generatorLive(state, x, y) ? '' : 'Lay line from it: pickers and hoppers stand on the line', float: 'Set' };
   }
-  if (item.kind === 'line') {
+  if (item.kind === 'line') {   // on open ground, or under a bed
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Line goes on clear ground');
-    if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
     if (t.line) return fail('Line is already laid here');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.line = true; state.lineRev = (state.lineRev || 0) + 1;
-    return { ok: true, msg: '', float: linePowered(state, x, y) ? 'Laid' : 'Laid (dead)' };
+    return { ok: true, msg: '', float: (linePowered(state, x, y) ? 'Laid' : 'Laid (dead)') + (t.tilled ? ' under the bed' : '') };
   }
   if (item.kind === 'fuel') {
     if (!burnsFuel(t.obj)) return fail(t.obj?.kind === 'pump' ? 'It burns nothing' : 'Fuel goes into a generator or an engine');
@@ -480,14 +502,13 @@ export function useItem(state, slotIndex, x, y) {
     const beltBy = N4.some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.belt);
     return { ok: true, msg: machinePowered(state, x, y) ? beltBy ? '' : item.kind === 'picker' ? 'Lay belt beside it to a hopper, or empty it by hand' : 'Run belt to it from the pickers' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
   }
-  if (item.kind === 'pipe') {
+  if (item.kind === 'pipe') {   // on open ground, or under a bed: the bed stays a bed
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Pipe goes on clear ground');
-    if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
     if (t.pipe) return fail('Pipe is already laid here');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.pipe = true; state.pipeRev = (state.pipeRev || 0) + 1;
-    return { ok: true, msg: '', float: pipeFed(state, x, y) ? `Laid (${headAt(state, x, y)})` : 'Laid (dry)' };
+    return { ok: true, msg: '', float: (pipeFed(state, x, y) ? `Laid (${headAt(state, x, y)})` : 'Laid (dry)') + (t.tilled ? ' under the bed' : '') };
   }
   return harvestOrInspect(state, t, x, y);
 }
@@ -518,8 +539,9 @@ export function harvestYield(state, t, x, y) {
   if (rot < 0.5) count = Math.max(1, Math.round(count * rot * 2));
   return { kind: 'crop', species: sp.id, q, qty: count };
 }
-// After the fruit is taken: a regrowing plant drops back, anything else is gone with its fertiliser.
-function clearReaped(t, g) { if (g.regrow) { t.crop.growth = CONFIG.crop.regrowResetTo; t.crop.ripeAt = null; } else { t.crop = null; t.fert = null; } }
+// After the fruit is taken: a regrowing plant drops back, anything else is gone. The harvest spends the fertiliser
+// either way: one bag, one harvest, so a regrowing bed wants a fresh bag each time.
+function clearReaped(t, g) { if (g.regrow) { t.crop.growth = CONFIG.crop.regrowResetTo; t.crop.ripeAt = null; } else t.crop = null; t.fert = null; }
 export function harvest(state, t, x, y) {
   const c = t.crop, sp = state.species[c.speciesId];
   if (!spend(state, CONFIG.energy.harvest)) return fail('Too tired');
@@ -693,22 +715,30 @@ export function sprinklerCovers(state, x, y) { for (const { x: sx, y: sy } of sp
 // placed, in pockets, in the chest: what you own (the catalogue prices the next one from it)
 export function sprinklerCount(state) { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === 'sprinkler' ? it.qty : 0), 0); return sprinklerTiles(state).length + held(state.inventory) + held(state.chest); }
 export const waterBill = pours => Math.round(pours * CONFIG.sprinkler.pricePerPour * 100) / 100;
-// One pass: each sprinkler gives one pour to every tilled bed in reach that has dried below the band (a bed with a
-// withered plant is left alone). Called every tick, so a bed is topped up the moment it drops out of the band.
-export function sprinklerPass(state) {
+// One pass: a bed in reach that dries below the band is sprayed from then on, a pour's worth of water spread over
+// sprayMinutes, until it is a pour above the band (a bed with a withered plant is left alone). Called every tick with
+// the tick's minutes, so the soil darkens gradually and the meter counts the water, not the pours.
+export function sprinklerPass(state, dtMinutes = CONFIG.sprinkler.sprayMinutes) {
   const h = hourOf(state); if (h < CONFIG.time.wakeHour || h >= 20) return 0;
-  const w = state.world, S0 = CONFIG.soil; let pours = 0;
+  const w = state.world, S0 = CONFIG.soil, rate = S0.waterPerPour / CONFIG.sprinkler.sprayMinutes * dtMinutes, topTo = Math.min(S0.idealMax, S0.idealMin + S0.waterPerPour);
+  let water = 0;
   for (const { x, y } of sprinklerTiles(state)) {
-    if (!sprinklerFed(state, x, y)) continue;
-    const R = sprinklerTier(tileAt(w, x, y).obj).radius;   // dry (no line to the well) or past the line's pressure
+    if (!sprinklerFed(state, x, y)) continue;   // dry (no line to the well) or the flow runs out before it
+    const R = sprinklerTier(tileAt(w, x, y).obj).radius;
     let sprayed = false;
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const t = tileAt(w, x + dx, y + dy);
-      if (!t?.tilled || t.crop?.dead || moistureOf(t) >= S0.idealMin) continue;
-      t.moisture = Math.min(S0.idealMax, moistureOf(t) + S0.waterPerPour); pours++; sprayed = true;
+      if (!t?.tilled || t.crop?.dead) continue;
+      const m = moistureOf(t);
+      if (!t.spray && m < S0.idealMin) t.spray = true;   // dropped out of the band: the sprinkler turns to it
+      if (!t.spray) continue;
+      const add = Math.min(rate, topTo - m);
+      if (add > 0) { t.moisture = m + add; water += add; sprayed = true; }
+      if (moistureOf(t) >= topTo - 1e-9) t.spray = false;
     }
-    if (sprayed) tileAt(w, x, y).obj.sprayUntil = state.minutes + CONFIG.sprinkler.sprayMinutes;
+    if (sprayed) tileAt(w, x, y).obj.sprayUntil = state.minutes + Math.max(3, dtMinutes * 2);
   }
+  const pours = water / S0.waterPerPour;
   state.water = state.water || { pours: 0 }; state.water.pours += pours;
   return pours;
 }
@@ -882,8 +912,8 @@ export function sleep(state, opts = {}) {
   D.tilled = w.tiles.filter(t => t.tilled).length; D.emptyBeds = w.tiles.filter(t => t.tilled && !t.crop).length; D.owned = w.chunks.length * CONFIG.world.chunk * CONFIG.world.chunk;
   report.sale = collectCrate(state);
   D.sale += report.sale?.total || 0; D.sold += report.sale?.count || 0; D.day = dayOf(state) - 1;   // the midday pickup already counted its share
-  { const pours = state.water?.pours || 0, bill = waterBill(pours);   // the water bill: the sprinklers' metered pours, taken out of the night's money
-    if (pours) { state.money = Math.max(0, Math.round((state.money - bill) * 100) / 100); report.water = { pours, bill }; D.waterBill = bill; }
+  { const pours = state.water?.pours || 0, bill = waterBill(pours);   // the water bill: the sprinklers' metered water in pours, taken out of the night's money
+    if (bill) { state.money = Math.max(0, Math.round((state.money - bill) * 100) / 100); report.water = { pours: Math.max(1, Math.round(pours)), bill }; D.waterBill = bill; }
     state.water = { pours: 0 }; }
   { let cans = 0, dry = 0;   // engines on fed pipe and generators that are switched on burn a can each; one that runs out stops
     const burn = (obj, n) => { if (!fuelOf(obj)) { dry++; return; } obj.fuel = Math.max(0, obj.fuel - n); cans += n; if (!obj.fuel) dry++; };

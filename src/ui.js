@@ -13,6 +13,9 @@ const $ = id => document.getElementById(id);
 // money a day for the cards: short, no cents past $10
 const perDay = v => (v >= 1000 ? formatMoney(v) : '$' + (v >= 10 ? Math.round(v) : v.toFixed(1))) + ' a day';
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+// Fill a details box without letting the panel shrink back: the box keeps the tallest height it has shown, so the
+// slots under the cursor never jump away and back as the card changes (the flicker at a slot's edge).
+function setDetails(d, html) { d.innerHTML = html; const h = d.offsetHeight; if (h > (d.minH || 0)) { d.minH = h; d.style.minHeight = h + 'px'; } }
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 
 export function itemIcon(item, species, size = 48) {
@@ -160,7 +163,7 @@ export class UI {
       html += `<div class="pc-note">Click a tilled bed to plant.</div>`;
     } else if (it.kind === 'fert') {
       const n = fertGrade(it.fert);
-      html += `<div class="pc-row"><span>Grade</span><span>${'●'.repeat(n)}${'○'.repeat(3 - n)} ${GRADE_WORD[n]}</span></div><div class="pc-note">${esc(fertDescribe(it.fert))}</div><div class="pc-note">Click a tilled bed to work it in. One bag per bed.</div>`;
+      html += `<div class="pc-row"><span>Grade</span><span>${'●'.repeat(n)}${'○'.repeat(3 - n)} ${GRADE_WORD[n]}</span></div><div class="pc-note">${esc(fertDescribe(it.fert))}</div><div class="pc-note">Click a tilled bed to work it in. One bag, one harvest: a regrowing plant wants a fresh bag each time.</div>`;
     } else if (it.kind === 'sprinkler') {
       const tier = CONFIG.sprinkler.tiers[it.level || 0], R = tier.radius, n = (2 * R + 1) ** 2 - 1;
       html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Flow</span><span>drinks ${tier.draw} ${tier.draw === 1 ? 'tile' : 'tiles'} of it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on pipe the flow reaches with at least that much left. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
@@ -173,7 +176,7 @@ export class UI {
     } else if (it.kind === 'fuel') {
       html += `<div class="pc-row"><span>Runs</span><span>a generator or an engine for a night</span></div><div class="pc-row"><span>Tank</span><span>${CONFIG.fuel.tank} cans</span></div><div class="pc-note">Click a generator or an engine with it in hand to pour cans in, as many as the tank takes. Off, a generator burns nothing. The hoe gives the cans back when it picks the machine up.</div>`;
     } else if (it.kind === 'line') {
-      html += `<div class="pc-row"><span>Carries</span><span>power only</span></div><div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Wire on posts. Start beside the generator and run it out to where the pickers and the hopper stand, over clear ground, never through a bed. It can share a tile with pipe and belt. Powered line shows a spark. The hoe picks a section up.</div>`;
+      html += `<div class="pc-row"><span>Carries</span><span>power only</span></div><div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Wire on posts. Start beside the generator and run it out to where the pickers and the hopper stand, over clear ground or under a bed: laid on a tilled bed it runs beneath, and the bed stays yours to plant. It can share a tile with pipe and belt. Powered line shows a spark. The hoe picks a section up.</div>`;
     } else if (it.kind === 'belt') {
       const B = CONFIG.power.belt;
       html += `<div class="pc-row"><span>Carries</span><span>crops only</span></div><div class="pc-row"><span>Holds</span><span>${B.holds} crops a tile</span></div><div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Run it from beside the pickers to beside a hopper, over clear ground, never through a bed; it can share a tile with pipe and line. The hopper's motor drives it, so a run with no powered hopper at its end stands still. Crops move one tile every ${B.stepMinutes} minutes. The hoe picks a section up; empty hands take what lies on it.</div>`;
@@ -183,11 +186,11 @@ export class UI {
     } else if (it.kind === 'hopper') {
       html += `<div class="pc-row"><span>Holds</span><span>${CONFIG.power.hopper.holds} crops</span></div><div class="pc-row"><span>Draws</span><span>${CONFIG.power.hopper.power} power</span></div><div class="pc-note">Stands on powered line where the belt ends: its motor drives the belt, which is why it draws more. Beside the crate it tips into the crate when the cart comes, as much as fits. Anywhere else it is a store you empty with empty hands. The hoe picks it up.</div>`;
     } else if (it.kind === 'pipe') {
-      html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the well and run it out to the field, over clear ground, never through a bed. Fed pipe shows a blue core. The hoe picks a section up.</div>`;
+      html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the well and run it out to the field, over clear ground or under a bed: laid on a tilled bed it runs beneath, and the bed stays yours to plant. Fed pipe shows a blue core. The hoe picks a section up from open ground; under a bed, flatten the bed first.</div>`;
     } else if (it.kind === 'tool' && it.tool === 'can') {
       html += `<div class="pc-row"><span>Water</span><span>${s.can.water} / ${s.can.capacity} pours</span></div>${bar(s.can.water / s.can.capacity * 100, '#3f8fd6')}<div class="pc-note">Fill it at the well. One pour per bed. A second pour on a wet bed waterlogs it: turn it with the hoe.</div>`;
     } else if (it.kind === 'tool' && it.tool === 'hoe') {
-      html += `<div class="pc-row"><span>Level</span><span>${S.hoeLevel(s) + 1} · ${S.hoeSeconds(s)}s a bed</span></div><div class="pc-row"><span>Energy</span><span>${S.hoeEnergy(s)} a bed</span></div><div class="pc-note">Tills grass, and flattens an empty bed back to grass. Turns a waterlogged bed. Digs up a plant: a seed comes back as a seed, anything bigger is pulled up for the compost. Lifts pipe, line, belt and any machine.</div>`;
+      html += `<div class="pc-row"><span>Level</span><span>${S.hoeLevel(s) + 1} · ${S.hoeSeconds(s)}s a bed</span></div><div class="pc-row"><span>Energy</span><span>${S.hoeEnergy(s)} a bed</span></div><div class="pc-note">Tills grass, and flattens an empty bed back to grass. Turns a waterlogged bed. Digs up a plant: a seed comes back as a seed, anything bigger is pulled up for the compost. Lifts pipe, line, belt and any machine from open ground; pipe and line under a bed come up once the bed is flattened.</div>`;
     } else if (it.kind === 'withered' || it.kind === 'pulled') {
       html += `<div class="pc-note">${it.kind === 'pulled' ? 'Dug up before it ripened. It won\'t grow again.' : 'Dried out and died in the bed.'} Drop it in the compost bin: it rots down into fertiliser.</div>`;
     }
@@ -198,8 +201,9 @@ export class UI {
   }
 
   // ---------- panels ----------
-  closePanel() { if (this.openPanel) this.game.sound.play('close'); const pn = $('panel'); pn.classList.remove('open'); setTimeout(() => { if (!this.openPanel) pn.classList.add('hidden'); }, 220); this.openPanel = null; this.held = null; this.renderHotbar(); }
+  closePanel() { if (this.onClosePanel) { this.onClosePanel(); this.onClosePanel = null; } if (this.openPanel) this.game.sound.play('close'); const pn = $('panel'); pn.classList.remove('open'); setTimeout(() => { if (!this.openPanel) pn.classList.add('hidden'); }, 220); this.openPanel = null; this.held = null; this.renderHotbar(); }
   show(title, builder, key = null) {
+    if (this.onClosePanel) { this.onClosePanel(); this.onClosePanel = null; }   // a panel's window listeners (the chest's drag) go with it
     $('panel-title').textContent = title; const body = $('panel-body'); body.innerHTML = '';
     if (!this.openPanel) this.game.sound.play(key === 'chest' ? 'chest' : 'ui');
     builder(body); const pn = $('panel'); pn.classList.remove('hidden');
@@ -238,14 +242,14 @@ export class UI {
         heap.appendChild(sl);
       });
       left.appendChild(heap);
-      details = el('div', 'details'); details.innerHTML = binDetails();
+      details = el('div', 'details'); setDetails(details, binDetails());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       body.appendChild(el('div', 'pc-sec', 'Your produce'));
       const grid = el('div', 'pslots'); let any = false; const open = S.canCompost(s).ok;
       s.inventory.slots.forEach((it, i) => {
         if (!it || !S.COMPOSTABLE.includes(it.kind)) return; any = true;
         const sl = this.pslot(it, s.species, { cls: open ? '' : 'locked' });
-        sl.onmouseenter = () => { details.innerHTML = produceDetails(it); }; sl.onmouseleave = () => { details.innerHTML = binDetails(); };
+        sl.onmouseenter = () => { setDetails(details, produceDetails(it)); }; sl.onmouseleave = () => { setDetails(details, binDetails()); };
         sl.onclick = e => { const r = S.addToCompost(s, i, e.shiftKey ? it.qty : 1); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); };
         grid.appendChild(sl);
       });
@@ -293,20 +297,20 @@ export class UI {
         const ready = S.trayReady(s, R);
         const sl = this.pslot(R.item ? { kind: ready ? 'seed' : 'crop', species: R.item.species, qty: ready ? R.item.seeds : 1 } : null, s.species, { hint: `tray ${k + 1}`, cls: ready ? 'ready' : '' });
         if (R.item && !ready) { const b = el('div', 'pslot-bar'); const inner = el('div'); inner.style.width = Math.round(S.trayProgress(s, R) * 100) + '%'; b.appendChild(inner); sl.appendChild(b); bars[k] = inner; }
-        sl.onmouseenter = () => { focus = k; details.innerHTML = trayDetails(k); }; sl.onmouseleave = () => { focus = -1; details.innerHTML = defaultDetails(); };
+        sl.onmouseenter = () => { focus = k; setDetails(details, trayDetails(k)); }; sl.onmouseleave = () => { focus = -1; setDetails(details, defaultDetails()); };
         sl.onclick = () => { if (!S.trayReady(s, R)) return; const r = S.takeSeeds(s); this.toast(r.msg); if (r.float) g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
         slots.appendChild(sl);
       });
       if (trays.length < 4) slots.appendChild(this.pslot(null, s.species, { hint: 'order a tray', cls: 'locked' }));
       left.appendChild(slots);
-      details = el('div', 'details'); details.innerHTML = defaultDetails();
+      details = el('div', 'details'); setDetails(details, defaultDetails());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       body.appendChild(el('div', 'pc-sec', 'Your produce'));
       const grid = el('div', 'pslots'); let any = false;
       s.inventory.slots.forEach((it, i) => {
         if (!it || it.kind !== 'crop') return; any = true;
         const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: !freeTray() || sp.sterile ? 'locked' : '' });
-        sl.onmouseenter = () => { details.innerHTML = produceDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = defaultDetails(); };
+        sl.onmouseenter = () => { setDetails(details, produceDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, defaultDetails()); };
         sl.onclick = () => { const r = S.putOnSeedRack(s, i); this.toast(r.msg); this.refresh(); };
         grid.appendChild(sl);
       });
@@ -318,7 +322,7 @@ export class UI {
     this.openPanel.tick = () => {
       const ready = S.seedRackReady(s); if (ready !== lastReady) { lastReady = ready; this.refresh(); return; }
       trays.forEach((R, k) => { if (bars[k] && R.item) bars[k].style.width = Math.round(S.trayProgress(s, R) * 100) + '%'; });
-      if (details && details.innerHTML.includes('Drying')) details.innerHTML = focus >= 0 ? trayDetails(focus) : defaultDetails();
+      if (details && details.innerHTML.includes('Drying')) setDetails(details, focus >= 0 ? trayDetails(focus) : defaultDetails());
     };
   }
   // Breeding bench: two parent slots, a verdict box, your seeds and produce to pick parents from. Breed runs overnight.
@@ -343,7 +347,7 @@ export class UI {
       for (const which of ['a', 'b']) {
         const it = b.running ? { kind: 'seed', species: b.running[which], qty: 1 } : b[which];
         const sl = this.pslot(it, s.species, { hint: which === 'a' ? 'parent A' : 'parent B', cls: b.running ? 'locked' : '' });
-        if (it) { const sp = s.species[it.species]; sl.onmouseenter = () => { details.innerHTML = spDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = verdict(); }; }
+        if (it) { const sp = s.species[it.species]; sl.onmouseenter = () => { setDetails(details, spDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, verdict()); }; }
         if (!b.running && it) sl.onclick = () => { S.clearBreederParent(s, which); this.refresh(); };
         slots.appendChild(sl);
       }
@@ -351,21 +355,21 @@ export class UI {
       if (b.result) {   // the morning's seeds, waiting to be taken
         const sp = s.species[b.result.species], rs = this.pslot({ kind: 'seed', species: b.result.species, qty: b.result.seeds }, s.species, { cls: 'ready' });
         rs.onclick = () => { const r = S.takeBreedResult(s); if (r.msg) this.toast(r.msg); if (r.float) g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
-        rs.onmouseenter = () => { if (sp) details.innerHTML = spDetails(sp) + `<div class="pc-note">${b.result.seeds} seeds. Click to take them.</div>`; }; rs.onmouseleave = () => { details.innerHTML = verdict(); };
+        rs.onmouseenter = () => { if (sp) setDetails(details, spDetails(sp) + `<div class="pc-note">${b.result.seeds} seeds. Click to take them.</div>`); }; rs.onmouseleave = () => { setDetails(details, verdict()); };
         slots.appendChild(rs);
       }
       const go = el('button', 'primary', b.running ? 'Breeding…' : 'Breed overnight'); go.disabled = !!b.running || !b.a || !b.b; go.style.marginTop = '6px';
       go.onclick = () => { const r = S.startBreed(s); this.toast(r.msg); this.refresh(); };
       left.appendChild(go);
       const book = el('button', null, 'Seed book'); book.style.margin = '6px 0 0 6px'; book.onclick = () => this.openLineage(); left.appendChild(book);
-      details = el('div', 'details'); details.innerHTML = verdict();
+      details = el('div', 'details'); setDetails(details, verdict());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       body.appendChild(el('div', 'pc-sec', 'Your seeds and produce · click to set as a parent'));
       const grid = el('div', 'pslots'); let any = false;
       s.inventory.slots.forEach((it, i) => {
         if (!it || (it.kind !== 'seed' && it.kind !== 'crop')) return; any = true;
         const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: b.running || sp.sterile ? 'locked' : '' });
-        sl.onmouseenter = () => { details.innerHTML = spDetails(sp); }; sl.onmouseleave = () => { details.innerHTML = verdict(); };
+        sl.onmouseenter = () => { setDetails(details, spDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, verdict()); };
         sl.onclick = () => { if (b.running) return; const which = !b.a ? 'a' : 'b'; const r = S.setBreederParent(s, which, i); if (r.msg) this.toast(r.msg); this.refresh(); };
         grid.appendChild(sl);
       });
@@ -414,11 +418,10 @@ export class UI {
           const row = el('div', 'cat-row' + (item.blocked ? ' blocked' : item.afford ? ' afford' : ' cant'));
           row.appendChild(icon(item));
           const grow = el('div', 'grow');
-          const head = el('div', null, `<b>${esc(first.family || item.name)}</b> `);
-          if (first.family) fam.forEach((f, i) => { const c = el('button', 'tier' + (i === sel ? ' sel' : '') + (f.blocked ? ' off' : ''), esc(f.tier)); c.onclick = () => { this.catTier[first.family] = i; this.refresh(); }; head.appendChild(c); });
-          if (item.level && !first.family) head.appendChild(el('span', 'muted', ' ' + esc(item.level)));
+          const head = el('div', 'cat-head-line', `<b>${esc(first.family || item.name)}</b>`);
+          if (first.family) fam.forEach((f, i) => { const c = el('button', 'tier' + (i === sel ? ' sel' : '') + (f.blocked ? ' off' : ''), esc(f.tier)); c.title = f.blocked || f.effect; c.onclick = () => { this.catTier[first.family] = i; this.refresh(); }; head.appendChild(c); });
+          if (item.level) head.appendChild(el('span', 'muted', esc(item.level)));
           grow.appendChild(head);
-          grow.appendChild(el('div', null, `${first.family ? `<span>${esc(item.name)}</span>${item.level ? ` <span class="muted">${esc(item.level)}</span>` : ''} · ` : ''}<span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
           row.appendChild(grow);
           const loan = item.id.startsWith('loan:'), repay = item.id === 'repay';
           row.appendChild(el('div', 'cat-price', item.blocked ? '' : loan ? `+${formatMoney(+item.id.slice(5))}` : item.afford ? formatMoney(item.price) : `${formatMoney(item.price)}<br><span class="gap">${formatMoney(item.price - s.money)} to go</span>`));
@@ -432,34 +435,59 @@ export class UI {
             this.game.onPurchase(); this.justOrdered = item.id;
             setTimeout(() => { fl.remove(); this.refresh(); }, 520);
           };
-          row.appendChild(b); body.appendChild(row);
+          row.appendChild(b);
+          row.appendChild(el('div', 'cat-desc', `${first.family ? `<span>${esc(item.name)}</span> · ` : ''}<span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
+          body.appendChild(row);
         }
       }
     }, 'catalogue');
   }
-  // The chest by the porch: your five pockets on top, the chest below. Click moves a stack across, right-click moves one.
+  // The chest by the porch: your five pockets on top, the chest below. Click moves a stack across, right-click moves
+  // one, and dragging a stack onto any slot puts it there (onto a like stack it merges, onto another it swaps).
   openChest() {
-    const s = this.state;
-    const grid = (inv, other, hintWord) => {
+    const s = this.state, invs = { pocket: s.inventory, chest: s.chest };
+    let drag = null, dragged = false;
+    const endDrag = () => { if (!drag) return; drag.ghost.remove(); drag.sl.classList.remove('dragging'); $('panel-body').querySelectorAll('.pslot.over').forEach(e => e.classList.remove('over')); drag = null; };
+    const grid = (inv, other, hintWord, key) => {
       const g = el('div', 'pslots');
       inv.slots.forEach((it, i) => {
         const sl = this.pslot(it, s.species, { hint: hintWord ? `${hintWord} ${i + 1}` : '', cls: it?.kind === 'tool' ? 'locked' : '', hover: true });
+        sl.dataset.inv = key; sl.dataset.i = i;
         if (it) {
-          sl.onclick = () => { const r = S.moveSome(s, inv, i, other, Infinity); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
+          sl.onclick = () => { if (dragged) { dragged = false; return; } const r = S.moveSome(s, inv, i, other, Infinity); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
           sl.oncontextmenu = e => { e.preventDefault(); const r = S.moveSome(s, inv, i, other, 1); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
+          if (it.kind !== 'tool') sl.onmousedown = e => { if (e.button !== 0) return; e.preventDefault(); drag = { inv, i, sl, x0: e.clientX, y0: e.clientY, ghost: null, live: false }; };
         }
         g.appendChild(sl);
       });
       return g;
     };
+    const onMove = e => {
+      if (!drag) return;
+      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; drag.live = true; dragged = true; this.hideHover(); const gh = drag.sl.cloneNode(true); gh.className = 'pslot drag-ghost'; document.body.appendChild(gh); drag.ghost = gh; drag.sl.classList.add('dragging'); }
+      drag.ghost.style.left = (e.clientX - 28) + 'px'; drag.ghost.style.top = (e.clientY - 28) + 'px';
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pslot');
+      $('panel-body').querySelectorAll('.pslot.over').forEach(x => x.classList.remove('over'));
+      if (over && over !== drag.sl && over.dataset.inv && !over.classList.contains('locked')) over.classList.add('over');
+    };
+    const onUp = e => {
+      if (!drag) return;
+      if (!drag.live) { drag = null; return; }
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pslot');
+      const { inv, i } = drag; endDrag();
+      if (over && over.dataset.inv && !over.classList.contains('locked')) { const to = invs[over.dataset.inv], ti = +over.dataset.i; if (!(to === inv && ti === i)) { S.moveSlot(s, inv, i, to, ti); this.game.sound.play('move'); } }
+      this.refresh();
+    };
     this.show('Chest', body => {
       body.appendChild(el('div', 'pc-sec', `Pockets · ${S.carriedCount(s)} things${S.isHeavy(s) ? ' · heavy' : ''}`));
-      body.appendChild(grid(s.inventory, s.chest, 'pocket'));
+      body.appendChild(grid(s.inventory, s.chest, 'pocket', 'pocket'));
       const used = s.chest.slots.filter(Boolean).length;
       body.appendChild(el('div', 'pc-sec', `Chest · ${used} / ${s.chest.slots.length} slots`));
-      body.appendChild(grid(s.chest, s.inventory, ''));
-      body.appendChild(el('div', 'pc-note', 'Click a stack to move it across. Right-click moves one. Tools stay on the rack.'));
+      body.appendChild(grid(s.chest, s.inventory, '', 'chest'));
+      body.appendChild(el('div', 'pc-note', 'Click a stack to move it across, right-click moves one. Drag a stack onto a slot to put it there. Tools stay on the rack.'));
     }, 'chest');
+    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+    this.onClosePanel = () => { endDrag(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }
   // Delivery crate: what is inside and what it pays tonight, your produce as slots to add.
   openCrate() {
@@ -468,27 +496,28 @@ export class UI {
       const row = el('div', 'station-row');
       const left = el('div'); left.appendChild(el('div', 'pc-sec', `Inside · ${S.crateCount(s)} / ${s.crate.capacity}`));
       const inside = el('div', 'pslots');
-      for (const it of s.crate.items) inside.appendChild(this.pslot({ kind: 'crop', species: it.species, q: it.q, qty: it.qty }, s.species));
+      for (const it of s.crate.items) inside.appendChild(this.pslot(it.kind ? { kind: it.kind, level: it.level, qty: it.qty } : { kind: 'crop', species: it.species, q: it.q, qty: it.qty }, s.species));
       if (!s.crate.items.length) inside.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
       left.appendChild(inside);
       const details = el('div', 'details');
       const sum = () => { const P = S.priceCrate(s, s.crate.items); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };
-      details.innerHTML = sum();
+      setDetails(details, sum());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       const amt = this.crateAmount || 1;
-      const amtRow = el('div', 'pc-sec amt-row'); amtRow.appendChild(el('span', null, 'Your produce · click adds '));
+      const amtRow = el('div', 'pc-sec amt-row'); amtRow.appendChild(el('span', null, 'Your produce and loose machines · click adds '));
       for (const n of [1, 5, 'all']) { const bb = el('button', n === amt ? 'primary small' : 'small', String(n)); bb.onclick = () => { this.crateAmount = n; this.refresh(); }; amtRow.appendChild(bb); }
       body.appendChild(amtRow);
       const grid = el('div', 'pslots'); let any = false;
       s.inventory.slots.forEach((it, i) => {
-        if (!it || it.kind !== 'crop') return; any = true;
+        if (!it || (it.kind !== 'crop' && !S.SELLABLE.includes(it.kind))) return; any = true;
         const sp = s.species[it.species], sl = this.pslot(it, s.species);
-        sl.onmouseenter = () => { details.innerHTML = `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div><div class="pc-row"><span>Each</span><span>${formatMoney(salePrice(s, it))}</span></div><div class="pc-row"><span>Stack</span><span>${formatMoney(salePrice(s, it) * it.qty)}</span></div>`; };
-        sl.onmouseleave = () => { details.innerHTML = sum(); };
+        const each = it.kind === 'crop' ? salePrice(s, it) : S.secondHand(it);
+        sl.onmouseenter = () => { setDetails(details, `<div class="pc-name${sp ? ' tier-' + sp.tier : ''}">${esc(itemName(it, s.species))}</div><div class="pc-row"><span>${it.kind === 'crop' ? 'Each' : 'Second-hand, each'}</span><span>${formatMoney(each)}</span></div><div class="pc-row"><span>Stack</span><span>${formatMoney(each * it.qty)}</span></div>${it.kind === 'crop' ? '' : `<div class="pc-note">The cart buys it back at half the list price of ${formatMoney(S.listPrice(it))}.</div>`}`); };
+        sl.onmouseleave = () => { setDetails(details, sum()); };
         sl.onclick = () => { const r = S.putInCrate(s, i, amt === 'all' ? Infinity : amt); this.toast(r.msg); this.refresh(); };
         grid.appendChild(sl);
       });
-      if (!any) grid.appendChild(el('div', 'muted', 'Nothing to sell. Harvest something first.'));
+      if (!any) grid.appendChild(el('div', 'muted', 'Nothing to sell. Harvest something first. A machine in a pocket sells second-hand.'));
       body.appendChild(grid);
     }, 'crate');
   }

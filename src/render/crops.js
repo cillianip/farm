@@ -90,7 +90,7 @@ function drawFoliage(P, g, scale, C, r) {
       const n = 3 + Math.round(dens * 2);
       const anchors = [];
       for (let i = 0; i < n; i++) {
-        const x = 8 + Math.round((i - (n - 1) / 2) * 2.6);
+        const x = 8 + Math.round((i - (n - 1) / 2) * 3.6);   // a stalk every four pixels, so three-wide heads keep a gap between them
         const top = 14 - Math.round(h * (0.85 + r() * 0.3));
         P.rect(x, top, 1, 15 - top, i % 2 ? C.stem : C.leafDark);
         leaf(P, g, x, 12, x + (i % 2 ? 2 : -2), 9, C);
@@ -295,8 +295,9 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
     }
     case 'head': {             // family decides: wheat spike / radish bulb / lettuce or cabbage head / sunflower
       if (fam === 'grain') {
-        const len = Math.max(2, h);
-        for (let i = 0; i <= len * 2; i++) { const y = cy - len + i; put(cx, y, i % 2 ? C.main : C.shade); put(cx + (i % 2 ? 1 : -1), y, i % 2 ? C.light : C.main); if (w >= 2) put(cx + (i % 2 ? -1 : 1), y, C.dark); }
+        const len = Math.max(3, h);
+        // a full ear: a tall spike three wide, the grains stepping down each side (light left, dark right), never fatter
+        for (let i = 0; i <= len * 2; i++) { const y = cy - len + i; put(cx, y, i % 2 ? C.main : C.shade); put(cx - 1, y, i % 2 ? C.light : C.main); put(cx + 1, y, i % 2 ? C.main : C.dark); }
         put(cx - 1, cy - len - 1, C.light); put(cx + 1, cy - len - 2, C.light); put(cx, cy - len - 1, C.main);   // awns
       } else if (fam === 'root') {   // a leafy head grown on a root (lettuce × potato): tight leaves above, a short pale taproot below
         const rr = Math.max(2, Math.round((w + h) / 2.6));

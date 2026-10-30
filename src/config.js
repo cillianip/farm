@@ -29,7 +29,7 @@ export const CONFIG = {
   hoe: { seconds: [0.9, 0.6, 0.4], energy: [2, 1.5, 1] },
   // Delivery crate: crops dropped in are collected by the cart overnight and paid in the morning. Base version: one
   // crate, one pickup. SCALING LATER: bigger crates, more crates (eats land), extra pickups per day (carrier upgrades).
-  crate: { capacity: 12, middayHour: 12 },   // with the midday pickup the cart also comes at this hour
+  crate: { capacity: 12, middayHour: 12, secondHand: 0.5 },   // with the midday pickup the cart also comes at this hour; the cart buys machines back at this share of the list price
   // The bird is the starter event: it happens once, a few game minutes after the first bed is tilled, and plants one of
   // the 15 basic species. After that, seeds come from the seed rack.
   bird: { firstDelayMinutes: [3, 8], maxTotal: 1, flightSeconds: 2.6 },
@@ -47,6 +47,7 @@ export const CONFIG = {
   // a sprinkler over beds the cart can sell runs at 10–20% of what they earn, and one over beds it cannot sell loses
   // money. Prices are flat per tier: scaling comes from the tiers and the infrastructure under them, not a rising price
   // tag. II and III reach 2 and 3 tiles (24 and 48 beds) and draw 2 and 4 of the line's pressure (see `pump`).
+  // A sprinkler wets a bed gradually: a pour's worth of water over sprayMinutes, from the moment the bed drops below the band until it is topped up.
   sprinkler: { pricePerPour: 0.2, sprayMinutes: 20, tiers: [
     { name: 'Sprinkler I', radius: 1, price: 140, draw: 1 },
     { name: 'Sprinkler II', radius: 2, price: 350, draw: 2 },

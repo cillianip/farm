@@ -92,6 +92,9 @@ textarea { width: 100%; height: 90px; background: #1a1428; color: var(--text); b
 .pslot-bar { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 6px; background: #3b2314; }
 .pslot-bar > div { height: 100%; background: #e8a23b; }
 .pslot.ready { box-shadow: inset 2px 2px 0 #c9a86c, 0 0 0 3px #f6c453; }
+.pslot.dragging { opacity: .35; }
+.pslot.over { box-shadow: inset 2px 2px 0 #c9a86c, 0 0 0 3px #f6c453; background: #f6e7bf; }
+.pslot.drag-ghost { position: fixed; z-index: 50; pointer-events: none; opacity: .9; margin: 0; }
 .info-btn { position: absolute; top: 10px; right: 14px; width: 24px; height: 24px; padding: 0; font-size: 10px; }
 .info-box { margin-top: 10px; padding: 8px 10px; background: #efdcb0; border: 2px solid #c9a86c; line-height: 1.8; }
 
@@ -99,7 +102,9 @@ textarea { width: 100%; height: 90px; background: #1a1428; color: var(--text); b
 .cat-head { display: flex; justify-content: space-between; align-items: center; margin: 2px 40px 8px 0; color: #8a6a44; }
 .cat-money { color: #8a5a10; font-size: 11px; }
 .cart-box { padding: 8px 10px; background: #efdcb0; border: 2px solid #c9a86c; margin-bottom: 6px; }
-.cat-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 2px solid #c9a86c; background: #f9efd6; margin: 6px 0; }
+.cat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; border: 2px solid #c9a86c; background: #f9efd6; margin: 6px 0; }
+.cat-row .cat-head-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.cat-row .cat-desc { flex-basis: 100%; margin-left: 58px; line-height: 1.6; }
 .cat-row.small { padding: 3px 8px; background: transparent; border: none; margin: 0; }
 .cat-row canvas { image-rendering: pixelated; flex: none; background: #e4cf9f; border: 2px solid #3b2314; }
 .cat-row .grow { flex: 1; line-height: 1.6; }
@@ -133,7 +138,7 @@ button.small { padding: 3px 7px; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; 
 .pc-row.trait { gap: 16px; } .pc-row.trait span:first-child { white-space: nowrap; } .pc-row.trait span:last-child { text-align: right; }
 .pc-row .up { color: #3f7a1f; } .pc-row .down { color: #a0462f; }
 .cat-row button { min-width: 64px; }
-.cat-row button.tier { min-width: 0; padding: 2px 7px; margin: 0 3px 0 0; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; vertical-align: middle; }
+.cat-row button.tier { min-width: 0; padding: 2px 7px; margin: 0; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; vertical-align: middle; }
 .cat-row button.tier.sel { background: #f6c453; }
 .cat-row button.tier.off { opacity: .55; }
 /* morning report: the bred child */
