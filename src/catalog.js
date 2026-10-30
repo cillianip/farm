@@ -80,9 +80,10 @@ export function catalog(state) {
     items.push({ id: 'seeds:' + key, group: 'Seeds', name: `${sp.name} seeds ×3`, effect: roles(sp).join(' · '), level: '', price: r2(Math.max(1, sp.seedPrice * 3)), species: sp, blocked: null });
   }
   { const Lo = CONFIG.loan, earned = state.stats?.earned || 0;   // the bank
-    if (state.loan) items.push({ id: 'repay', group: 'Bank', name: 'Pay off the loan', effect: `${formatMoney(state.loan.owed)} still owed; the cart takes ${formatMoney(state.loan.nightly)} a night`, level: '', price: state.loan.owed, blocked: null });
-    Lo.sizes.forEach((size, i) => { const nightly = r2(size * (1 + Lo.interest) / Lo.nights);
-      items.push({ id: 'loan:' + size, group: 'Bank', family: 'Borrow', tier: formatMoney(size), name: `Borrow ${formatMoney(size)}`, effect: `The money now; the cart takes ${formatMoney(nightly)} a night for ${Lo.nights} nights (${formatMoney(size * (1 + Lo.interest))} in all)`, level: '', price: 0, blocked: state.loan ? 'One loan at a time' : earned < Lo.gates[i] ? `The bank wants to see ${formatMoney(Lo.gates[i])} sold first` : null }); }); }
+    if (state.loan) { const owed = state.loan.owed, tonight = r2(owed * Lo.nightly);
+      for (const p of [...Lo.payments.filter(p => p < owed), 'all']) items.push({ id: 'repay:' + p, group: 'Bank', family: 'Pay back', tier: p === 'all' ? 'All' : '$' + p, name: p === 'all' ? `Pay off ${formatMoney(owed)}` : `Pay ${formatMoney(p)}`, effect: `${formatMoney(owed)} owed; tonight the bank adds ${formatMoney(tonight)} (${Math.round(Lo.nightly * 100)}% a night)`, level: '', price: p === 'all' ? owed : p, blocked: null }); }
+    Lo.sizes.forEach((size, i) => {
+      items.push({ id: 'loan:' + size, group: 'Bank', family: 'Borrow', tier: formatMoney(size), name: `Borrow ${formatMoney(size)}`, effect: `The money now; ${Math.round(Lo.nightly * 100)}% a night on what you still owe (${formatMoney(r2(size * Lo.nightly))} the first night). Pay back what you like, when you like`, level: '', price: 0, blocked: state.loan ? 'One loan at a time' : earned < Lo.gates[i] ? `The bank wants to see ${formatMoney(Lo.gates[i])} sold first` : null }); }); }
   const hasBench = !!state.hasBench || pendingCount(state, 'bench') > 0 || state.parcels?.some(p => p.id === 'bench');
   items.push({ id: 'bench', group: 'Stations', name: 'Breeding bench', effect: 'Cross two species into a new one overnight', level: hasBench ? 'owned' : '', price: BENCH_PRICE, blocked: hasBench ? 'You have one' : null });
   const hasCompost = !!state.hasCompost || pendingCount(state, 'compost') > 0 || state.parcels?.some(p => p.id === 'compost');
@@ -107,12 +108,12 @@ export function whyLine(state, id) {
 }
 // The cheapest thing you cannot buy yet, and how far off it is; null when everything open is affordable.
 export function nextTarget(state) {
-  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt', 'fuel', 'repay'].includes(i.id) && !i.id.startsWith('loan:')).sort((a, b) => a.price - b.price);   // consumables (seeds, pipe, line, belt, fuel) and the bank are never the target
+  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt', 'fuel'].includes(i.id) && !i.id.startsWith('loan:') && !i.id.startsWith('repay:')).sort((a, b) => a.price - b.price);   // consumables (seeds, pipe, line, belt, fuel) and the bank are never the target
   const miss = open.find(i => i.price > state.money);
   return miss ? { item: miss, gap: miss.price - state.money } : null;
 }
 // Which open items you can afford right now, as a key; the sign flags when this grows past what you last saw.
-export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && !i.id.startsWith('loan:') && !['pipe', 'line', 'belt', 'fuel', 'repay'].includes(i.id)).map(i => i.id).sort().join(',');
+export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && !i.id.startsWith('loan:') && !i.id.startsWith('repay:') && !['pipe', 'line', 'belt', 'fuel'].includes(i.id)).map(i => i.id).sort().join(',');
 export function catalogueFlag(state) { const k = affordableKey(state); return k !== '' && k !== (state.catalogueSeen || ''); }
 export function markCatalogueSeen(state) { state.catalogueSeen = affordableKey(state); }
 
@@ -134,13 +135,19 @@ export function placeOrder(state, id) {
   const item = catalog(state).find(i => i.id === id);
   if (!item) return { ok: false, msg: 'Not in the catalogue' };
   if (item.blocked) return { ok: false, msg: item.blocked };
-  if (state.money < item.price) return { ok: false, msg: 'Not enough money' };
+  if (state.money < item.price && !id.startsWith('repay:')) return { ok: false, msg: 'Not enough money' };   // a payment short of the row's sum still pays what you have
   if (id.startsWith('loan:')) {   // the bank: the money at once, no parcel
-    const size = +id.slice(5), Lo = CONFIG.loan, nightly = r2(size * (1 + Lo.interest) / Lo.nights);
-    state.loan = { size, owed: r2(size * (1 + Lo.interest)), nightly, day: Math.floor(state.minutes / 1440) }; state.money = r2(state.money + size);
-    return { ok: true, msg: `Borrowed ${formatMoney(size)}. The cart takes ${formatMoney(nightly)} a night.`, loan: true };
+    const size = +id.slice(5), Lo = CONFIG.loan;
+    state.loan = { size, owed: size, day: Math.floor(state.minutes / 1440) }; state.money = r2(state.money + size);
+    return { ok: true, msg: `Borrowed ${formatMoney(size)}. The bank adds ${Math.round(Lo.nightly * 100)}% a night to what you owe.`, loan: true };
   }
-  if (id === 'repay') { state.money = r2(state.money - state.loan.owed); state.loan = null; return { ok: true, msg: 'The loan is paid off.', loan: true }; }
+  if (id.startsWith('repay:')) {   // pay back what you like: the amount asked, the whole debt, or what you have
+    const want = id.slice(6) === 'all' ? state.loan.owed : +id.slice(6), pay = r2(Math.min(want, state.loan.owed, state.money));
+    if (pay <= 0) return { ok: false, msg: 'Nothing to pay with' };
+    state.money = r2(state.money - pay); state.loan.owed = r2(state.loan.owed - pay);
+    const done = state.loan.owed <= 0; if (done) state.loan = null;
+    return { ok: true, msg: done ? 'The loan is paid off.' : `Paid ${formatMoney(pay)}: ${formatMoney(state.loan.owed)} still owed.`, loan: true, pay };
+  }
   state.money -= item.price;
   state.orders.push({ id, name: item.name, price: item.price });
   return { ok: true, msg: `Ordered: ${item.name}. Arrives tonight.` };
