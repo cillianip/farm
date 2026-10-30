@@ -59,12 +59,13 @@ export const CONFIG = {
   // Pumps: pressure. The well on its own pushes water to `wellFeeds` sprinklers; every pump standing on fed pipe adds
   // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
   // still when the air is calm (humidity under `stillBelow`); the engine burns fuel every day it stands on fed pipe.
-  // Power (the start of stage 4). A generator stands on your land, burns fuel every night, and powers the line laid
-  // from it: `powers` machines, nearest first by line distance. A picker on powered line takes `perHour` ripe crops an
-  // hour from the beds in its reach into a basket it hands to a hopper on the same line; the hopper stands beside the
-  // crate and tips into it when the cart comes. Tiers (faster, stronger) come later and will carry a level like pumps.
-  power: { generator: { price: 600, fuelPerDay: 8, powers: 6 }, line: { packSize: 10, packPrice: 25 },
-    picker: { price: 250, radius: 1, perHour: 1, holds: 6 }, hopper: { price: 400, holds: 30 } },
+  // Power (the start of stage 4). A generator stands on your land and, while switched on, burns fuel every night and
+  // makes `power` for the line laid from it; each machine on the line draws its own `power`, nearest the generator
+  // first by line distance. A picker on powered line takes `perHour` ripe crops an hour from the beds in its reach into
+  // a basket it hands to a hopper on the same line. A hopper beside the crate tips into it when the cart comes; a
+  // hopper anywhere else is a store you empty by hand. Tiers (faster, stronger) come later with a level like pumps.
+  power: { generator: { price: 600, fuelPerDay: 8, power: 6 }, line: { packSize: 10, packPrice: 25 },
+    picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 1 } },
   pump: { wellFeeds: 2, tiers: [
     { name: 'Hand pump', feeds: 4, price: 120 },
     { name: 'Windmill', feeds: 12, price: 400, stillBelow: 30 },

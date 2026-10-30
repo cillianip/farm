@@ -168,14 +168,14 @@ export class UI {
       html += `<div class="pc-row"><span>Runs</span><span>${tier.feeds} more sprinklers</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${formatMoney(tier.fuelPerDay)} a day</span></div>` : '') + `<div class="pc-note">Set it on a pipe the well feeds. The well pushes water to ${CONFIG.pump.wellFeeds} sprinklers on its own; past that the ones furthest down the line run dry.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''} The hoe picks it up.</div>`;
     } else if (it.kind === 'generator') {
       const G = CONFIG.power.generator;
-      html += `<div class="pc-row"><span>Powers</span><span>${G.powers} machines</span></div><div class="pc-row"><span>Fuel</span><span>${formatMoney(G.fuelPerDay)} a night</span></div><div class="pc-note">Set it on your land and lay power line from it. Pickers and hoppers stand on the line; when it asks for more than the generator gives, the nearest run. The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Makes</span><span>${G.power} power</span></div><div class="pc-row"><span>Fuel</span><span>${formatMoney(G.fuelPerDay)} a night while on</span></div><div class="pc-note">Set it on your land and lay power line from it. Each machine on the line draws its share; when the line asks for more than the generator makes, the nearest run. Click it to switch it off and on: off, it burns nothing. The hoe picks it up.</div>`;
     } else if (it.kind === 'line') {
       html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the generator and run it out to the beds and to the crate, over clear ground, never through a bed. It can share a tile with pipe. Powered line shows a spark. The hoe picks a section up.</div>`;
     } else if (it.kind === 'picker') {
       const P = CONFIG.power.picker, n = (2 * P.radius + 1) ** 2 - 1;
-      html += `<div class="pc-row"><span>Works</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Takes</span><span>${P.perHour} ripe ${P.perHour === 1 ? 'crop' : 'crops'} an hour</span></div><div class="pc-row"><span>Basket</span><span>${P.holds} crops</span></div><div class="pc-note">Stands on powered line. Each hour it hands its basket to a hopper on the same line; with no hopper the basket fills and waits for your empty hands. The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Works</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Takes</span><span>${P.perHour} ripe ${P.perHour === 1 ? 'crop' : 'crops'} an hour</span></div><div class="pc-row"><span>Basket</span><span>${P.holds} crops</span></div><div class="pc-row"><span>Draws</span><span>${P.power} power</span></div><div class="pc-note">Stands on powered line. Each hour it hands its basket to a hopper on the same line; with no hopper the basket fills and waits for your empty hands. The hoe picks it up.</div>`;
     } else if (it.kind === 'hopper') {
-      html += `<div class="pc-row"><span>Holds</span><span>${CONFIG.power.hopper.holds} crops</span></div><div class="pc-note">Stands on powered line beside the crate. The pickers on its line fill it; when the cart comes it tips into the crate, as much as fits. The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Holds</span><span>${CONFIG.power.hopper.holds} crops</span></div><div class="pc-row"><span>Draws</span><span>${CONFIG.power.hopper.power} power</span></div><div class="pc-note">Stands on powered line; the pickers on its line fill it. Beside the crate it tips into the crate when the cart comes, as much as fits. Anywhere else it is a store you empty with empty hands. The hoe picks it up.</div>`;
     } else if (it.kind === 'pipe') {
       html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the well and run it out to the field, over clear ground, never through a bed. Fed pipe shows a blue core. The hoe picks a section up.</div>`;
     } else if (it.kind === 'tool' && it.tool === 'can') {
@@ -393,10 +393,11 @@ export class UI {
         const b = el('button', 'primary', 'Claim'); b.onclick = () => { this.game.landMode = true; this.closePanel(); this.toast('Click a highlighted plot to claim it (Esc = later)'); }; r.appendChild(b); body.appendChild(r);
       }
       // the catalogue by group
-      const items = catalog(s), groups = ['Tools', 'Stations', 'Automation', 'Land', 'Seeds'];
+      const items = catalog(s), groups = ['Tools', 'Stations', 'Water', 'Power', 'Land', 'Seeds'];
+      const subs = { Seeds: `new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}`, Water: `the well gives ${CONFIG.pump.wellFeeds} pressure, pumps add more`, Power: 'a generator makes it, each machine draws some' };
       for (const gname of groups) {
         const list = items.filter(i => i.group === gname); if (!list.length) continue;
-        body.appendChild(el('div', 'pc-sec', gname === 'Seeds' ? `Seeds <span class="muted">· new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}</span>` : gname));
+        body.appendChild(el('div', 'pc-sec', subs[gname] ? `${gname} <span class="muted">· ${subs[gname]}</span>` : gname));
         for (const item of list) {
           const row = el('div', 'cat-row' + (item.blocked ? ' blocked' : item.afford ? ' afford' : ' cant'));
           row.appendChild(icon(item));

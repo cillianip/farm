@@ -448,7 +448,6 @@ export function useItem(state, slotIndex, x, y) {
   }
   if (item.kind === 'picker' || item.kind === 'hopper') {
     if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
-    if (item.kind === 'hopper') { const Cr = BUILDINGS.crate; if (Math.abs(x - Cr.x) > 1 || Math.abs(y - Cr.y) > 1) return fail('The hopper stands beside the crate'); }
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.obj = { kind: item.kind, held: [] }; state.lineRev = (state.lineRev || 0) + 1;
@@ -674,7 +673,7 @@ function addHeld(held, it) { const key = `${it.species}:${it.q || 0}`; const hav
 export function generatorTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isGenerator(t)) out.push({ x, y, t }); } return out; }
 export function machineTiles(state, kind = null) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isMachine(t) && (!kind || t.obj.kind === kind)) out.push({ x, y, t }); } return out; }
 // The line network: connected runs of power line, each powered by the generators standing on or beside it (their
-// `powers` add up), machines on it nearest the generators first by line distance. Cached until a section, a generator
+// `power` adds up, off ones give nothing), machines on it nearest the generators first by line distance. Cached until a section, a generator
 // or a machine is laid or picked up (state.lineRev).
 const POW = new WeakMap();
 export function lineNet(state) {
@@ -687,26 +686,36 @@ export function lineNet(state) {
     while (q.length) { const j = q.pop(), x = j % w.w, y = (j - x) / w.w; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy); if (t?.line && !comp.has(idx(x + dx, y + dy))) { comp.set(idx(x + dx, y + dy), c); q.push(idx(x + dx, y + dy)); } } }
   }
   const cap = new Array(nComp).fill(0), dist = new Map(), queue = [];
-  for (const { x, y } of generatorTiles(state)) {
+  for (const { x, y, t } of generatorTiles(state)) {
+    if (t.obj.off) continue;   // switched off: no power, no fuel
     const seen = new Set();
-    for (const [dx, dy] of [[0, 0], ...N4]) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (!t?.line) continue; const c = comp.get(k); if (!seen.has(c)) { seen.add(c); cap[c] += CONFIG.power.generator.powers; } if (!dist.has(k)) { dist.set(k, 1); queue.push(k); } }
+    for (const [dx, dy] of [[0, 0], ...N4]) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (!t?.line) continue; const c = comp.get(k); if (!seen.has(c)) { seen.add(c); cap[c] += CONFIG.power.generator.power; } if (!dist.has(k)) { dist.set(k, 1); queue.push(k); } }
   }
   while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.line && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
   const used = new Array(nComp).fill(0), on = new Set();
   const machines = machineTiles(state).filter(({ x, y, t }) => t.line && dist.has(idx(x, y))).sort((a, b) => dist.get(idx(a.x, a.y)) - dist.get(idx(b.x, b.y)));
-  for (const { x, y } of machines) { const c = comp.get(idx(x, y)); if (used[c] < cap[c]) { used[c]++; on.add(idx(x, y)); } }
+  for (const { x, y, t } of machines) { const c = comp.get(idx(x, y)), d = CONFIG.power[t.obj.kind].power; if (used[c] + d <= cap[c]) { used[c] += d; on.add(idx(x, y)); } }
   const net = { rev, w, comp, dist, cap, used, on }; POW.set(state, net);
   return net;
 }
 export const linePowered = (state, x, y) => !!tileAt(state.world, x, y)?.line && lineNet(state).dist.has(y * state.world.w + x);
 export const machinePowered = (state, x, y) => lineNet(state).on.has(y * state.world.w + x);
-export const generatorLive = (state, x, y) => [[0, 0], ...N4].some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.line);
+export const generatorLive = (state, x, y) => !tileAt(state.world, x, y)?.obj?.off && [[0, 0], ...N4].some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.line);
+// The switch on a generator: off, it makes no power and burns no fuel.
+export function toggleGenerator(state, x, y) {
+  const t = tileAt(state.world, x, y); if (!isGenerator(t)) return fail('');
+  t.obj.off = !t.obj.off; state.lineRev = (state.lineRev || 0) + 1;
+  return { ok: true, msg: '', float: t.obj.off ? 'Off' : 'On', off: t.obj.off };
+}
+// A hopper beside the crate (any of the eight tiles around it) tips into it when the cart comes.
+export const hopperByCrate = (x, y) => Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1;
 const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
 // Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
 // in its reach into its basket, then hands the basket to a powered hopper on the same line. Returns crops picked.
 export function machinePass(state) {
   const P = CONFIG.power.picker, net = lineNet(state), idx = (x, y) => y * state.world.w + x; let picked = 0;
-  const hoppers = {}; for (const { x, y, t } of machineTiles(state, 'hopper')) if (net.on.has(idx(x, y))) hoppers[net.comp.get(idx(x, y))] = t;
+  const hoppers = {};   // one hopper a line takes the baskets: the one beside the crate if there is one
+  for (const { x, y, t } of machineTiles(state, 'hopper').sort((a, b) => (hopperByCrate(b.x, b.y) ? 1 : 0) - (hopperByCrate(a.x, a.y) ? 1 : 0))) if (net.on.has(idx(x, y)) && !hoppers[net.comp.get(idx(x, y))]) hoppers[net.comp.get(idx(x, y))] = t;
   for (const { x, y, t } of machineTiles(state, 'picker')) {
     if (!net.on.has(idx(x, y))) continue;
     const held = t.obj.held = t.obj.held || [];
@@ -725,7 +734,8 @@ export function machinePass(state) {
 // The hoppers tip into the crate, as much as fits; the rest waits for the next cart.
 export function drainHoppers(state) {
   let moved = 0;
-  for (const { t } of machineTiles(state, 'hopper')) {
+  for (const { x, y, t } of machineTiles(state, 'hopper')) {
+    if (!hopperByCrate(x, y)) continue;   // a hopper elsewhere is a store you empty by hand
     const held = t.obj.held || [];
     while (held.length) {
       const room = state.crate.capacity - crateCount(state); if (room <= 0) return moved;
@@ -785,7 +795,7 @@ export function sleep(state, opts = {}) {
     if (pours) { state.money = Math.max(0, Math.round((state.money - bill) * 100) / 100); report.water = { pours, bill }; D.waterBill = bill; }
     state.water = { pours: 0 }; }
   { const fuel = pumpTiles(state).filter(({ x, y, t }) => pipeFed(state, x, y) && pumpTier(t.obj).fuelPerDay).reduce((n, { t }) => n + pumpTier(t.obj).fuelPerDay, 0)   // engines on fed pipe burn fuel every day
-      + generatorTiles(state).length * CONFIG.power.generator.fuelPerDay;   // and every generator, idle or not
+      + generatorTiles(state).filter(({ t }) => !t.obj.off).length * CONFIG.power.generator.fuelPerDay;   // and every generator that is switched on
     if (fuel) { state.money = Math.max(0, Math.round((state.money - fuel) * 100) / 100); report.fuel = fuel; D.fuelBill = fuel; } }
   report.yesterday = D; report.dayBefore = L.yesterday; report.picked = D.picked || 0;
   L.history.push(D); if (L.history.length > 7) L.history.shift();

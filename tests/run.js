@@ -817,7 +817,7 @@ await test('pipe: laid from the well a tile at a time; a sprinkler runs only on 
 await test('the catalogue sells pipe by the pack, and an old save with sprinklers gets two packs in the chest', async () => {
   const { catalog, placeOrder } = await import('../src/catalog.js');
   const s = arm(S.createState(1)); s.money = 100;
-  const item = catalog(s).find(i => i.id === 'pipe'); assert.ok(item && item.price === CONFIG.pipe.packPrice && item.group === 'Automation');
+  const item = catalog(s).find(i => i.id === 'pipe'); assert.ok(item && item.price === CONFIG.pipe.packPrice && item.group === 'Water');
   assert.ok(placeOrder(s, 'pipe').ok);
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; S.sleep(s); S.collectParcels(s);
   assert.equal(s.inventory.slots.find(i => i?.kind === 'pipe')?.qty, CONFIG.pipe.packSize);
@@ -905,7 +905,7 @@ await test('the catalogue sells the three pumps and the cart delivers them to a 
   const { catalog, placeOrder } = await import('../src/catalog.js');
   const s = arm(S.createState(1)); s.money = 2000;
   const rows = catalog(s).filter(i => i.id.startsWith('pump')); assert.equal(rows.length, 3);
-  assert.deepEqual(rows.map(r => r.price), CONFIG.pump.tiers.map(t => t.price)); assert.ok(rows.every(r => r.group === 'Automation' && !r.blocked));
+  assert.deepEqual(rows.map(r => r.price), CONFIG.pump.tiers.map(t => t.price)); assert.ok(rows.every(r => r.group === 'Water' && !r.blocked));
   assert.ok(placeOrder(s, 'pump1').ok); assert.equal(catalog(s).find(i => i.id === 'pump1').level, '1 owned');
   S.sleep(s); assert.ok(s.parcels.some(p => p.id === 'pump1')); S.collectParcels(s);
   const it = [...s.inventory.slots, ...s.chest.slots].find(i => i?.kind === 'pump'); assert.ok(it && it.level === 1, JSON.stringify(it));
@@ -960,7 +960,7 @@ await test('the chain: a generator powers the line; a picker takes one ripe crop
   assert.ok(rep.lines.some(l => /pickers took/.test(l)));
   // more machines than the generator powers: the furthest down the line goes dead
   for (let x = X + 1; x <= X + 5; x++) tile(x, hy).obj = { kind: 'picker', held: [] }; s.lineRev++;
-  const net = S.lineNet(s); assert.equal(net.used[net.comp.get(hy * W.w + X)], CONFIG.power.generator.powers);
+  const net = S.lineNet(s); assert.equal(net.used[net.comp.get(hy * W.w + X)], CONFIG.power.generator.power);
   assert.ok(S.machinePowered(s, X, hy) && !S.machinePowered(s, hx, hy), 'the hopper, furthest from the generator, is the one cut');
   // by hand: empty hands take a basket; the hoe refuses a machine that still holds crops
   tile(X, hy).obj.held = [{ species: carrot.id, q: 0, qty: 2 }];
@@ -968,6 +968,12 @@ await test('the chain: a generator powers the line; a picker takes one ripe crop
   const r = S.takeHeld(s, X, hy); assert.ok(r.ok && r.taken === 2, JSON.stringify(r)); assert.equal(tile(X, hy).obj.held.length, 0);
   s.inventory.slots[s.inventory.slots.findIndex(i => i?.kind === 'crop')] = null;   // a pocket for it
   assert.ok(S.useItem(s, 0, X, hy).ok, 'now the hoe takes it'); assert.ok(s.inventory.slots.some(i => i?.kind === 'picker'));
+  // the switch: off, the line is dead and the night burns no fuel
+  let r2 = S.toggleGenerator(s, X + 1, hy + 1); assert.ok(r2.ok && r2.float === 'Off' && r2.off); assert.ok(!S.linePowered(s, X + 1, hy) && !S.generatorLive(s, X + 1, hy + 1));
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep2 = S.sleep(s); assert.ok(!rep2.fuel, 'switched off: no fuel');
+  r2 = S.toggleGenerator(s, X + 1, hy + 1); assert.ok(r2.float === 'On' && S.linePowered(s, X + 1, hy));
+  // power is in units: the generator makes 6, each machine draws its share
+  const net2 = S.lineNet(s), c2 = net2.comp.get(hy * W.w + X + 1); assert.equal(net2.cap[c2], CONFIG.power.generator.power); assert.ok(net2.used[c2] <= net2.cap[c2]);
 });
 await test('placing the chain: line on clear ground only, picker and hopper on line, the hopper beside the crate; the catalogue sells and delivers all four', async () => {
   const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x]; s.inventory.slots[3] = null;
@@ -982,11 +988,14 @@ await test('placing the chain: line on clear ground only, picker and hopper on l
   s.inventory.slots[slotOf('generator') >= 0 ? slotOf('generator') : 4] = { kind: 'hopper', qty: 1 };
   s.player.x = X + 1.5; s.player.y = Y + 1.5;
   assert.equal(S.useItem(s, slotOf('hopper'), X + 2, Y).msg, 'A hopper stands on the power line');
-  assert.equal(S.useItem(s, slotOf('hopper'), X + 1, Y).msg, 'The hopper stands beside the crate');
-  s.inventory.slots[slotOf('hopper')] = { kind: 'picker', qty: 1 };
+  r = S.useItem(s, slotOf('hopper'), X + 1, Y); assert.ok(r.ok && r.msg === '', 'a hopper stands anywhere on powered line: ' + JSON.stringify(r));
+  tile(X + 1, Y).obj.held = [{ species: byName(s, 'Carrot').id, q: 0, qty: 3 }];
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s); assert.ok(!rep.sale, 'away from the crate it is a store: the cart sees nothing'); assert.equal(S.heldCount(tile(X + 1, Y).obj.held), 3);
+  tile(X + 1, Y).obj = null; s.lineRev++;
+  s.inventory.slots[s.inventory.slots.findIndex(i => !i)] = { kind: 'picker', qty: 1 };
   r = S.useItem(s, slotOf('picker'), X + 1, Y); assert.ok(r.ok && r.msg === '', JSON.stringify(r)); assert.ok(S.machinePowered(s, X + 1, Y));
   s.money = 3000; const { catalog, placeOrder } = await import('../src/catalog.js');
-  const ids = ['generator', 'line', 'picker', 'hopper']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Automation', id); assert.ok(placeOrder(s, id).ok); }
+  const ids = ['generator', 'line', 'picker', 'hopper']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Power', id); assert.ok(placeOrder(s, id).ok); }
   assert.equal(catalog(s).find(i => i.id === 'picker').level, '2 owned');
   S.sleep(s); S.collectParcels(s);
   const all = [...s.inventory.slots, ...s.chest.slots];

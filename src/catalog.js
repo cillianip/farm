@@ -43,7 +43,7 @@ export function catalog(state) {
   const hoeLvl = (state.hoe?.level || 0) + pendingCount(state, 'hoe'), hoeMax = CONFIG.hoe.seconds.length - 1;
   const handsLvl = (state.hands?.level || 0) + pendingCount(state, 'hands'), handsMax = CONFIG.hands.dropSeconds.length - 1;
   const items = [
-    { id: 'pipe', group: 'Automation', name: `Pipe ×${CONFIG.pipe.packSize}`, effect: 'Sections to lay from the well, one a tile. Sprinklers run only on pipe the well feeds', level: '', price: CONFIG.pipe.packPrice, blocked: null },
+    { id: 'pipe', group: 'Water', name: `Pipe ×${CONFIG.pipe.packSize}`, effect: 'Lay it from the well, one tile a section. Sprinklers and pumps stand on it', level: '', price: CONFIG.pipe.packPrice, blocked: null },
     { id: 'hoe', group: 'Tools', name: 'Sharper hoe', effect: hoeLvl < hoeMax ? `${CONFIG.hoe.seconds[hoeLvl]}s → ${CONFIG.hoe.seconds[hoeLvl + 1]}s a bed, ${CONFIG.hoe.energy[hoeLvl + 1]} energy` : `${CONFIG.hoe.seconds[hoeLvl]}s a bed`, level: `${hoeLvl + 1} / ${hoeMax + 1}`,
       price: HOE_PRICES[hoeLvl] ?? 0, blocked: hoeLvl >= hoeMax ? 'Sharpest hoe' : null },
     { id: 'hands', group: 'Tools', name: 'Quick hands', effect: handsLvl < handsMax ? `${CONFIG.hands.dropSeconds[handsLvl]}s → ${CONFIG.hands.dropSeconds[handsLvl + 1]}s a crop into the crate` : `${CONFIG.hands.dropSeconds[handsLvl]}s a crop`, level: `${handsLvl + 1} / ${handsMax + 1}`,
@@ -61,18 +61,18 @@ export function catalog(state) {
   ];
   for (const [lv, tier] of CONFIG.sprinkler.tiers.entries()) {
     const id = lv ? 'sprinkler' + lv : 'sprinkler', owned = sprinklerCount(state, lv) + pendingCount(state, id), n = (2 * tier.radius + 1) ** 2 - 1;
-    items.push({ id, group: 'Automation', name: tier.name, effect: `On fed pipe, keeps the ${n} beds around it watered while you are awake${lv ? `. Draws ${tier.draw} of the line's pressure` : `. The well runs ${CONFIG.pump.wellFeeds} on its own, pumps add more`}. Metered: ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id, group: 'Water', name: tier.name, effect: `Waters the ${n} beds around it · draws ${tier.draw} pressure · ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   for (const [lv, tier] of CONFIG.pump.tiers.entries()) {
     const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
-    items.push({ id: 'pump' + lv, group: 'Automation', name: tier.name, effect: `On fed pipe, runs ${tier.feeds} more sprinklers${tier.stillBelow != null ? '. Stands still when the air is calm' : tier.fuelPerDay ? `. Burns ${formatMoney(tier.fuelPerDay)} of fuel a day` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id: 'pump' + lv, group: 'Water', name: tier.name, effect: `Adds ${tier.feeds} pressure to its pipe line${tier.stillBelow != null ? ' · stands still on calm days' : tier.fuelPerDay ? ` · ${formatMoney(tier.fuelPerDay)} fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   { const PW = CONFIG.power, count = (kind) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === kind ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === kind).length + held(state.inventory) + held(state.chest); };
     const owned = kind => { const n = count(kind) + pendingCount(state, kind); return n ? `${n} owned` : ''; };
-    items.push({ id: 'generator', group: 'Automation', name: 'Generator', effect: `Powers ${PW.generator.powers} machines on the line laid from it. Burns ${formatMoney(PW.generator.fuelPerDay)} of fuel a night`, level: owned('generator'), price: PW.generator.price, blocked: null });
-    items.push({ id: 'line', group: 'Automation', name: `Power line ×${PW.line.packSize}`, effect: 'Sections to lay from a generator, one a tile. Pickers and hoppers stand on it', level: '', price: PW.line.packPrice, blocked: null });
-    items.push({ id: 'picker', group: 'Automation', name: 'Picker', effect: `On powered line, takes ${PW.picker.perHour === 1 ? 'a ripe crop' : PW.picker.perHour + ' ripe crops'} an hour from the ${(2 * PW.picker.radius + 1) ** 2 - 1} beds around it and hands them down the line to a hopper`, level: owned('picker'), price: PW.picker.price, blocked: null });
-    items.push({ id: 'hopper', group: 'Automation', name: 'Hopper', effect: `On powered line beside the crate. Holds ${PW.hopper.holds} crops and tips them into the crate when the cart comes`, level: owned('hopper'), price: PW.hopper.price, blocked: null }); }
+    items.push({ id: 'generator', group: 'Power', name: 'Generator', effect: `Makes ${PW.generator.power} power for the line laid from it · ${formatMoney(PW.generator.fuelPerDay)} fuel a night while on`, level: owned('generator'), price: PW.generator.price, blocked: null });
+    items.push({ id: 'line', group: 'Power', name: `Power line ×${PW.line.packSize}`, effect: 'Lay it from a generator, one tile a section. Pickers and hoppers stand on it', level: '', price: PW.line.packPrice, blocked: null });
+    items.push({ id: 'picker', group: 'Power', name: 'Picker', effect: `Takes ${PW.picker.perHour === 1 ? 'a ripe crop' : PW.picker.perHour + ' ripe crops'} an hour from the ${(2 * PW.picker.radius + 1) ** 2 - 1} beds around it, hands it down the line · ${PW.picker.power} power`, level: owned('picker'), price: PW.picker.price, blocked: null });
+    items.push({ id: 'hopper', group: 'Power', name: 'Hopper', effect: `Holds ${PW.hopper.holds} crops. Beside the crate it tips in when the cart comes · ${PW.hopper.power} power`, level: owned('hopper'), price: PW.hopper.price, blocked: null }); }
   for (const key of seedOffers(state)) {
     const sp = seedSpecies(state, key);
     items.push({ id: 'seeds:' + key, group: 'Seeds', name: `${sp.name} seeds ×3`, effect: roles(sp).join(' · '), level: '', price: r2(Math.max(1, sp.seedPrice * 3)), species: sp, blocked: null });
