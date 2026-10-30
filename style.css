@@ -133,6 +133,9 @@ button.small { padding: 3px 7px; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; 
 .pc-row.trait { gap: 16px; } .pc-row.trait span:first-child { white-space: nowrap; } .pc-row.trait span:last-child { text-align: right; }
 .pc-row .up { color: #3f7a1f; } .pc-row .down { color: #a0462f; }
 .cat-row button { min-width: 64px; }
+.cat-row button.tier { min-width: 0; padding: 2px 7px; margin: 0 3px 0 0; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; vertical-align: middle; }
+.cat-row button.tier.sel { background: #f6c453; }
+.cat-row button.tier.off { opacity: .55; }
 /* morning report: the bred child */
 .mr-breed { display: flex; gap: 14px; align-items: flex-start; margin-top: 4px; }
 .mr-breed canvas { image-rendering: pixelated; flex: none; background: #e4cf9f; border: 2px solid #3b2314; }

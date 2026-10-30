@@ -61,11 +61,11 @@ export function catalog(state) {
   ];
   for (const [lv, tier] of CONFIG.sprinkler.tiers.entries()) {
     const id = lv ? 'sprinkler' + lv : 'sprinkler', owned = sprinklerCount(state, lv) + pendingCount(state, id), n = (2 * tier.radius + 1) ** 2 - 1;
-    items.push({ id, group: 'Water', name: tier.name, effect: `Waters the ${n} beds around it · draws ${tier.draw} pressure · ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id, group: 'Water', family: 'Sprinkler', tier: ['I', 'II', 'III'][lv], name: tier.name, effect: `Waters the ${n} beds around it · draws ${tier.draw} pressure · ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   for (const [lv, tier] of CONFIG.pump.tiers.entries()) {
     const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
-    items.push({ id: 'pump' + lv, group: 'Water', name: tier.name, effect: `Adds ${tier.feeds} pressure to its pipe line${tier.stillBelow != null ? ' · stands still on calm days' : tier.fuelPerDay ? ` · burns ${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} of fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id: 'pump' + lv, group: 'Water', family: 'Pump', tier: tier.name, name: tier.name, effect: `Adds ${tier.feeds} pressure to its pipe line${tier.stillBelow != null ? ' · stands still on calm days' : tier.fuelPerDay ? ` · burns ${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} of fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   { const PW = CONFIG.power, count = (kind) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === kind ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === kind).length + held(state.inventory) + held(state.chest); };
     const owned = kind => { const n = count(kind) + pendingCount(state, kind); return n ? `${n} owned` : ''; };
@@ -82,7 +82,7 @@ export function catalog(state) {
   { const Lo = CONFIG.loan, earned = state.stats?.earned || 0;   // the bank
     if (state.loan) items.push({ id: 'repay', group: 'Bank', name: 'Pay off the loan', effect: `${formatMoney(state.loan.owed)} still owed; the cart takes ${formatMoney(state.loan.nightly)} a night`, level: '', price: state.loan.owed, blocked: null });
     Lo.sizes.forEach((size, i) => { const nightly = r2(size * (1 + Lo.interest) / Lo.nights);
-      items.push({ id: 'loan:' + size, group: 'Bank', name: `Borrow ${formatMoney(size)}`, effect: `The money now; the cart takes ${formatMoney(nightly)} a night for ${Lo.nights} nights (${formatMoney(size * (1 + Lo.interest))} in all)`, level: '', price: 0, blocked: state.loan ? 'One loan at a time' : earned < Lo.gates[i] ? `The bank wants to see ${formatMoney(Lo.gates[i])} sold first` : null }); }); }
+      items.push({ id: 'loan:' + size, group: 'Bank', family: 'Borrow', tier: formatMoney(size), name: `Borrow ${formatMoney(size)}`, effect: `The money now; the cart takes ${formatMoney(nightly)} a night for ${Lo.nights} nights (${formatMoney(size * (1 + Lo.interest))} in all)`, level: '', price: 0, blocked: state.loan ? 'One loan at a time' : earned < Lo.gates[i] ? `The bank wants to see ${formatMoney(Lo.gates[i])} sold first` : null }); }); }
   const hasBench = !!state.hasBench || pendingCount(state, 'bench') > 0 || state.parcels?.some(p => p.id === 'bench');
   items.push({ id: 'bench', group: 'Stations', name: 'Breeding bench', effect: 'Cross two species into a new one overnight', level: hasBench ? 'owned' : '', price: BENCH_PRICE, blocked: hasBench ? 'You have one' : null });
   const hasCompost = !!state.hasCompost || pendingCount(state, 'compost') > 0 || state.parcels?.some(p => p.id === 'compost');

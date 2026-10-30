@@ -187,7 +187,7 @@ export class UI {
     } else if (it.kind === 'tool' && it.tool === 'can') {
       html += `<div class="pc-row"><span>Water</span><span>${s.can.water} / ${s.can.capacity} pours</span></div>${bar(s.can.water / s.can.capacity * 100, '#3f8fd6')}<div class="pc-note">Fill it at the well. One pour per bed. A second pour on a wet bed waterlogs it: turn it with the hoe.</div>`;
     } else if (it.kind === 'tool' && it.tool === 'hoe') {
-      html += `<div class="pc-row"><span>Level</span><span>${S.hoeLevel(s) + 1} · ${S.hoeSeconds(s)}s a bed</span></div><div class="pc-row"><span>Energy</span><span>${S.hoeEnergy(s)} a bed</span></div><div class="pc-note">Tills grass. Turns a waterlogged bed. Digs up a plant: a seed comes back as a seed, anything bigger is pulled up for the compost.</div>`;
+      html += `<div class="pc-row"><span>Level</span><span>${S.hoeLevel(s) + 1} · ${S.hoeSeconds(s)}s a bed</span></div><div class="pc-row"><span>Energy</span><span>${S.hoeEnergy(s)} a bed</span></div><div class="pc-note">Tills grass, and flattens an empty bed back to grass. Turns a waterlogged bed. Digs up a plant: a seed comes back as a seed, anything bigger is pulled up for the compost. Lifts pipe, line, belt and any machine.</div>`;
     } else if (it.kind === 'withered' || it.kind === 'pulled') {
       html += `<div class="pc-note">${it.kind === 'pulled' ? 'Dug up before it ripened. It won\'t grow again.' : 'Dried out and died in the bed.'} Drop it in the compost bin: it rots down into fertiliser.</div>`;
     }
@@ -400,14 +400,26 @@ export class UI {
       }
       // the catalogue by group
       const items = catalog(s), groups = ['Tools', 'Stations', 'Water', 'Power', 'Land', 'Bank', 'Seeds'];
-      const subs = { Seeds: `new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}`, Water: `the well gives ${CONFIG.pump.wellFeeds} pressure, pumps add more`, Power: 'line carries power, belt carries crops', Bank: 'one loan at a time; the cart takes the night\'s share before you see the money' };
+      const subs = { Seeds: `new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}`, Water: `the well's own head runs ${CONFIG.pump.wellFeeds} sprinklers; a pump on the line pushes more through the same pipe`, Power: 'line carries power, belt carries crops', Bank: 'one loan at a time; the cart takes the night\'s share before you see the money' };
       for (const gname of groups) {
         const list = items.filter(i => i.group === gname); if (!list.length) continue;
         body.appendChild(el('div', 'pc-sec', subs[gname] ? `${gname} <span class="muted">· ${subs[gname]}</span>` : gname));
-        for (const item of list) {
+        const seen = new Set();
+        for (const first of list) {
+          // a family (Sprinkler I/II/III, the pumps, the loans) is one row with a chip a tier: the chip picks which one the row shows and orders
+          const fam = first.family ? list.filter(i => i.family === first.family) : [first];
+          if (first.family) { if (seen.has(first.family)) continue; seen.add(first.family); }
+          this.catTier = this.catTier || {};
+          const sel = first.family ? Math.min(this.catTier[first.family] ?? 0, fam.length - 1) : 0, item = fam[sel];
           const row = el('div', 'cat-row' + (item.blocked ? ' blocked' : item.afford ? ' afford' : ' cant'));
           row.appendChild(icon(item));
-          row.appendChild(el('div', 'grow', `<b>${esc(item.name)}</b>${item.level ? ` <span class="muted">${esc(item.level)}</span>` : ''}<br><span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
+          const grow = el('div', 'grow');
+          const head = el('div', null, `<b>${esc(first.family || item.name)}</b> `);
+          if (first.family) fam.forEach((f, i) => { const c = el('button', 'tier' + (i === sel ? ' sel' : '') + (f.blocked ? ' off' : ''), esc(f.tier)); c.onclick = () => { this.catTier[first.family] = i; this.refresh(); }; head.appendChild(c); });
+          if (item.level && !first.family) head.appendChild(el('span', 'muted', ' ' + esc(item.level)));
+          grow.appendChild(head);
+          grow.appendChild(el('div', null, `${first.family ? `<span>${esc(item.name)}</span>${item.level ? ` <span class="muted">${esc(item.level)}</span>` : ''} · ` : ''}<span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
+          row.appendChild(grow);
           const loan = item.id.startsWith('loan:'), repay = item.id === 'repay';
           row.appendChild(el('div', 'cat-price', item.blocked ? '' : loan ? `+${formatMoney(+item.id.slice(5))}` : item.afford ? formatMoney(item.price) : `${formatMoney(item.price)}<br><span class="gap">${formatMoney(item.price - s.money)} to go</span>`));
           const b = el('button', item.blocked || s.money < item.price ? null : 'primary', item.blocked ? '—' : loan ? 'Borrow' : repay ? 'Pay off' : 'Order'); b.disabled = !!item.blocked || s.money < item.price;

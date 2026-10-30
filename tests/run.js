@@ -1073,5 +1073,18 @@ await test('loans: the money comes at once, the cart takes the night\'s share, s
   assert.ok(rep.lines.some(l => /paid off/.test(l)));
 });
 
+await test('the hoe flattens an empty bed back to grass (and says when fertiliser goes with it); the catalogue rows carry a family and a tier', async () => {
+  const s = arm(S.createState(1)); const tile = (x, y) => s.world.tiles[y * s.world.w + x];
+  s.player.x = X + 0.5; s.player.y = Y + 1.5;
+  assert.ok(S.useItem(s, 0, X, Y).ok, 'till'); assert.ok(tile(X, Y).tilled);
+  let r = S.useItem(s, 0, X, Y); assert.ok(r.ok && r.float === 'Flattened' && !tile(X, Y).tilled, JSON.stringify(r));
+  assert.ok(S.useItem(s, 0, X, Y).ok); tile(X, Y).fert = { name: 'Bone meal', stats: {} };
+  r = S.useItem(s, 0, X, Y); assert.ok(r.ok && /fertiliser is lost/.test(r.msg) && !tile(X, Y).fert, JSON.stringify(r));
+  const { catalog } = await import('../src/catalog.js'); const items = catalog(s);
+  assert.deepEqual(items.filter(i => i.family === 'Sprinkler').map(i => i.tier), ['I', 'II', 'III']);
+  assert.deepEqual(items.filter(i => i.family === 'Pump').map(i => i.tier), CONFIG.pump.tiers.map(t => t.name));
+  assert.equal(items.filter(i => i.family === 'Borrow').length, CONFIG.loan.sizes.length);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

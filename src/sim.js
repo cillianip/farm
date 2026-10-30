@@ -394,7 +394,7 @@ export function useItem(state, slotIndex, x, y) {
     if (t.line) { if (!hasRoom(state.inventory, { kind: 'line', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'line', qty: 1 }); t.line = false; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Line up' }; }
     if (t.track) return fail('The track stays a track');
     if (!isOwnedFarmland(state.world, x, y)) return fail(t.t === 'grass' ? 'Not your land' : '');
-    if (t.tilled) { if (!spend(state, E.clear)) return fail('Too tired'); t.tilled = false; t.fert = null; return { ok: true, msg: 'Soil flattened' }; }
+    if (t.tilled) { if (!spend(state, E.clear)) return fail('Too tired'); const fert = !!t.fert; t.tilled = false; t.fert = null; return { ok: true, msg: fert ? 'Soil flattened: the fertiliser is lost' : '', float: 'Flattened' }; }
     if (!spend(state, hoeEnergy(state))) return fail('Too tired');
     t.tilled = true; t.moisture = t.moisture || 0; today(state).hoed++; return { ok: true, msg: '' };
   }

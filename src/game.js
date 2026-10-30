@@ -156,7 +156,8 @@ export class Game {
       if (t?.tilled && t.crop && S.moistureOf(t) > CONFIG.soil.soggyAbove) return this.startAction('drain', tx, ty, S.hoeSeconds(s));
       if (t?.crop && t.crop.growth >= 100) return this.ui.toast('Ripe: pick it by hand first');
       if (t?.crop) return this.startAction('clear', tx, ty, S.hoeSeconds(s) * 2);                                       // dig up a living plant (a regrowing bed can be moved)
-      if (!t || t.t !== 'grass' || t.track || t.tilled || t.crop || isTree(s.world, tx, ty)) return this.ui.toast(t?.tilled ? (t.crop ? 'A plant grows there' : 'Already tilled') : '');
+      if (t?.tilled && !t.crop) return this.startAction('clear', tx, ty, S.hoeSeconds(s));                               // flatten an empty bed back to grass
+      if (!t || t.t !== 'grass' || t.track || t.tilled || t.crop || isTree(s.world, tx, ty)) return this.ui.toast('');
       return this.startAction('hoe', tx, ty, S.hoeSeconds(s));
     }
     if (it.kind === 'tool' && it.tool === 'can') { if (!t?.tilled) return this.ui.toast('Only tilled soil takes water'); if (s.can.water <= 0) return this.ui.toast('The can is empty. Fill it at the well.'); return this.startAction('water', tx, ty, CONFIG.actions.waterSeconds); }
@@ -285,7 +286,7 @@ export class Game {
     if (t.pipe) return { title: t.line ? 'Pipe and power line' : 'Pipe', sub: S.pipeFed(this.state, x, y) ? 'Fed from the well.' : 'Dry: no unbroken line back to the well.' };
     if (t.track) return { title: 'Cart track', sub: 'The road the delivery cart comes up at night. It leads out of the clearing.' };
     if (isTree(w, x, y)) return { title: 'Forest', sub: 'Not your land yet.' };
-    if (t.tilled) return { title: 'Tilled soil', sub: S.moistureOf(t) > CONFIG.soil.soggyAbove ? 'Waterlogged. Turn it with the hoe to drain.' : t.crop?.dead ? 'Clear it with the hoe.' : t.crop ? '' : 'Ready for a seed.' };
+    if (t.tilled) return { title: 'Tilled soil', sub: S.moistureOf(t) > CONFIG.soil.soggyAbove ? 'Waterlogged. Turn it with the hoe to drain.' : t.crop?.dead ? 'Clear it with the hoe.' : t.crop ? '' : 'Ready for a seed. The hoe flattens it back to grass.' };
     return { title: 'Grass', sub: 'Hoe it to make a bed.' };
   }
   facePoint(x, y) {
