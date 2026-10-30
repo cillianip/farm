@@ -56,7 +56,7 @@ export const CONFIG = {
   // your land, never a bed). A sprinkler runs only on a pipe tile with an unbroken line back to the well. The limit on
   // automation is what you can lay and where, not a rising price tag.
   pipe: { packSize: 10, packPrice: 20 },
-  // Pumps: pressure. The well on its own pushes water to `wellFeeds` sprinklers; every pump standing on fed pipe adds
+  // Pumps: flow. (The old model: the well ran `wellFeeds` sprinklers and every pump on fed pipe added
   // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
   // still when the air is calm (humidity under `stillBelow`); the engine burns fuel every day it stands on fed pipe.
   // Power (the start of stage 4). A generator stands on your land and, while switched on and fuelled, burns a can of fuel a night and
@@ -70,10 +70,14 @@ export const CONFIG = {
   power: { generator: { price: 600, fuelPerDay: 1, power: 6 }, line: { packSize: 10, packPrice: 25 },
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
     picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 } },
-  pump: { wellFeeds: 2, tiers: [
-    { name: 'Hand pump', feeds: 4, price: 120 },
-    { name: 'Windmill', feeds: 12, price: 400, stillBelow: 30 },
-    { name: 'Engine', feeds: 40, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
+  // Flow has a range in tiles, like a signal. The well gives `wellHead` tiles of flow to the pipe leaving it; every tile
+  // travelled costs 1; where the pipe splits, each branch gets an equal share of what is left; a sprinkler drinks its
+  // `draw` from the flow at its tile and runs only when that much arrives; a running pump standing in the flow adds its
+  // `head` tiles from where it stands. Pipe the flow does not reach is dry. The well alone wets the yard, not the farm.
+  pump: { wellHead: 6, tiers: [
+    { name: 'Hand pump', head: 16, price: 120 },
+    { name: 'Windmill', head: 36, price: 400, stillBelow: 30 },
+    { name: 'Engine', head: 90, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
   ] },
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
   // running one burns `fuelPerDay` cans a night. A tank holds `tank` cans. Empty, the machine stops until you fill it.

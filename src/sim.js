@@ -429,14 +429,14 @@ export function useItem(state, slotIndex, x, y) {
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
-    return { ok: true, msg: !pipeFed(state, x, y) ? 'Dry: it needs pipe under it that reaches the well' : sprinklerFed(state, x, y) ? '' : 'No pressure: the line runs all it can. A pump on the line adds more', float: 'Set' };
+    return { ok: true, msg: !pipeLinked(state, x, y) ? 'Dry: it needs pipe under it that reaches the well' : sprinklerFed(state, x, y) ? '' : `No pressure: ${headAt(state, x, y)} ${headAt(state, x, y) === 1 ? 'tile' : 'tiles'} of flow ${headAt(state, x, y) === 1 ? 'reaches' : 'reach'} here, it drinks ${sprinklerTier(t.obj).draw}. A pump nearer the well adds more`, float: 'Set' };
   }
   if (item.kind === 'pump') {
     if (!t.pipe || t.obj) return fail(t.obj ? 'Something stands there' : 'A pump sits on a pipe');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.obj = { kind: 'pump', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
-    return { ok: true, msg: pipeFed(state, x, y) ? '' : 'Dry: this pipe has no line back to the well', float: 'Set' };
+    return { ok: true, msg: !pipeLinked(state, x, y) ? 'Dry: this pipe has no line back to the well' : !pipeFed(state, x, y) ? 'Dry: the flow runs out before here. Stand it nearer the well' : '', float: 'Set' };
   }
   if (item.kind === 'generator') {
     if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
@@ -487,7 +487,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.pipe = true; state.pipeRev = (state.pipeRev || 0) + 1;
-    return { ok: true, msg: '', float: pipeFed(state, x, y) ? 'Laid' : 'Laid (dry)' };
+    return { ok: true, msg: '', float: pipeFed(state, x, y) ? `Laid (${headAt(state, x, y)})` : 'Laid (dry)' };
   }
   return harvestOrInspect(state, t, x, y);
 }
@@ -641,12 +641,16 @@ export function pipeNet(state) {
   const net = { rev, w, set, dist, pressure: null, pressureH: null }; FED.set(state, net);
   return net;
 }
-export const fedPipes = state => pipeNet(state).set;
-export const pipeFed = (state, x, y) => !!tileAt(state.world, x, y)?.pipe && fedPipes(state).has(y * state.world.w + x);
+// linked: an unbroken pipe back to the well. fed: the flow actually reaches it (head above 0).
+export const pipeLinked = (state, x, y) => !!tileAt(state.world, x, y)?.pipe && pipeNet(state).set.has(y * state.world.w + x);
+export const fedPipes = state => pressure(state).wet;
+export const pipeFed = (state, x, y) => !!tileAt(state.world, x, y)?.pipe && pressure(state).wet.has(y * state.world.w + x);
+export const headAt = (state, x, y) => pressure(state).head.get(y * state.world.w + x) || 0;
 // Pumps: pressure for the line. The well pushes water to `wellFeeds` sprinklers on its own; each running pump on fed
 // pipe adds its tier's `feeds`. The windmill stands still in calm air; the engine always runs (and burns fuel at night).
 export const isPump = t => t?.obj?.kind === 'pump';
 export const pumpTier = obj => CONFIG.pump.tiers[obj?.level || 0];
+// turning: fuelled and in wind; whether it is in the flow is pressure()'s business
 export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); if (tier.fuelPerDay && !fuelOf(t.obj)) return false; return tier.stillBelow == null || humidityOf(state) >= tier.stillBelow; }
 // Fuel: generators and engines hold cans of it and burn one a night while they run; empty, they stop.
 export const burnsFuel = obj => obj?.kind === 'generator' || (obj?.kind === 'pump' && !!pumpTier(obj).fuelPerDay);
@@ -654,18 +658,33 @@ export const fuelOf = obj => obj?.fuel || 0;
 export function pumpTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isPump(t)) out.push({ x, y, t }); } return out; }
 // What the line can run and which sprinklers get it: the nearest to the well first, by pipe distance. Cached with the
 // network; recomputed when the day's humidity changes (the windmill).
+// The flow: walked from the well outward in order of pipe distance. Each tile gets its head (the tiles of flow
+// arriving), a sprinkler on it runs if the head covers its draw and drinks that much, a turning pump standing in the
+// flow adds its tier's head, and what is left goes on: one tile costs 1, and a split shares it equally (floor).
+// Two runs that rejoin add their shares. Cached with the pipe network; redone when the air changes (windmills).
 export function pressure(state) {
   const net = pipeNet(state), h = humidityOf(state);
   if (net.pressure && net.pressureH === h) return net.pressure;
-  const w = state.world, idx = (x, y) => y * w.w + x;
-  let cap = CONFIG.pump.wellFeeds, pumps = 0, running = 0;
-  for (const { x, y, t } of pumpTiles(state)) if (net.set.has(idx(x, y))) { pumps++; if (pumpRunning(state, t)) { cap += pumpTier(t.obj).feeds; running++; } }
-  const fed = sprinklerTiles(state).filter(({ x, y }) => net.set.has(idx(x, y))).sort((a, b) => net.dist.get(idx(a.x, a.y)) - net.dist.get(idx(b.x, b.y)));
-  const on = new Set(); let used = 0;   // each sprinkler draws its tier's share; the first that does not fit stops the line there
-  for (const { x, y } of fed) { const d = sprinklerTier(tileAt(w, x, y).obj).draw; if (used + d > cap) break; used += d; on.add(idx(x, y)); }
-  net.pressure = { cap, used, on, fed: fed.length, pumps, running }; net.pressureH = h;
+  const w = state.world, idx = (x, y) => y * w.w + x, head = new Map(), on = new Set(), wet = new Set(), pumpsOn = new Set();
+  let pumps = 0, running = 0, fed = 0;
+  const order = [...net.set].sort((a, b) => net.dist.get(a) - net.dist.get(b));
+  const next = i => { const x = i % w.w, y = (i - x) / w.w, d = net.dist.get(i), out = []; for (const [dx, dy] of N4) { const k = idx(x + dx, y + dy); if (net.dist.get(k) === d + 1) out.push(k); } return out; };
+  const exits = order.filter(i => net.dist.get(i) === 1);
+  for (const i of exits) head.set(i, Math.floor(CONFIG.pump.wellHead / exits.length));
+  for (const i of order) {
+    const t = w.tiles[i], hIn = head.get(i) || 0; let r = hIn;
+    if (hIn > 0) wet.add(i);
+    if (isSprinkler(t)) { fed++; const d = sprinklerTier(t.obj).draw; if (hIn >= d) { on.add(i); r -= d; } }
+    if (isPump(t)) { pumps++; if (hIn > 0 && pumpRunning(state, t)) { running++; pumpsOn.add(i); r += pumpTier(t.obj).head; } }
+    const out = next(i); if (!out.length || r <= 0) continue;
+    const share = Math.floor((r - 1) / out.length); if (share <= 0) continue;
+    for (const k of out) head.set(k, (head.get(k) || 0) + share);
+  }
+  net.pressure = { head, on, wet, fed, pumps, running, pumpsOn }; net.pressureH = h;
   return net.pressure;
 }
+// a pump that adds to the flow: turning, and standing where the flow reaches
+export const pumpInFlow = (state, x, y) => pressure(state).pumpsOn.has(y * state.world.w + x);
 // a sprinkler that runs: on fed pipe, and within the line's pressure
 export const sprinklerFed = (state, x, y) => isSprinkler(tileAt(state.world, x, y)) && pressure(state).on.has(y * state.world.w + x);
 export function sprinklerTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) if (isSprinkler(w.tiles[y * w.w + x])) out.push({ x, y }); return out; }
