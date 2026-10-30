@@ -1,5 +1,5 @@
 // Items and slot inventories. Items: {kind, qty, species?, q?, fert?, tool?, unknown?}
-// kinds: tool, seed, crop, fert, sprinkler, pump (level = tier), pipe (a section to lay), generator, line (a section of power line), belt (a section of belt), picker, hopper, withered (a dead plant the hoe cleared), pulled (a living plant the hoe dug up)
+// kinds: tool, seed, crop, fert, sprinkler, pump (level = tier), pipe (a section to lay), generator, line (a section of power line), belt (a section of belt), fuel (a can for a generator or an engine), picker, hopper, withered (a dead plant the hoe cleared), pulled (a living plant the hoe dug up)
 import { CONFIG } from './config.js';
 
 export const itemKey = it => it.kind === 'fert' ? `fert:${it.fert.id || it.fert.name}` : `${it.kind}:${it.species || ''}:${it.q || 0}:${it.tool || ''}${it.level ? ':' + it.level : ''}`;
@@ -46,6 +46,7 @@ export function itemName(it, species) {
   if (it.kind === 'pump') return CONFIG.pump.tiers[it.level || 0].name;
   if (it.kind === 'generator') return 'Generator';
   if (it.kind === 'line') return 'Power line';
+  if (it.kind === 'fuel') return 'Fuel';
   if (it.kind === 'belt') return 'Belt';
   if (it.kind === 'picker') return 'Picker';
   if (it.kind === 'hopper') return 'Hopper';

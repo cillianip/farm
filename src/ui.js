@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, fuelIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes } from './genetics.js';
@@ -23,6 +23,7 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'seed') { const g = species[item.species]?.genome; src = g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   else if (item.kind === 'crop') { const sp = species[item.species]; src = sp ? produceSprite(sp) : null; }
   else if (item.kind === 'fert') src = fertIcon();
+  else if (item.kind === 'fuel') src = fuelIcon();
   else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
   else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
@@ -165,10 +166,12 @@ export class UI {
       html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Pressure</span><span>draws ${tier.draw} of the line's</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on a pipe the well feeds. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
     } else if (it.kind === 'pump') {
       const tier = CONFIG.pump.tiers[it.level || 0];
-      html += `<div class="pc-row"><span>Runs</span><span>${tier.feeds} more sprinklers</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${formatMoney(tier.fuelPerDay)} a day</span></div>` : '') + `<div class="pc-note">Set it on a pipe the well feeds. The well pushes water to ${CONFIG.pump.wellFeeds} sprinklers on its own; past that the ones furthest down the line run dry.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''} The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Runs</span><span>${tier.feeds} more sprinklers</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} a night, holds ${CONFIG.fuel.tank}</span></div>` : '') + `<div class="pc-note">Set it on a pipe the well feeds. The well pushes water to ${CONFIG.pump.wellFeeds} sprinklers on its own; past that the ones furthest down the line run dry.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''}${tier.fuelPerDay ? ' Pour fuel in with cans in hand; empty, it stops.' : ''} The hoe picks it up.</div>`;
     } else if (it.kind === 'generator') {
       const G = CONFIG.power.generator;
-      html += `<div class="pc-row"><span>Makes</span><span>${G.power} power</span></div><div class="pc-row"><span>Fuel</span><span>${formatMoney(G.fuelPerDay)} a night while on</span></div><div class="pc-note">Set it on your land and lay power line from it. Each machine on the line draws its share; when the line asks for more than the generator makes, the nearest run. Click it to switch it off and on: off, it burns nothing. The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Makes</span><span>${G.power} power</span></div><div class="pc-row"><span>Fuel</span><span>${G.fuelPerDay === 1 ? 'a can' : G.fuelPerDay + ' cans'} a night while on, holds ${CONFIG.fuel.tank}</span></div><div class="pc-note">Set it on your land, pour fuel in with cans in hand, and lay power line from it. Each machine on the line draws its share; when the line asks for more than the generator makes, the nearest run. Click it to switch it off and on: off, it burns nothing. The hoe picks it up.</div>`;
+    } else if (it.kind === 'fuel') {
+      html += `<div class="pc-row"><span>Runs</span><span>a generator or an engine for a night</span></div><div class="pc-row"><span>Tank</span><span>${CONFIG.fuel.tank} cans</span></div><div class="pc-note">Click a generator or an engine with it in hand to pour cans in, as many as the tank takes. Off, a generator burns nothing. The hoe gives the cans back when it picks the machine up.</div>`;
     } else if (it.kind === 'line') {
       html += `<div class="pc-row"><span>Carries</span><span>power only</span></div><div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Wire on posts. Start beside the generator and run it out to where the pickers and the hopper stand, over clear ground, never through a bed. It can share a tile with pipe and belt. Powered line shows a spark. The hoe picks a section up.</div>`;
     } else if (it.kind === 'belt') {
@@ -494,10 +497,11 @@ export class UI {
         if (seedBookBonus(s)) box.appendChild(el('div', 'pc-row muted', `<span>Seed book: ${s.discovered.length} species known</span><span class="up">+${Math.round(seedBookBonus(s) * 100)}% on every sale</span>`));
         box.appendChild(el('div', 'pc-row total', `<span>Paid</span><span>+${formatMoney(report.sale.total)}</span>`));
         if (report.water) box.appendChild(el('div', 'pc-row', `<span>Water bill · ${report.water.pours} sprinkler pours</span><span class="down">−${formatMoney(report.water.bill)}</span></div>`));
-        if (report.fuel) box.appendChild(el('div', 'pc-row', `<span>Fuel · engines and generators</span><span class="down">−${formatMoney(report.fuel)}</span>`));
+        if (report.fuel?.cans) box.appendChild(el('div', 'pc-row', `<span>Fuel · engines and generators</span><span>${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned</span>`));
         if (report.dayBefore) { const d = report.sale.total - report.dayBefore.sale; box.appendChild(el('div', 'pc-row muted', `<span>Day before: ${formatMoney(report.dayBefore.sale)}</span><span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${formatMoney(Math.abs(d))}</span>`)); }
         cartNodes.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate.`, box);
-      } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : '') + (report.fuel ? ` Fuel: −${formatMoney(report.fuel)}.` : ''));
+      } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : '') + (report.fuel?.cans ? ` Fuel: ${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned.` : ''));
+      if (report.fuel?.dry) cartNodes.push(`${report.fuel.dry === 1 ? 'A machine is' : report.fuel.dry + ' machines are'} out of fuel: pour a can in.`);
       if (report.picked) cartNodes.push(`The pickers took ${report.picked} ${report.picked === 1 ? 'crop' : 'crops'}.`);
       if (report.delivery?.count) { const list = el('ul', 'mr-list'); for (const p of s.parcels || []) list.appendChild(el('li', null, esc(p.name))); cartNodes.push(`It left ${report.delivery.count === 1 ? 'a parcel' : report.delivery.count + ' parcels'} in the crate. Click the crate to open ${report.delivery.count === 1 ? 'it' : 'them'}.`, list); }
       sec('⛟', 'The cart', ...cartNodes);

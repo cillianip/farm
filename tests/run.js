@@ -892,14 +892,28 @@ await test('pressure: the well runs two sprinklers, the nearest first; a pump on
   s.humidity = CONFIG.pump.tiers[1].stillBelow - 1; assert.ok(!S.pumpRunning(s, tile(well.x, well.y + 2))); assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds, 'calm day: no help');
   s.humidity = 60; assert.ok(S.pumpRunning(s, tile(well.x, well.y + 2))); assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds, 'wind: it turns');
   // an engine on dry pipe counts for nothing and burns nothing; on fed pipe it burns fuel at night
-  tile(28, 26).pipe = true; tile(28, 26).obj = { kind: 'pump', level: 2 }; s.pipeRev++;   // a loose section, no line to the well
+  tile(28, 26).pipe = true; tile(28, 26).obj = { kind: 'pump', level: 2, fuel: 2 }; s.pipeRev++;   // a loose section, no line to the well
   assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds, 'a dry engine adds nothing');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; let m = s.money; let rep = S.sleep(s); assert.ok(!rep.fuel, 'no fuel for a dry engine'); 
-  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 2 }; s.pipeRev++;
-  assert.equal(S.pressure(s).fed, 4);
+  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 2 }; s.pipeRev++;   // on fed pipe but with an empty tank: it stands still
+  s.humidity = 60;   // the night rerolled the air: give the windmill its wind back
+  assert.equal(S.pressure(s).fed, 4); assert.ok(!S.pumpRunning(s, tile(well.x, well.y + 1)), 'no fuel: the engine stands still');
+  assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds, 'an empty engine adds nothing');
+  // fuel is poured in by hand, a can at a time; a running engine burns a can a night and the morning says so
+  s.inventory.slots[s.inventory.slots.findIndex(i => !i || i.kind === 'seed')] = { kind: 'fuel', qty: 3 }; const fs = s.inventory.slots.findIndex(i => i?.kind === 'fuel');
+  s.player.x = well.x + 0.5; s.player.y = well.y + 2.5;
+  assert.equal(S.useItem(s, fs, well.x, well.y + 2).msg, 'It burns nothing', 'a windmill takes no fuel');
+  let rf = S.useItem(s, fs, well.x, well.y + 1); assert.ok(rf.ok && rf.float === '+3 fuel' && rf.fuel === 3, JSON.stringify(rf)); assert.ok(!s.inventory.slots[fs], 'the cans are gone from the pocket');
+  assert.ok(S.pumpRunning(s, tile(well.x, well.y + 1))); assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds + CONFIG.pump.tiers[2].feeds, 'fuelled, it runs');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; m = s.money; rep = S.sleep(s);
-  assert.equal(rep.fuel, CONFIG.pump.tiers[2].fuelPerDay); assert.ok(Math.abs(s.money - (m - rep.fuel - (rep.water?.bill || 0))) < 1e-9, 'fuel taken');
-  assert.ok(rep.lines.some(l => /Fuel/.test(l)));
+  assert.equal(rep.fuel.cans, CONFIG.pump.tiers[2].fuelPerDay, 'one can burned: ' + JSON.stringify(rep.fuel)); assert.equal(tile(well.x, well.y + 1).obj.fuel, 3 - CONFIG.pump.tiers[2].fuelPerDay);
+  assert.ok(Math.abs(s.money - (m + (rep.sale?.total || 0) - (rep.water?.bill || 0))) < 1e-9, 'no money taken for fuel: the cans were paid for already');
+  assert.ok(rep.lines.some(l => /Fuel: 1 can burned/.test(l)), rep.lines.join(' | '));
+  tile(well.x, well.y + 1).obj.fuel = 1; s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; rep = S.sleep(s); assert.equal(rep.fuel.dry, 1, 'the last can: it reports running dry'); assert.ok(rep.lines.some(l => /out of fuel/.test(l)));
+  assert.ok(!S.pumpRunning(s, tile(well.x, well.y + 1)), 'and stands still in the morning');
+  s.inventory.slots[fs] = { kind: 'fuel', qty: 9 }; rf = S.useItem(s, fs, well.x, well.y + 1); assert.equal(rf.fuel, CONFIG.fuel.tank, 'the tank takes what it holds'); assert.equal(s.inventory.slots[fs].qty, 9 - CONFIG.fuel.tank); assert.equal(S.useItem(s, fs, well.x, well.y + 1).msg, 'The tank is full');
+  // the hoe gives the cans back with the engine
+  s.inventory.slots[fs] = null; const r5 = S.useItem(s, 0, well.x, well.y + 1); assert.ok(r5.ok, JSON.stringify(r5)); assert.ok(s.inventory.slots.some(i => i?.kind === 'fuel' && i.qty === CONFIG.fuel.tank), 'the cans came back');
 });
 await test('the catalogue sells the three pumps and the cart delivers them to a pocket with their level', async () => {
   const { catalog, placeOrder } = await import('../src/catalog.js');
@@ -948,7 +962,9 @@ await test('the chain: a generator powers the line; a picker takes one ripe crop
   assert.ok(!S.beltRunning(s, X + 1, hy), 'no generator: no powered hopper, the belt stands still'); assert.equal(S.beltDir(s, X + 1, hy), -1);
   tickMinutes(s, 2); assert.equal(tile(X, hy).obj.held.length, 0, 'no generator: the picker is dead'); assert.ok(tile(X, hy - 1).crop);
   assert.ok(!S.linePowered(s, X, hy) && !S.machinePowered(s, X, hy));
-  tile(X + 1, hy + 1).obj = { kind: 'generator' }; s.lineRev++;   // a generator below the line
+  tile(X + 1, hy + 1).obj = { kind: 'generator' }; s.lineRev++;   // a generator below the line, with an empty tank
+  assert.ok(!S.linePowered(s, X, hy) && !S.generatorLive(s, X + 1, hy + 1), 'no fuel: no power');
+  tile(X + 1, hy + 1).obj.fuel = 5; s.lineRev++;
   assert.ok(S.linePowered(s, X, hy) && S.machinePowered(s, X, hy) && S.machinePowered(s, hx, hy));
   assert.ok(S.beltRunning(s, X + 1, hy) && S.beltRunning(s, hx - 1, hy), 'the hopper drives the belt'); assert.equal(S.beltNet(s).dist.get(hy * W.w + hx - 1), 1); assert.equal(S.beltNet(s).dist.get(hy * W.w + X + 1), D);
   assert.equal(S.beltDir(s, X + 1, hy), 1, 'the belt runs east toward the hopper'); assert.equal(S.beltDir(s, hx - 1, hy), 1);
@@ -965,8 +981,8 @@ await test('the chain: a generator powers the line; a picker takes one ripe crop
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const m = s.money;
   const rep = S.sleep(s);
   assert.ok(rep.sale && rep.sale.count === carrot.genome.count, 'the hopper tipped into the crate and the cart took it: ' + JSON.stringify(rep.sale));
-  assert.equal(tile(hx, hy).obj.held.length, 0); assert.equal(rep.fuel, CONFIG.power.generator.fuelPerDay); assert.equal(rep.picked, carrot.genome.count);
-  assert.ok(Math.abs(s.money - (m + rep.sale.total - rep.fuel)) < 1e-9, 'sale in, fuel out');
+  assert.equal(tile(hx, hy).obj.held.length, 0); assert.equal(rep.fuel.cans, CONFIG.power.generator.fuelPerDay); assert.equal(tile(X + 1, hy + 1).obj.fuel, 5 - CONFIG.power.generator.fuelPerDay); assert.equal(rep.picked, carrot.genome.count);
+  assert.ok(Math.abs(s.money - (m + rep.sale.total)) < 1e-9, 'sale in, nothing out: fuel is paid for by the can');
   assert.ok(rep.lines.some(l => /pickers took/.test(l)));
   // a full hopper backs the belt up: the crops wait on the tile before it
   tile(hx, hy).obj.held = [{ species: carrot.id, q: 0, qty: CONFIG.power.hopper.holds }]; tile(hx - 1, hy).load = [{ species: carrot.id, q: 0, qty: 2 }];
@@ -1003,7 +1019,7 @@ await test('placing the chain: line and belt on clear ground only and never on e
   addItem(s.inventory, { kind: 'line', qty: 10 }); addItem(s.inventory, { kind: 'generator', qty: 1 });
   const slotOf = kind => s.inventory.slots.findIndex(i => i?.kind === kind);
   s.player.x = X + 0.5; s.player.y = Y + 1.5;
-  let r = S.useItem(s, slotOf('generator'), X, Y); assert.ok(r.ok && /Lay line/.test(r.msg), JSON.stringify(r));
+  let r = S.useItem(s, slotOf('generator'), X, Y); assert.ok(r.ok && /Lay line/.test(r.msg), JSON.stringify(r)); tile(X, Y).obj.fuel = 4;
   r = S.useItem(s, slotOf('line'), X + 1, Y); assert.ok(r.ok && r.float === 'Laid', JSON.stringify(r));
   s.player.x = X + 3.5; s.player.y = Y + 1.5; r = S.useItem(s, slotOf('line'), X + 3, Y); assert.ok(r.ok && r.float === 'Laid (dead)', 'a loose section: ' + JSON.stringify(r));
   assert.ok(S.useItem(s, 0, X + 2, Y + 1).ok, 'hoe a bed'); assert.equal(S.useItem(s, slotOf('line'), X + 2, Y + 1).msg, 'Not through a bed: flatten it first');
@@ -1027,11 +1043,11 @@ await test('placing the chain: line and belt on clear ground only and never on e
   s.player.x = X + 1.5; s.player.y = Y + 1.5; tile(X + 1, Y).obj = null; s.lineRev++;
   r = S.useItem(s, slotOf('picker'), X + 1, Y); assert.ok(r.ok && r.msg === '', 'a picker beside belt: ' + JSON.stringify(r)); assert.ok(S.machinePowered(s, X + 1, Y));
   s.money = 3000; const { catalog, placeOrder } = await import('../src/catalog.js');
-  const ids = ['generator', 'line', 'belt', 'picker', 'hopper']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Power', id); assert.ok(placeOrder(s, id).ok); }
+  const ids = ['generator', 'line', 'belt', 'picker', 'hopper', 'fuel']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Power', id); assert.ok(placeOrder(s, id).ok); }
   assert.equal(catalog(s).find(i => i.id === 'picker').level, '2 owned');
   S.sleep(s); S.collectParcels(s);
   const all = [...s.inventory.slots, ...s.chest.slots];
-  assert.ok(all.some(i => i?.kind === 'generator') && all.some(i => i?.kind === 'picker') && all.some(i => i?.kind === 'hopper') && all.some(i => i?.kind === 'line' && i.qty >= CONFIG.power.line.packSize) && all.some(i => i?.kind === 'belt' && i.qty >= CONFIG.power.belt.packSize), 'everything arrived');
+  assert.ok(all.some(i => i?.kind === 'generator') && all.some(i => i?.kind === 'picker') && all.some(i => i?.kind === 'hopper') && all.some(i => i?.kind === 'line' && i.qty >= CONFIG.power.line.packSize) && all.some(i => i?.kind === 'belt' && i.qty >= CONFIG.power.belt.packSize) && all.some(i => i?.kind === 'fuel' && i.qty >= CONFIG.fuel.packSize), 'everything arrived');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

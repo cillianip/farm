@@ -65,12 +65,13 @@ export function catalog(state) {
   }
   for (const [lv, tier] of CONFIG.pump.tiers.entries()) {
     const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
-    items.push({ id: 'pump' + lv, group: 'Water', name: tier.name, effect: `Adds ${tier.feeds} pressure to its pipe line${tier.stillBelow != null ? ' · stands still on calm days' : tier.fuelPerDay ? ` · ${formatMoney(tier.fuelPerDay)} fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id: 'pump' + lv, group: 'Water', name: tier.name, effect: `Adds ${tier.feeds} pressure to its pipe line${tier.stillBelow != null ? ' · stands still on calm days' : tier.fuelPerDay ? ` · burns ${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} of fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   { const PW = CONFIG.power, count = (kind) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === kind ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === kind).length + held(state.inventory) + held(state.chest); };
     const owned = kind => { const n = count(kind) + pendingCount(state, kind); return n ? `${n} owned` : ''; };
-    items.push({ id: 'generator', group: 'Power', name: 'Generator', effect: `Makes ${PW.generator.power} power for the line laid from it · ${formatMoney(PW.generator.fuelPerDay)} fuel a night while on`, level: owned('generator'), price: PW.generator.price, blocked: null });
+    items.push({ id: 'generator', group: 'Power', name: 'Generator', effect: `Makes ${PW.generator.power} power for the line laid from it · burns ${PW.generator.fuelPerDay === 1 ? 'a can' : PW.generator.fuelPerDay + ' cans'} of fuel a night while on`, level: owned('generator'), price: PW.generator.price, blocked: null });
     items.push({ id: 'line', group: 'Power', name: `Power line ×${PW.line.packSize}`, effect: 'Wire on posts: carries power from a generator, one tile a section. Pickers and hoppers stand on it', level: '', price: PW.line.packPrice, blocked: null });
+    items.push({ id: 'fuel', group: 'Power', name: `Fuel ×${CONFIG.fuel.packSize}`, effect: `A can runs a generator or an engine for a night · pour it in by hand, a tank holds ${CONFIG.fuel.tank}`, level: '', price: CONFIG.fuel.price * CONFIG.fuel.packSize, blocked: null });
     items.push({ id: 'belt', group: 'Power', name: `Belt ×${PW.belt.packSize}`, effect: `Carries crops from the pickers to a hopper, one tile a section · ${PW.belt.holds} crops a tile`, level: '', price: PW.belt.packPrice, blocked: null });
     items.push({ id: 'picker', group: 'Power', name: 'Picker', effect: `Takes ${PW.picker.perHour === 1 ? 'a ripe crop' : PW.picker.perHour + ' ripe crops'} an hour from the ${(2 * PW.picker.radius + 1) ** 2 - 1} beds around it, drops it on the belt beside it · ${PW.picker.power} power`, level: owned('picker'), price: PW.picker.price, blocked: null });
     items.push({ id: 'hopper', group: 'Power', name: 'Hopper', effect: `Drives the belt that runs to it, holds ${PW.hopper.holds} crops. Beside the crate it tips in when the cart comes · ${PW.hopper.power} power`, level: owned('hopper'), price: PW.hopper.price, blocked: null }); }
@@ -102,12 +103,12 @@ export function whyLine(state, id) {
 }
 // The cheapest thing you cannot buy yet, and how far off it is; null when everything open is affordable.
 export function nextTarget(state) {
-  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt'].includes(i.id)).sort((a, b) => a.price - b.price);   // consumables (seeds, pipe, line, belt) are never the target
+  const open = catalog(state).filter(i => !i.blocked && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt', 'fuel'].includes(i.id)).sort((a, b) => a.price - b.price);   // consumables (seeds, pipe, line, belt, fuel) are never the target
   const miss = open.find(i => i.price > state.money);
   return miss ? { item: miss, gap: miss.price - state.money } : null;
 }
 // Which open items you can afford right now, as a key; the sign flags when this grows past what you last saw.
-export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt'].includes(i.id)).map(i => i.id).sort().join(',');
+export const affordableKey = state => catalog(state).filter(i => i.afford && !i.id.startsWith('seeds:') && !['pipe', 'line', 'belt', 'fuel'].includes(i.id)).map(i => i.id).sort().join(',');
 export function catalogueFlag(state) { const k = affordableKey(state); return k !== '' && k !== (state.catalogueSeen || ''); }
 export function markCatalogueSeen(state) { state.catalogueSeen = affordableKey(state); }
 
@@ -159,6 +160,7 @@ export function collectParcels(state) {
     else if (o.id === 'pipe') { const it = { kind: 'pipe', qty: CONFIG.pipe.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Pipe: no room in your pockets or the chest'); continue; } lines.push(`Pipe ×${CONFIG.pipe.packSize}: lay it from the well, the hoe picks it up`); }
     else if (o.id.startsWith('sprinkler')) { const it = { kind: 'sprinkler', level: +o.id.slice(9) || 0, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(`${o.name}: set it on fed pipe, the hoe picks it up`); }
     else if (o.id.startsWith('pump')) { const it = { kind: 'pump', level: +o.id.slice(4) || 0, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(`${o.name}: set it on the pipe, the hoe picks it up`); }
+    else if (o.id === 'fuel') { const it = { kind: 'fuel', qty: CONFIG.fuel.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Fuel: no room in your pockets or the chest'); continue; } lines.push(`Fuel ×${CONFIG.fuel.packSize}: pour it into a generator or an engine`); }
     else if (o.id === 'belt') { const it = { kind: 'belt', qty: CONFIG.power.belt.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Belt: no room in your pockets or the chest'); continue; } lines.push(`Belt ×${CONFIG.power.belt.packSize}: lay it from the pickers to a hopper, the hoe picks it up`); }
     else if (o.id === 'line') { const it = { kind: 'line', qty: CONFIG.power.line.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Power line: no room in your pockets or the chest'); continue; } lines.push(`Power line ×${CONFIG.power.line.packSize}: lay it from the generator, the hoe picks it up`); }
     else if (o.id === 'generator' || o.id === 'picker' || o.id === 'hopper') { const it = { kind: o.id, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(o.id === 'generator' ? 'Generator: set it on your land and lay line from it' : o.id === 'picker' ? 'Picker: set it on powered line by the beds it should work, with belt beside it' : 'Hopper: set it on powered line where the belt ends, beside the crate'); }

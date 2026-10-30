@@ -2,7 +2,7 @@
 import { CONFIG } from '../config.js';
 import * as S from '../sim.js';
 import { formatMoney } from '../economy.js';
-import { toolIcon, seedIcon, fertIcon, sprinklerSprite, witheredSprite, pipeSprite, pumpIcon, stationIcon } from './sprites.js';
+import { toolIcon, seedIcon, fertIcon, fuelIcon, sprinklerSprite, witheredSprite, pipeSprite, pumpIcon, stationIcon } from './sprites.js';
 import { produceSprite, cropSprite } from './crops.js';
 
 const U = 3;   // HUD pixel unit in CSS px
@@ -62,6 +62,7 @@ export function itemSprite(it, species) {
   if (it.kind === 'seed') { const g = species[it.species]?.genome; return g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   if (it.kind === 'crop') { const sp = species[it.species]; return sp ? produceSprite(sp) : null; }
   if (it.kind === 'fert') return fertIcon();
+  if (it.kind === 'fuel') return fuelIcon();
   if (it.kind === 'sprinkler') return sprinklerSprite(it.level || 0, 0);
   if (it.kind === 'pump') return pumpIcon(it.level || 0);
   if (['generator', 'picker', 'hopper', 'line', 'belt'].includes(it.kind)) return stationIcon(it.kind);

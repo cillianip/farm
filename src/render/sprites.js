@@ -635,6 +635,10 @@ export function handsIcon() {
     for (const [ox, c, d] of [[2, '#e9c48a', '#c9a062'], [9, '#e9c48a', '#c9a062']]) { P.rect(ox, 6, 5, 7, c); P.rect(ox, 12, 5, 1, d); P.rect(ox + 4, 6, 1, 7, d); for (let i = 0; i < 4; i++) P.rect(ox + i, 3 + (i === 0 || i === 3 ? 1 : 0), 1, 3, c); P.px(ox + 1, 3, '#f5dcac'); P.rect(ox - 1, 8, 1, 3, c); P.rect(ox, 13, 5, 2, '#8c5a2b'); }
   });
 }
+// A can of fuel: a red jerry can with a handle and a cap.
+export function fuelIcon() {
+  return sprite('fuel', 16, 16, P => { P.rect(4, 5, 9, 9, '#8f3730'); P.rect(5, 6, 7, 7, '#b84a3c'); P.rect(5, 6, 7, 1, '#d9736a'); P.rect(6, 3, 5, 2, '#5c6273'); P.rect(7, 2, 3, 1, '#5c6273'); P.rect(11, 3, 2, 2, '#c2c8d6'); P.rect(6, 9, 5, 2, '#f6c453'); P.rect(4, 14, 9, 1, 'rgba(30,20,10,0.25)'); });
+}
 export function fertIcon() {
   return sprite('fert', 16, 16, P => { P.rect(3, 5, 10, 9, '#5a4a2a'); P.rect(3, 4, 10, 1, '#7a6a3a'); P.px(5, 7, '#8bc34a'); P.px(9, 9, '#8bc34a'); P.px(7, 11, '#c9b07c'); });
 }

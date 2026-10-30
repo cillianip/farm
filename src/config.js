@@ -59,7 +59,7 @@ export const CONFIG = {
   // Pumps: pressure. The well on its own pushes water to `wellFeeds` sprinklers; every pump standing on fed pipe adds
   // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
   // still when the air is calm (humidity under `stillBelow`); the engine burns fuel every day it stands on fed pipe.
-  // Power (the start of stage 4). A generator stands on your land and, while switched on, burns fuel every night and
+  // Power (the start of stage 4). A generator stands on your land and, while switched on and fuelled, burns a can of fuel a night and
   // makes `power` for the line laid from it; each machine on the line draws its own `power`, nearest the generator
   // first by line distance. The line carries power only. A picker on powered line takes `perHour` ripe crops an hour
   // from the beds in its reach into a basket and drops the basket on a belt beside it. Belt is laid a tile a section
@@ -67,14 +67,17 @@ export const CONFIG = {
   // toward the powered hopper it reaches (the hopper's motor drives the belt, which is why it draws more power),
   // each tile holding `holds` crops. A hopper beside the crate tips into it when the cart comes; a hopper anywhere
   // else is a store you empty by hand. Tiers (faster, stronger) come later with a level like pumps.
-  power: { generator: { price: 600, fuelPerDay: 8, power: 6 }, line: { packSize: 10, packPrice: 25 },
+  power: { generator: { price: 600, fuelPerDay: 1, power: 6 }, line: { packSize: 10, packPrice: 25 },
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
     picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 } },
   pump: { wellFeeds: 2, tiers: [
     { name: 'Hand pump', feeds: 4, price: 120 },
     { name: 'Windmill', feeds: 12, price: 400, stillBelow: 30 },
-    { name: 'Engine', feeds: 40, price: 1400, fuelPerDay: 6 },
+    { name: 'Engine', feeds: 40, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
   ] },
+  // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
+  // running one burns `fuelPerDay` cans a night. A tank holds `tank` cans. Empty, the machine stops until you fill it.
+  fuel: { price: 8, packSize: 5, tank: 7 },
   // Humidity 0–100 is rolled each morning (rain days are near 100). Evaporation × (evapBase − humidity/100 × evapSpan):
   // dry air (20%) dries beds at full speed, a rainy day (95%) at about a third.
   weather: { humidityRain: [85, 98], humidityRange: [20, 70], evapBase: 1.2, evapSpan: 0.9, drainPerTurn: 35 },
