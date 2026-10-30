@@ -1,8 +1,8 @@
 // Items and slot inventories. Items: {kind, qty, species?, q?, fert?, tool?, unknown?}
-// kinds: tool, seed, crop, fert, sprinkler, pipe (a section to lay), withered (a dead plant the hoe cleared), pulled (a living plant the hoe dug up)
+// kinds: tool, seed, crop, fert, sprinkler, pump (level = tier), pipe (a section to lay), withered (a dead plant the hoe cleared), pulled (a living plant the hoe dug up)
 import { CONFIG } from './config.js';
 
-export const itemKey = it => it.kind === 'fert' ? `fert:${it.fert.id || it.fert.name}` : `${it.kind}:${it.species || ''}:${it.q || 0}:${it.tool || ''}`;
+export const itemKey = it => it.kind === 'fert' ? `fert:${it.fert.id || it.fert.name}` : `${it.kind}:${it.species || ''}:${it.q || 0}:${it.tool || ''}${it.level != null ? ':' + it.level : ''}`;
 export const makeInventory = n => ({ slots: new Array(n).fill(null) });
 export const stackable = it => it.kind !== 'tool';
 // true when addItem would take all of it (a stack with room, or a free slot)
@@ -43,6 +43,7 @@ export function itemName(it, species) {
   if (it.kind === 'fert') return it.fert.name;
   if (it.kind === 'sprinkler') return 'Sprinkler I';
   if (it.kind === 'pipe') return 'Pipe';
+  if (it.kind === 'pump') return CONFIG.pump.tiers[it.level || 0].name;
   if (it.kind === 'withered') return 'Withered plant';
   if (it.kind === 'pulled') return it.unknown ? 'Pulled sprout' : `Pulled ${species[it.species]?.name || 'plant'}`;
   return it.kind;

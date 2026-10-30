@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpSprite } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes } from './genetics.js';
@@ -25,6 +25,7 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'fert') src = fertIcon();
   else if (item.kind === 'sprinkler') src = sprinklerSprite(0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
+  else if (item.kind === 'pump') src = pumpSprite(item.level || 0, 0);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
   if (src) ctx.drawImage(src, 0, 0, size, size);
@@ -161,6 +162,9 @@ export class UI {
     } else if (it.kind === 'sprinkler') {
       const R = CONFIG.sprinkler.radius, n = (2 * R + 1) ** 2 - 1;
       html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on a pipe the well feeds. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
+    } else if (it.kind === 'pump') {
+      const tier = CONFIG.pump.tiers[it.level || 0];
+      html += `<div class="pc-row"><span>Runs</span><span>${tier.feeds} more sprinklers</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${formatMoney(tier.fuelPerDay)} a day</span></div>` : '') + `<div class="pc-note">Set it on a pipe the well feeds. The well pushes water to ${CONFIG.pump.wellFeeds} sprinklers on its own; past that the ones furthest down the line run dry.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''} The hoe picks it up.</div>`;
     } else if (it.kind === 'pipe') {
       html += `<div class="pc-row"><span>Lays</span><span>one tile a section</span></div><div class="pc-note">Start beside the well and run it out to the field, over clear ground, never through a bed. Fed pipe shows a blue core. The hoe picks a section up.</div>`;
     } else if (it.kind === 'tool' && it.tool === 'can') {
@@ -359,7 +363,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'sprinkler' ? sprinklerSprite(1) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'sprinkler' ? sprinklerSprite(1) : item.id.startsWith('pump') ? pumpSprite(+item.id.slice(4) || 0, 1) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -475,9 +479,10 @@ export class UI {
         if (seedBookBonus(s)) box.appendChild(el('div', 'pc-row muted', `<span>Seed book: ${s.discovered.length} species known</span><span class="up">+${Math.round(seedBookBonus(s) * 100)}% on every sale</span>`));
         box.appendChild(el('div', 'pc-row total', `<span>Paid</span><span>+${formatMoney(report.sale.total)}</span>`));
         if (report.water) box.appendChild(el('div', 'pc-row', `<span>Water bill · ${report.water.pours} sprinkler pours</span><span class="down">−${formatMoney(report.water.bill)}</span></div>`));
+        if (report.fuel) box.appendChild(el('div', 'pc-row', `<span>Engine fuel</span><span class="down">−${formatMoney(report.fuel)}</span>`));
         if (report.dayBefore) { const d = report.sale.total - report.dayBefore.sale; box.appendChild(el('div', 'pc-row muted', `<span>Day before: ${formatMoney(report.dayBefore.sale)}</span><span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${formatMoney(Math.abs(d))}</span>`)); }
         cartNodes.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate.`, box);
-      } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : ''));
+      } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : '') + (report.fuel ? ` Engine fuel: −${formatMoney(report.fuel)}.` : ''));
       if (report.delivery?.count) { const list = el('ul', 'mr-list'); for (const p of s.parcels || []) list.appendChild(el('li', null, esc(p.name))); cartNodes.push(`It left ${report.delivery.count === 1 ? 'a parcel' : report.delivery.count + ' parcels'} in the crate. Click the crate to open ${report.delivery.count === 1 ? 'it' : 'them'}.`, list); }
       sec('⛟', 'The cart', ...cartNodes);
       if (report.breeder) {

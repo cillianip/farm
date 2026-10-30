@@ -859,5 +859,58 @@ await test('hybrid vigour: a cross between families steps the price up and passe
   const o = S.createState(2); for (const sp of Object.values(o.species)) delete sp.genome.vigor; S.migrate(o); assert.ok(Object.values(o.species).every(sp => sp.genome.vigor === 0));
 });
 
+console.log('pumps');
+await test('pressure: the well runs two sprinklers, the nearest first; a pump on the line adds more; the windmill stands still in calm air; the engine burns fuel at night', () => {
+  const s = arm(S.createState(1)); const W = s.world, well = WB.well; s.money = 100; s.humidity = 50;
+  const tile = (x, y) => W.tiles[y * W.w + x], idx = (x, y) => y * W.w + x;
+  // a trunk from the well down to row Y+1, then west along it: sprinklers at four distances
+  const row = Y + 1; for (let y = well.y + 1; y <= row; y++) tile(well.x, y).pipe = true; for (let x = X - 1; x <= well.x; x++) tile(x, row).pipe = true;
+  const spots = [X + 4, X + 2, X, X - 1].map(x => ({ x, y: row }));   // nearest to the well first
+  for (const { x, y } of spots) tile(x, y).obj = { kind: 'sprinkler' };
+  s.pipeRev = 1;
+  let P = S.pressure(s); assert.equal(P.cap, CONFIG.pump.wellFeeds); assert.equal(P.fed, 4);
+  assert.ok(S.sprinklerFed(s, X + 4, row) && S.sprinklerFed(s, X + 2, row), 'the two nearest run');
+  assert.ok(!S.sprinklerFed(s, X, row) && !S.sprinklerFed(s, X - 1, row), 'the two furthest have no pressure');
+  assert.ok(S.pipeFed(s, X - 1, row), 'but their pipe is fed');
+  // beds: the far sprinkler does not pour
+  s.player.x = X - 0.5; s.player.y = row + 2.5; assert.ok(S.useItem(s, 0, X - 1, row + 1).ok, 'hoe a bed under the far sprinkler');
+  tickMinutes(s, 0.05); assert.equal(S.moistureOf(tile(X - 1, row + 1)), 0, 'no pressure, no pour');
+  // a hand pump on the trunk
+  addItem(s.inventory, { kind: 'pump', level: 0, qty: 1 }); const slot = () => s.inventory.slots.findIndex(i => i?.kind === 'pump');
+  s.player.x = well.x + 0.5; s.player.y = well.y + 3.5;
+  assert.equal(S.useItem(s, slot(), well.x + 1, well.y + 2).msg, 'A pump sits on a pipe');
+  let r = S.useItem(s, slot(), well.x, well.y + 2); assert.ok(r.ok && r.msg === '' && r.float === 'Set', JSON.stringify(r)); assert.ok(S.isPump(tile(well.x, well.y + 2)));
+  P = S.pressure(s); assert.equal(P.cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[0].feeds); assert.equal(P.running, 1);
+  assert.ok(S.sprinklerFed(s, X - 1, row), 'with the pump every sprinkler runs');
+  tickMinutes(s, 0.05); assert.ok(S.moistureOf(tile(X - 1, row + 1)) > 0, 'and the far one pours');
+  // the hoe takes the pump back with its level, and the pressure drops again
+  r = S.useItem(s, 0, well.x, well.y + 2); assert.ok(r.ok && r.float === 'Picked up'); assert.ok(tile(well.x, well.y + 2).pipe, 'the pipe stays');
+  assert.ok(s.inventory.slots.some(i => i?.kind === 'pump' && i.level === 0)); assert.ok(!S.sprinklerFed(s, X - 1, row));
+  // a windmill: still when the air is calm
+  s.inventory.slots[slot()] = { kind: 'pump', level: 1, qty: 1 };
+  r = S.useItem(s, slot(), well.x, well.y + 2); assert.ok(r.ok, r.msg);
+  s.humidity = CONFIG.pump.tiers[1].stillBelow - 1; assert.ok(!S.pumpRunning(s, tile(well.x, well.y + 2))); assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds, 'calm day: no help');
+  s.humidity = 60; assert.ok(S.pumpRunning(s, tile(well.x, well.y + 2))); assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds, 'wind: it turns');
+  // an engine on dry pipe counts for nothing and burns nothing; on fed pipe it burns fuel at night
+  tile(28, 26).pipe = true; tile(28, 26).obj = { kind: 'pump', level: 2 }; s.pipeRev++;   // a loose section, no line to the well
+  assert.equal(S.pressure(s).cap, CONFIG.pump.wellFeeds + CONFIG.pump.tiers[1].feeds, 'a dry engine adds nothing');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; let m = s.money; let rep = S.sleep(s); assert.ok(!rep.fuel, 'no fuel for a dry engine'); 
+  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 2 }; s.pipeRev++;
+  assert.equal(S.pressure(s).fed, 4);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; m = s.money; rep = S.sleep(s);
+  assert.equal(rep.fuel, CONFIG.pump.tiers[2].fuelPerDay); assert.ok(Math.abs(s.money - (m - rep.fuel - (rep.water?.bill || 0))) < 1e-9, 'fuel taken');
+  assert.ok(rep.lines.some(l => /Engine fuel/.test(l)));
+});
+await test('the catalogue sells the three pumps and the cart delivers them to a pocket with their level', async () => {
+  const { catalog, placeOrder } = await import('../src/catalog.js');
+  const s = arm(S.createState(1)); s.money = 2000;
+  const rows = catalog(s).filter(i => i.id.startsWith('pump')); assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(r => r.price), CONFIG.pump.tiers.map(t => t.price)); assert.ok(rows.every(r => r.group === 'Automation' && !r.blocked));
+  assert.ok(placeOrder(s, 'pump1').ok); assert.equal(catalog(s).find(i => i.id === 'pump1').level, '1 owned');
+  S.sleep(s); assert.ok(s.parcels.some(p => p.id === 'pump1')); S.collectParcels(s);
+  const it = [...s.inventory.slots, ...s.chest.slots].find(i => i?.kind === 'pump'); assert.ok(it && it.level === 1, JSON.stringify(it));
+  assert.equal(itemKey(it), 'pump::0::1'); assert.notEqual(itemKey(it), itemKey({ kind: 'pump', level: 0, qty: 1 }), 'tiers stack apart');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

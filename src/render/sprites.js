@@ -408,6 +408,36 @@ export function spraySprite(frame = 0) {
     }
   });
 }
+// Pumps, standing on a pipe. Level 0 the hand pump (16×16): a post with a lever and a spout, frames rock the lever.
+// Level 1 the windmill (16×32): a tapered tower with four sails on a hub, frames turn the sails. Level 2 the engine
+// (16×20): a boxed motor with a stack, frames puff. Frame 0 is standing still. Lines and rects only, no dots.
+export function pumpSprite(level = 0, frame = 0) {
+  return sprite(`pump${level}_${frame}`, 16, level === 1 ? 32 : level === 2 ? 20 : 16, P => {
+    if (level === 0) {
+      P.rect(5, 13, 7, 2, 'rgba(30,20,10,0.28)');
+      P.rect(6, 6, 4, 8, PAL.metalDark); P.rect(7, 6, 1, 8, PAL.metal); P.px(7, 6, PAL.metalLight);   // the body
+      P.rect(5, 5, 6, 1, PAL.metalLight);                                                        // its cap
+      P.rect(10, 9, 3, 1, PAL.metalDark); P.px(12, 10, PAL.metalDark);                            // the spout
+      const up = frame === 1; P.line(5, up ? 4 : 7, 1, up ? 1 : 10, PAL.woodDark); P.px(1, up ? 1 : 10, PAL.woodLight);   // the lever
+      if (frame) { P.px(12, 11, PAL.waterLight); P.px(12, 12, PAL.water); }
+    } else if (level === 1) {
+      P.rect(4, 30, 9, 2, 'rgba(30,20,10,0.28)');
+      P.rect(6, 12, 4, 18, PAL.woodDark); P.rect(7, 12, 1, 18, PAL.wood); P.px(7, 12, PAL.woodLight);   // the tower
+      P.line(6, 12, 4, 29, PAL.woodDark); P.line(9, 12, 11, 29, PAL.woodDark); P.rect(4, 29, 8, 1, PAL.woodDark);   // its legs splay
+      const hx = 8, hy = 9, a0 = frame === 1 ? 0 : frame === 2 ? Math.PI / 4 : Math.PI / 8;
+      for (let i = 0; i < 4; i++) { const a = a0 + i * Math.PI / 2; P.line(hx, hy, hx + Math.cos(a) * 7, hy + Math.sin(a) * 7, PAL.wallDark); P.line(hx + Math.cos(a + 0.4) * 2, hy + Math.sin(a + 0.4) * 2, hx + Math.cos(a + 0.2) * 6, hy + Math.sin(a + 0.2) * 6, PAL.wall); }   // the sails
+      P.rect(7, 8, 2, 2, PAL.metalDark); P.px(7, 8, PAL.metalLight);                                  // the hub
+    } else {
+      P.rect(2, 18, 13, 2, 'rgba(30,20,10,0.28)');
+      P.rect(2, 9, 12, 9, PAL.metalDark); P.rect(3, 10, 10, 7, PAL.metal); P.rect(3, 10, 10, 1, PAL.metalLight);   // the block
+      P.rect(4, 12, 3, 3, PAL.metalDark); P.px(5, 13, frame ? PAL.gold : PAL.metalLight);            // a gauge
+      P.rect(9, 12, 3, 3, PAL.metalDark); P.rect(9, 12, 3, 1, PAL.metalLight);                        // the grille
+      P.rect(11, 3, 2, 7, PAL.metalDark); P.px(11, 3, PAL.metal); P.rect(10, 2, 4, 1, PAL.metalDark);   // the stack
+      P.rect(1, 15, 1, 3, PAL.woodDark); P.rect(14, 15, 1, 3, PAL.woodDark);                         // the skids
+      if (frame) { const y = frame === 1 ? 0 : 1; P.px(12, y, 'rgba(120,120,130,0.8)'); P.px(13, y, 'rgba(120,120,130,0.5)'); }   // a puff
+    }
+  });
+}
 export function witheredSprite() {
   return sprite('withered', 16, 16, P => {
     P.line(8, 13, 7, 8, PAL.witheredDark); P.line(7, 8, 5, 6, PAL.withered); P.line(7, 10, 10, 8, PAL.withered); P.px(4, 6, PAL.withered); P.px(11, 8, PAL.withered);

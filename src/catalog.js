@@ -8,6 +8,7 @@ import { formatMoney } from './economy.js';
 
 const r2 = v => Math.round(v * 100) / 100;
 // sprinklers you own: set on the land, in your pockets or in the chest (sim.js has the same count; this file cannot import sim)
+const pumpCount = (state, lv) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === 'pump' && (it.level || 0) === lv ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === 'pump' && (t.obj.level || 0) === lv).length + held(state.inventory) + held(state.chest); };
 const sprinklerCount = state => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === 'sprinkler' ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === 'sprinkler').length + held(state.inventory) + held(state.chest); };
 const pendingCount = (state, id) => state.orders.filter(o => o.id === id).length;
 
@@ -44,7 +45,7 @@ export function catalog(state) {
   const sprinklers = sprinklerCount(state) + pendingCount(state, 'sprinkler');
   const items = [
     { id: 'pipe', group: 'Automation', name: `Pipe ×${CONFIG.pipe.packSize}`, effect: 'Sections to lay from the well, one a tile. Sprinklers run only on pipe the well feeds', level: '', price: CONFIG.pipe.packPrice, blocked: null },
-    { id: 'sprinkler', group: 'Automation', name: 'Sprinkler I', effect: `On a fed pipe, keeps the 8 beds around it watered while you are awake. Metered: ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: sprinklers ? `${sprinklers} owned` : '',
+    { id: 'sprinkler', group: 'Automation', name: 'Sprinkler I', effect: `On a fed pipe, keeps the 8 beds around it watered while you are awake. The well runs ${CONFIG.pump.wellFeeds} on its own, pumps add more. Metered: ${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour`, level: sprinklers ? `${sprinklers} owned` : '',
       price: r2(CONFIG.sprinkler.cost * Math.pow(CONFIG.sprinkler.costGrowth, sprinklers)), blocked: null },
     { id: 'hoe', group: 'Tools', name: 'Sharper hoe', effect: hoeLvl < hoeMax ? `${CONFIG.hoe.seconds[hoeLvl]}s → ${CONFIG.hoe.seconds[hoeLvl + 1]}s a bed, ${CONFIG.hoe.energy[hoeLvl + 1]} energy` : `${CONFIG.hoe.seconds[hoeLvl]}s a bed`, level: `${hoeLvl + 1} / ${hoeMax + 1}`,
       price: HOE_PRICES[hoeLvl] ?? 0, blocked: hoeLvl >= hoeMax ? 'Sharpest hoe' : null },
@@ -61,6 +62,10 @@ export function catalog(state) {
     { id: 'deed', group: 'Land', name: 'Land deed', effect: 'Claim one 4×4 plot next to your land', level: `${state.world.chunks.length} plots`,
       price: Math.round(CONFIG.economy.landBase * Math.pow(CONFIG.economy.landGrowth, Math.max(0, state.world.chunks.length + (state.deeds || 0) + pendingCount(state, 'deed') - CONFIG.world.startChunks))), blocked: null },
   ];
+  for (const [lv, tier] of CONFIG.pump.tiers.entries()) {
+    const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
+    items.push({ id: 'pump' + lv, group: 'Automation', name: tier.name, effect: `On fed pipe, runs ${tier.feeds} more sprinklers${tier.stillBelow != null ? '. Stands still when the air is calm' : tier.fuelPerDay ? `. Burns ${formatMoney(tier.fuelPerDay)} of fuel a day` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+  }
   for (const key of seedOffers(state)) {
     const sp = seedSpecies(state, key);
     items.push({ id: 'seeds:' + key, group: 'Seeds', name: `${sp.name} seeds ×3`, effect: roles(sp).join(' · '), level: '', price: r2(Math.max(1, sp.seedPrice * 3)), species: sp, blocked: null });
@@ -145,6 +150,7 @@ export function collectParcels(state) {
     else if (o.id === 'hands') { state.hands = state.hands || { level: 0 }; state.hands.level = Math.min(CONFIG.hands.dropSeconds.length - 1, state.hands.level + 1); lines.push(`Quick hands: ${CONFIG.hands.dropSeconds[state.hands.level]}s a crop`); }
     else if (o.id === 'pipe') { const it = { kind: 'pipe', qty: CONFIG.pipe.packSize }; const left = addItem(state.inventory, it); if (left && addItem(state.chest, { ...it, qty: left })) { keep.push(o); lines.push('Pipe: no room in your pockets or the chest'); continue; } lines.push(`Pipe ×${CONFIG.pipe.packSize}: lay it from the well, the hoe picks it up`); }
     else if (o.id === 'sprinkler') { const it = { kind: 'sprinkler', qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push('Sprinkler: no room in your pockets or the chest'); continue; } lines.push('Sprinkler: set it on your land, the hoe picks it up'); }
+    else if (o.id.startsWith('pump')) { const it = { kind: 'pump', level: +o.id.slice(4) || 0, qty: 1 }; if (addItem(state.inventory, it) && addItem(state.chest, it)) { keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest`); continue; } lines.push(`${o.name}: set it on the pipe, the hoe picks it up`); }
     else if (o.id === 'pickup') { state.crate.pickups = 1; lines.push('Midday pickup: the cart now comes at noon too'); }
     else if (o.id === 'deed') { state.deeds = (state.deeds || 0) + 1; lines.push('Land deed: claim a plot'); }
     else if (o.id.startsWith('seeds:')) { const sp = seedSpecies(state, o.id.slice(6)); const left = addItem(state.inventory, { kind: 'seed', species: sp.id, qty: 3 }); if (left === 3) { keep.push(o); lines.push(`${sp.name} seeds: hands full, left in the crate`); continue; } lines.push(`${sp.name} seeds ×${3 - left}`); if (!state.discovered.includes(sp.id)) state.discovered.push(sp.id); }

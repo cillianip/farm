@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite } from './render/crops.js';
@@ -161,7 +161,7 @@ export class Game {
     if (it.kind === 'tool' && it.tool === 'can') { if (!t?.tilled) return this.ui.toast('Only tilled soil takes water'); if (s.can.water <= 0) return this.ui.toast('The can is empty. Fill it at the well.'); return this.startAction('water', tx, ty, CONFIG.actions.waterSeconds); }
     if (it.kind === 'seed') { if (!t?.tilled) return this.ui.toast('Till the soil first'); if (t.crop) return this.ui.toast(''); return this.startAction('plant', tx, ty, CONFIG.actions.plantSeconds); }
     const r = S.useItem(s, this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, tx + 0.5, ty, '#ffffff');
-    if (r.ok && (it.kind === 'sprinkler' || it.kind === 'pipe')) { this.sound.play('move'); this.save(); }
+    if (r.ok && (it.kind === 'sprinkler' || it.kind === 'pipe' || it.kind === 'pump')) { this.sound.play('move'); this.save(); }
   }
   hotbarItem() { return this.state.inventory.slots[this.selected]; }
   // Everything clickable that is not a soil tile: a rect to highlight (world px, 16 per tile) and a prompt.
@@ -270,7 +270,8 @@ export class Game {
     if (t.t === 'sign') return { title: 'Delivery sign', sub: 'Crops left in the crate are collected at night.' };
     if (t.t === 'seedrack') return { title: 'Seed rack', sub: S.activeTray(this.state) ? `${this.state.seedRack.trays.length} ${this.state.seedRack.trays.length === 1 ? 'tray' : 'trays'}` : 'Lay a crop on a tray. It dries into seeds.' };
     if (t.t === 'crate') return { title: 'Delivery crate', sub: 'Drop crops in. The cart collects them at night and pays in the morning.' };
-    if (t.obj?.kind === 'sprinkler') return { title: 'Sprinkler I', sub: S.pipeFed(this.state, x, y) ? 'Running: tops up the beds around it while you are awake. The hoe picks it up.' : 'Dry. It needs pipe under it with a line back to the well.' };
+    if (t.obj?.kind === 'sprinkler') return { title: 'Sprinkler I', sub: S.sprinklerFed(this.state, x, y) ? 'Running: tops up the beds around it while you are awake. The hoe picks it up.' : S.pipeFed(this.state, x, y) ? 'No pressure: the line already runs all it can. A pump on the line adds more.' : 'Dry. It needs pipe under it with a line back to the well.' };
+    if (t.obj?.kind === 'pump') { const tier = S.pumpTier(t.obj), P = S.pressure(this.state); return { title: tier.name, sub: !S.pipeFed(this.state, x, y) ? 'Dry: this pipe has no line back to the well.' : !S.pumpRunning(this.state, t) ? 'Still: the air is calm today. It turns when the wind picks up.' : `Running: ${tier.feeds} more sprinklers. The line runs ${Math.min(P.fed, P.cap)} of ${P.fed}.${tier.fuelPerDay ? ` Burns ${formatMoney(tier.fuelPerDay)} of fuel a day.` : ''}` }; }
     if (t.pipe) return { title: 'Pipe', sub: S.pipeFed(this.state, x, y) ? 'Fed from the well.' : 'Dry: no unbroken line back to the well.' };
     if (t.track) return { title: 'Cart track', sub: 'The road the delivery cart comes up at night. It leads out of the clearing.' };
     if (isTree(w, x, y)) return { title: 'Forest', sub: 'Not your land yet.' };
@@ -410,6 +411,7 @@ export class Game {
       if (t.pipe) ctx.drawImage(pipeSprite((pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0), fed.has(y * w.w + x)), sx, sy, T, T);
       if (tree) drawables.push({ y: y + 1 + t.jy / 16, draw: () => ctx.drawImage(treeSprite(t.v), sx - 2 * CONFIG.scale + t.jx * CONFIG.scale, sy - T + t.jy * CONFIG.scale, 20 * CONFIG.scale, 32 * CONFIG.scale) });
       if (t.obj?.kind === 'sprinkler') { const on = (t.obj.sprayUntil || 0) > s.minutes; ctx.drawImage(sprinklerSprite(on ? 1 + Math.floor(now / 160) % 2 : 0), sx, sy, T, T); if (on) sprays.push([sx, sy]); }
+      if (t.obj?.kind === 'pump') { const lv = t.obj.level || 0, run = fed.has(y * w.w + x) && S.pumpRunning(s, t), H = lv === 1 ? 32 : lv === 2 ? 20 : 16; drawables.push({ y: y + 1, draw: () => ctx.drawImage(pumpSprite(lv, run ? 1 + Math.floor(now / (lv === 1 ? 240 : 180)) % 2 : 0), sx, sy + T - H * CONFIG.scale, T, H * CONFIG.scale) }); }
       if (t.crop) {
         const sp = s.species[t.crop.speciesId]; if (!sp) continue;
         const stage = S.cropStage(t.crop);
@@ -524,7 +526,7 @@ export class Game {
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
     if (!this.ui.openPanel && this.mouse.inside && !s.carrying) {
       const it = this.hotbarItem(), mt = tileAt(w, this.mouse.tx, this.mouse.ty), R = CONFIG.sprinkler.radius;
-      if (it?.kind === 'pipe' && !this.hit && mt) { const x0 = this.mouse.tx * T - cx, y0 = this.mouse.ty * T - cy; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, T - 2, T - 2); }
+      if ((it?.kind === 'pipe' || it?.kind === 'pump') && !this.hit && mt) { const x0 = this.mouse.tx * T - cx, y0 = this.mouse.ty * T - cy; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, T - 2, T - 2); }
       if ((it?.kind === 'sprinkler' && !this.hit) || mt?.obj?.kind === 'sprinkler') {
         const x0 = (this.mouse.tx - R) * T - cx, y0 = (this.mouse.ty - R) * T - cy, L = (2 * R + 1) * T;
         ctx.fillStyle = 'rgba(63,143,214,0.18)'; ctx.fillRect(x0, y0, L, L); ctx.strokeStyle = 'rgba(63,143,214,0.75)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, L - 2, L - 2);

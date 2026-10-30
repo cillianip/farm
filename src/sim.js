@@ -380,7 +380,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (!spend(state, E.clear)) return fail('Too tired'); if (addItem(state.inventory, { kind: t.obj.kind, qty: 1 })) return fail('No pocket free'); t.obj = null; return { ok: true, msg: '', float: 'Picked up' }; }
+    if (t.obj) { if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Picked up' }; }
     if (t.pipe) { if (!hasRoom(state.inventory, { kind: 'pipe', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'pipe', qty: 1 }); t.pipe = false; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Pipe up' }; }
     if (t.track) return fail('The track stays a track');
     if (!isOwnedFarmland(state.world, x, y)) return fail(t.t === 'grass' ? 'Not your land' : '');
@@ -418,8 +418,15 @@ export function useItem(state, slotIndex, x, y) {
     if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : 'Set it on your own land');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler' };
-    return { ok: true, msg: pipeFed(state, x, y) ? '' : 'Dry: it needs pipe under it that reaches the well', float: 'Set' };
+    t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler' }; state.pipeRev = (state.pipeRev || 0) + 1;
+    return { ok: true, msg: !pipeFed(state, x, y) ? 'Dry: it needs pipe under it that reaches the well' : sprinklerFed(state, x, y) ? '' : 'No pressure: the line runs all it can. A pump on the line adds more', float: 'Set' };
+  }
+  if (item.kind === 'pump') {
+    if (!t.pipe || t.obj) return fail(t.obj ? 'Something stands there' : 'A pump sits on a pipe');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.obj = { kind: 'pump', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
+    return { ok: true, msg: pipeFed(state, x, y) ? '' : 'Dry: this pipe has no line back to the well', float: 'Set' };
   }
   if (item.kind === 'pipe') {
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Pipe goes on clear ground');
@@ -562,21 +569,42 @@ export function takeSeeds(state) {
 // ---------- sprinklers ----------
 export const isSprinkler = t => t?.obj?.kind === 'sprinkler';
 export const isPipe = t => !!t?.pipe;
-// The pipe network: which pipe tiles have an unbroken line back to the well. Walked from the well's four neighbours,
-// cached until a section is laid or picked up (state.pipeRev).
+// The pipe network: which pipe tiles have an unbroken line back to the well, and how far down the line each one is.
+// Walked from the well's four neighbours, cached until a section, sprinkler or pump is laid or picked up (state.pipeRev).
 const FED = new WeakMap();
-export function fedPipes(state) {
+export function pipeNet(state) {
   const w = state.world, rev = state.pipeRev || 0, hit = FED.get(state);
-  if (hit && hit.rev === rev && hit.w === w) return hit.set;
-  const set = new Set(), idx = (x, y) => y * w.w + x, queue = [];
+  if (hit && hit.rev === rev && hit.w === w) return hit;
+  const set = new Set(), dist = new Map(), idx = (x, y) => y * w.w + x, queue = [];
   const W = BUILDINGS.well;
-  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const t = tileAt(w, W.x + dx, W.y + dy); if (t?.pipe) { set.add(idx(W.x + dx, W.y + dy)); queue.push([W.x + dx, W.y + dy]); } }
-  while (queue.length) { const [x, y] = queue.pop(); for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const nx = x + dx, ny = y + dy, t = tileAt(w, nx, ny); if (t?.pipe && !set.has(idx(nx, ny))) { set.add(idx(nx, ny)); queue.push([nx, ny]); } } }
-  FED.set(state, { rev, w, set });
-  return set;
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const t = tileAt(w, W.x + dx, W.y + dy); if (t?.pipe) { const i = idx(W.x + dx, W.y + dy); set.add(i); dist.set(i, 1); queue.push([W.x + dx, W.y + dy]); } }
+  while (queue.length) { const [x, y] = queue.shift(), d = dist.get(idx(x, y)); for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const nx = x + dx, ny = y + dy, t = tileAt(w, nx, ny); if (t?.pipe && !set.has(idx(nx, ny))) { set.add(idx(nx, ny)); dist.set(idx(nx, ny), d + 1); queue.push([nx, ny]); } } }
+  const net = { rev, w, set, dist, pressure: null, pressureH: null }; FED.set(state, net);
+  return net;
 }
+export const fedPipes = state => pipeNet(state).set;
 export const pipeFed = (state, x, y) => !!tileAt(state.world, x, y)?.pipe && fedPipes(state).has(y * state.world.w + x);
-export const sprinklerFed = (state, x, y) => isSprinkler(tileAt(state.world, x, y)) && pipeFed(state, x, y);
+// Pumps: pressure for the line. The well pushes water to `wellFeeds` sprinklers on its own; each running pump on fed
+// pipe adds its tier's `feeds`. The windmill stands still in calm air; the engine always runs (and burns fuel at night).
+export const isPump = t => t?.obj?.kind === 'pump';
+export const pumpTier = obj => CONFIG.pump.tiers[obj?.level || 0];
+export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); return tier.stillBelow == null || humidityOf(state) >= tier.stillBelow; }
+export function pumpTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isPump(t)) out.push({ x, y, t }); } return out; }
+// What the line can run and which sprinklers get it: the nearest to the well first, by pipe distance. Cached with the
+// network; recomputed when the day's humidity changes (the windmill).
+export function pressure(state) {
+  const net = pipeNet(state), h = humidityOf(state);
+  if (net.pressure && net.pressureH === h) return net.pressure;
+  const w = state.world, idx = (x, y) => y * w.w + x;
+  let cap = CONFIG.pump.wellFeeds, pumps = 0, running = 0;
+  for (const { x, y, t } of pumpTiles(state)) if (net.set.has(idx(x, y))) { pumps++; if (pumpRunning(state, t)) { cap += pumpTier(t.obj).feeds; running++; } }
+  const fed = sprinklerTiles(state).filter(({ x, y }) => net.set.has(idx(x, y))).sort((a, b) => net.dist.get(idx(a.x, a.y)) - net.dist.get(idx(b.x, b.y)));
+  const on = new Set(fed.slice(0, cap).map(({ x, y }) => idx(x, y)));
+  net.pressure = { cap, on, fed: fed.length, pumps, running }; net.pressureH = h;
+  return net.pressure;
+}
+// a sprinkler that runs: on fed pipe, and within the line's pressure
+export const sprinklerFed = (state, x, y) => isSprinkler(tileAt(state.world, x, y)) && pressure(state).on.has(y * state.world.w + x);
 export function sprinklerTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) if (isSprinkler(w.tiles[y * w.w + x])) out.push({ x, y }); return out; }
 // true when a RUNNING sprinkler (on fed pipe) reaches this tile
 export function sprinklerCovers(state, x, y) { const R = CONFIG.sprinkler.radius; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (sprinklerFed(state, x + dx, y + dy)) return true; return false; }
@@ -589,7 +617,7 @@ export function sprinklerPass(state) {
   const h = hourOf(state); if (h < CONFIG.time.wakeHour || h >= 20) return 0;
   const w = state.world, S0 = CONFIG.soil, R = CONFIG.sprinkler.radius; let pours = 0;
   for (const { x, y } of sprinklerTiles(state)) {
-    if (!pipeFed(state, x, y)) continue;   // dry: no line to the well
+    if (!sprinklerFed(state, x, y)) continue;   // dry (no line to the well) or past the line's pressure
     let sprayed = false;
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const t = tileAt(w, x + dx, y + dy);
@@ -640,6 +668,8 @@ export function sleep(state, opts = {}) {
   { const pours = state.water?.pours || 0, bill = waterBill(pours);   // the water bill: the sprinklers' metered pours, taken out of the night's money
     if (pours) { state.money = Math.max(0, Math.round((state.money - bill) * 100) / 100); report.water = { pours, bill }; D.waterBill = bill; }
     state.water = { pours: 0 }; }
+  { const fuel = pumpTiles(state).filter(({ x, y, t }) => pipeFed(state, x, y) && pumpTier(t.obj).fuelPerDay).reduce((n, { t }) => n + pumpTier(t.obj).fuelPerDay, 0);   // engines on fed pipe burn fuel every day
+    if (fuel) { state.money = Math.max(0, Math.round((state.money - fuel) * 100) / 100); report.fuel = fuel; D.fuelBill = fuel; } }
   report.yesterday = D; report.dayBefore = L.yesterday;
   L.history.push(D); if (L.history.length > 7) L.history.shift();
   L.yesterday = D; L.today = freshDay();
@@ -648,6 +678,7 @@ export function sleep(state, opts = {}) {
   if (report.sale) report.lines.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate: +${formatMoney(report.sale.total)}.`);
   if (report.rain) report.lines.push('It rained overnight: every field is watered.');
   if (report.water) report.lines.push(`Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.`);
+  if (report.fuel) report.lines.push(`Engine fuel: −${formatMoney(report.fuel)}.`);
   // breeder
   if (state.breeder.running) { report.breeder = resolveBreed(state); }
   if (composting && cp.ready) report.compost = `${cp.ready.name} ×${cp.readyCount || 1}`;

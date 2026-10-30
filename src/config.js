@@ -52,6 +52,14 @@ export const CONFIG = {
   // your land, never a bed). A sprinkler runs only on a pipe tile with an unbroken line back to the well. The limit on
   // automation is what you can lay and where, not a rising price tag.
   pipe: { packSize: 10, packPrice: 20 },
+  // Pumps: pressure. The well on its own pushes water to `wellFeeds` sprinklers; every pump standing on fed pipe adds
+  // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
+  // still when the air is calm (humidity under `stillBelow`); the engine burns fuel every day it stands on fed pipe.
+  pump: { wellFeeds: 2, tiers: [
+    { name: 'Hand pump', feeds: 4, price: 120 },
+    { name: 'Windmill', feeds: 12, price: 400, stillBelow: 30 },
+    { name: 'Engine', feeds: 40, price: 1400, fuelPerDay: 6 },
+  ] },
   // Humidity 0–100 is rolled each morning (rain days are near 100). Evaporation × (evapBase − humidity/100 × evapSpan):
   // dry air (20%) dries beds at full speed, a rainy day (95%) at about a third.
   weather: { humidityRain: [85, 98], humidityRange: [20, 70], evapBase: 1.2, evapSpan: 0.9, drainPerTurn: 35 },
