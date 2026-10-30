@@ -462,7 +462,32 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+// Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
+// drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
+// that way and `frame` (0–3) slides them along. A still belt shows plain treads.
+export function beltSprite(mask = 0, dir = -1, frame = 0) {
+  return sprite(`belt${mask}:${dir}:${frame}`, 16, 16, P => {
+    const frameC = '#3a3a44', band = '#55566a', tread = '#6c6e84', chev = '#b9bdd0';
+    const H = (x0, x1) => { P.rect(x0, 4, x1 - x0, 8, frameC); P.rect(x0, 5, x1 - x0, 6, band); };
+    const V = (y0, y1) => { P.rect(4, y0, 8, y1 - y0, frameC); P.rect(5, y0, 6, y1 - y0, band); };
+    if (!mask) H(1, 15);
+    if (mask & 8) H(0, 8); if (mask & 2) H(8, 16); if (mask & 1) V(0, 8); if (mask & 4) V(8, 16);
+    P.rect(4, 4, 8, 8, frameC); P.rect(5, 5, 6, 6, band);
+    if (dir < 0) {   // still: faint treads across the band
+      if (mask & 10 || !mask) for (let x = 2; x < 16; x += 4) P.rect(x, 6, 1, 4, tread);
+      if (mask & 5) for (let y = 2; y < 16; y += 4) P.rect(6, y, 4, 1, tread);
+      return;
+    }
+    // chevrons pointing `dir`, two per tile, sliding with the frame; drawn in the band's own tiles only
+    const inBand = (x, y) => x >= 5 && x < 11 && y >= 5 && y < 11 || (mask & 8 && y >= 5 && y < 11 && x < 5) || (mask & 2 && y >= 5 && y < 11 && x >= 11) || (mask & 1 && x >= 5 && x < 11 && y < 5) || (mask & 4 && x >= 5 && x < 11 && y >= 11) || (!mask && y >= 5 && y < 11);
+    const rot = (x, y) => dir === 1 ? [x, y] : dir === 3 ? [15 - x, y] : dir === 2 ? [y, x] : [y, 15 - x];   // from "pointing right"
+    for (let k = 0; k < 3; k++) {
+      const x = ((frame * 2 + k * 6) % 18) - 2;
+      for (const [px, py] of [[x, 6], [x + 1, 7], [x + 1, 8], [x, 9]]) { const [rx, ry] = rot(px, py); if (rx >= 0 && rx < 16 && ry >= 0 && ry < 16 && inBand(rx, ry)) P.px(rx, ry, chev); }
+    }
+  });
+}
 // Power line: a short post with a wire to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left), low on the tile so
 // it can share one with pipe; a spark on the post when powered. A section with no neighbours is a loose coil.
 export function lineSprite(mask = 0, powered = false) {

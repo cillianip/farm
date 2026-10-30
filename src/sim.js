@@ -222,7 +222,12 @@ export function tick(state, dtMinutes, opts = {}) {
     if (c.health <= 0) { c.dead = true; c.health = 0; }
   }
   // sprinklers: while you are awake, a pour for any bed in reach the moment it dries below the band
-  if (!opts.asleep) { sprinklerPass(state); const hr0 = hourOf(state); if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state); }   // pickers work once an hour
+  if (!opts.asleep) {
+    sprinklerPass(state); const hr0 = hourOf(state);
+    if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // pickers work once an hour
+    state.beltClock = (state.beltClock || 0) + dtMinutes; const step = CONFIG.power.belt.stepMinutes;   // the belts move a tile every few minutes
+    if (state.beltClock >= step) { const n = Math.min(8, Math.floor(state.beltClock / step)); state.beltClock -= n * step; for (let i = 0; i < n; i++) beltStep(state); }
+  }
   // evaporation (sun only: not at night)
   const hr = hourOf(state);
   if (hr >= 6 && hr < 20) { const ev = CONFIG.soil.evaporationPerHour * evaporationFactor(state) * dtH; for (const t of w.tiles) if (t.moisture > 0) t.moisture = Math.max(0, t.moisture - ev * (t.fert?.stats?.waterKeep ? 1 - t.fert.stats.waterKeep : 1)); }
@@ -382,6 +387,8 @@ export function useItem(state, slotIndex, x, y) {
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
     if (t.obj) { if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Picked up' }; }
+    // the belt sits over pipe and line, so the hoe lifts it first
+    if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
     if (t.pipe) { if (!hasRoom(state.inventory, { kind: 'pipe', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'pipe', qty: 1 }); t.pipe = false; state.pipeRev = (state.pipeRev || 0) + 1; return { ok: true, msg: '', float: 'Pipe up' }; }
     if (t.line) { if (!hasRoom(state.inventory, { kind: 'line', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'line', qty: 1 }); t.line = false; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: 'Line up' }; }
     if (t.track) return fail('The track stays a track');
@@ -446,12 +453,24 @@ export function useItem(state, slotIndex, x, y) {
     t.line = true; state.lineRev = (state.lineRev || 0) + 1;
     return { ok: true, msg: '', float: linePowered(state, x, y) ? 'Laid' : 'Laid (dead)' };
   }
+  if (item.kind === 'belt') {
+    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Belt goes on clear ground');
+    if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
+    if (t.obj) return fail('Something stands there');
+    if (t.belt) return fail('Belt is already laid here');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.belt = true; t.load = []; state.beltRev = (state.beltRev || 0) + 1;
+    return { ok: true, msg: '', float: beltRunning(state, x, y) ? 'Laid' : 'Laid (still)' };
+  }
   if (item.kind === 'picker' || item.kind === 'hopper') {
     if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
+    if (t.belt) return fail('Not on the belt: beside it');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.obj = { kind: item.kind, held: [] }; state.lineRev = (state.lineRev || 0) + 1;
-    return { ok: true, msg: machinePowered(state, x, y) ? '' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
+    const beltBy = N4.some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.belt);
+    return { ok: true, msg: machinePowered(state, x, y) ? beltBy ? '' : item.kind === 'picker' ? 'Lay belt beside it to a hopper, or empty it by hand' : 'Run belt to it from the pickers' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
   }
   if (item.kind === 'pipe') {
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Pipe goes on clear ground');
@@ -710,12 +729,54 @@ export function toggleGenerator(state, x, y) {
 // A hopper beside the crate (any of the eight tiles around it) tips into it when the cart comes.
 export const hopperByCrate = (x, y) => Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1;
 const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
+// Move crops from one pile to another, as much as fits under `cap`. Returns how many moved.
+function pour(from, to, cap) { let n = 0; while (from.length && heldCount(to) < cap) { const it = from[0], take = Math.min(cap - heldCount(to), it.qty); addHeld(to, { ...it, qty: take }); it.qty -= take; n += take; if (!it.qty) from.shift(); } return n; }
+// The belt network: every belt tile that runs, with its distance along the belt to the nearest powered hopper (a
+// hopper's motor drives the belt that reaches it, so belt with no live hopper at its end stands still). Cached until
+// belt is laid or picked up (state.beltRev) or the power changes (state.lineRev).
+const BELTS = new WeakMap();
+export function beltNet(state) {
+  const w = state.world, rev = `${state.beltRev || 0}:${state.lineRev || 0}`, hit = BELTS.get(state);
+  if (hit && hit.rev === rev && hit.w === w) return hit;
+  const idx = (x, y) => y * w.w + x, net = lineNet(state), dist = new Map(), queue = [];
+  for (const { x, y } of machineTiles(state, 'hopper')) { if (!net.on.has(idx(x, y))) continue; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, 1); queue.push(k); } } }
+  while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
+  const out = { rev, w, dist }; BELTS.set(state, out);
+  return out;
+}
+export const beltRunning = (state, x, y) => !!tileAt(state.world, x, y)?.belt && beltNet(state).dist.has(y * state.world.w + x);
+// Which way a running belt tile carries: the neighbour one step nearer the hopper (0 up, 1 right, 2 down, 3 left), or
+// the powered hopper itself at the end of the run; -1 when it stands still.
+export function beltDir(state, x, y) {
+  const w = state.world, net = beltNet(state), d = net.dist.get(y * w.w + x); if (d == null) return -1;
+  for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], t = tileAt(w, x + dx, y + dy), k = (y + dy) * w.w + x + dx; if (d === 1 ? (t?.obj?.kind === 'hopper' && lineNet(state).on.has(k)) : net.dist.get(k) === d - 1) return i; }
+  return -1;
+}
+// One step of every belt: crops on the last tile tip into the hopper, every other tile hands its crops one tile on
+// toward it (as much as the next tile holds, so a full hopper backs the belt up), then each powered picker drops its
+// basket on the running belt beside it. Nearest the hopper moves first, so a crop moves one tile a step.
+export function beltStep(state) {
+  const w = state.world, B = CONFIG.power.belt, net = beltNet(state), pw = lineNet(state), idx = (x, y) => y * w.w + x;
+  const tiles = [...net.dist.entries()].sort((a, b) => a[1] - b[1]);
+  for (const [k, d] of tiles) {
+    const x = k % w.w, y = (k - x) / w.w, t = w.tiles[k]; if (!t.load?.length) continue;
+    for (const [dx, dy] of N4) {
+      const n = tileAt(w, x + dx, y + dy), nk = idx(x + dx, y + dy); if (!n) continue;
+      if (d === 1 && n.obj?.kind === 'hopper' && pw.on.has(nk)) pour(t.load, n.obj.held = n.obj.held || [], CONFIG.power.hopper.holds);
+      else if (n.belt && net.dist.get(nk) === d - 1) pour(t.load, n.load = n.load || [], B.holds);
+      if (!t.load.length) break;
+    }
+  }
+  for (const { x, y, t } of machineTiles(state, 'picker')) {
+    if (!pw.on.has(idx(x, y)) || !t.obj.held?.length) continue;
+    const by = N4.map(([dx, dy]) => ({ t: tileAt(w, x + dx, y + dy), k: idx(x + dx, y + dy) })).filter(o => o.t?.belt && net.dist.has(o.k)).sort((a, b) => net.dist.get(a.k) - net.dist.get(b.k));
+    for (const o of by) { pour(t.obj.held, o.t.load = o.t.load || [], B.holds); if (!t.obj.held.length) break; }
+  }
+}
 // Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
-// in its reach into its basket, then hands the basket to a powered hopper on the same line. Returns crops picked.
+// in its reach into its basket and drops the basket on the belt beside it. Returns crops picked.
 export function machinePass(state) {
   const P = CONFIG.power.picker, net = lineNet(state), idx = (x, y) => y * state.world.w + x; let picked = 0;
-  const hoppers = {};   // one hopper a line takes the baskets: the one beside the crate if there is one
-  for (const { x, y, t } of machineTiles(state, 'hopper').sort((a, b) => (hopperByCrate(b.x, b.y) ? 1 : 0) - (hopperByCrate(a.x, a.y) ? 1 : 0))) if (net.on.has(idx(x, y)) && !hoppers[net.comp.get(idx(x, y))]) hoppers[net.comp.get(idx(x, y))] = t;
   for (const { x, y, t } of machineTiles(state, 'picker')) {
     if (!net.on.has(idx(x, y))) continue;
     const held = t.obj.held = t.obj.held || [];
@@ -725,10 +786,9 @@ export function machinePass(state) {
       const produce = harvestYield(state, bed.t, bed.x, bed.y);
       addHeld(held, produce); state.stats.harvests++; bed.t.crop.harvests++; clearReaped(bed.t, g); picked += produce.qty;
     }
-    const hop = hoppers[net.comp.get(idx(x, y))];
-    if (hop && held.length) { const hh = hop.obj.held = hop.obj.held || []; while (held.length && heldCount(hh) < CONFIG.power.hopper.holds) { const it = held[0], take = Math.min(CONFIG.power.hopper.holds - heldCount(hh), it.qty); addHeld(hh, { ...it, qty: take }); it.qty -= take; if (!it.qty) held.shift(); } }
   }
   if (picked) { const D = today(state); D.picked = (D.picked || 0) + picked; }
+  beltStep(state);   // the baskets go straight onto the belt
   return picked;
 }
 // The hoppers tip into the crate, as much as fits; the rest waits for the next cart.
@@ -747,10 +807,11 @@ export function drainHoppers(state) {
   }
   return moved;
 }
-// Empty hands on a picker or hopper: its basket into your pockets, as much as fits.
+// Empty hands on a picker, a hopper or a belt tile: what it holds into your pockets, as much as fits.
+export const heldOn = t => isMachine(t) ? t.obj.held : t?.belt ? t.load : null;
 export function takeHeld(state, x, y) {
-  const t = tileAt(state.world, x, y); if (!isMachine(t) || !t.obj.held?.length) return fail('Nothing in it');
-  const held = t.obj.held; let taken = 0;
+  const t = tileAt(state.world, x, y), held = heldOn(t); if (!held?.length) return fail('Nothing in it');
+  let taken = 0;
   while (held.length) { const it = held[0], left = addItem(state.inventory, { kind: 'crop', species: it.species, q: it.q || 0, qty: it.qty }); taken += it.qty - left; if (left) { it.qty = left; break; } held.shift(); }
   if (!taken) return fail('Your pockets are full');
   return { ok: true, msg: '', float: `+${taken} ${taken === 1 ? 'crop' : 'crops'}`, taken };

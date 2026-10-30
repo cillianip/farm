@@ -64,7 +64,7 @@ export function itemSprite(it, species) {
   if (it.kind === 'fert') return fertIcon();
   if (it.kind === 'sprinkler') return sprinklerSprite(it.level || 0, 0);
   if (it.kind === 'pump') return pumpIcon(it.level || 0);
-  if (it.kind === 'generator' || it.kind === 'picker' || it.kind === 'hopper' || it.kind === 'line') return stationIcon(it.kind);
+  if (['generator', 'picker', 'hopper', 'line', 'belt'].includes(it.kind)) return stationIcon(it.kind);
   if (it.kind === 'pipe') return pipeSprite(10);
   if (it.kind === 'withered') return witheredSprite();
   if (it.kind === 'pulled') { const sp = species[it.species]; return sp ? cropSprite(sp, it.unknown ? 1 : 2, 0) : witheredSprite(); }

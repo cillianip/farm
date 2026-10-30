@@ -933,49 +933,72 @@ await test('Sprinkler II and III reach 2 and 3 tiles and draw more of the line: 
 });
 
 console.log('power');
-await test('the chain: a generator powers the line; a picker takes one ripe crop an hour and hands it to the hopper beside the crate; the cart sells it; dead without a generator; nearest machines first when the line asks for more', () => {
-  const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x];
+await test('the chain: a generator powers the line; a picker takes one ripe crop an hour and drops it on the belt; the belt carries it a tile a step to the hopper beside the crate; the cart sells it; dead without a generator; nearest machines first when the line asks for more', () => {
+  const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt;
   const carrot = byName(s, 'Carrot');
   for (let x = X; x <= Cr.x - 1; x++) tile(x, Cr.y - 1).line = true;   // a line from beside the crate west along the row above it
   const hx = Cr.x - 1, hy = Cr.y - 1;
   tile(hx, hy).obj = { kind: 'hopper', held: [] }; tile(X, hy).obj = { kind: 'picker', held: [] }; s.lineRev = 1;
+  for (let x = X + 1; x < hx; x++) { tile(x, hy).belt = true; tile(x, hy).load = []; } s.beltRev = 1;   // belt between them, sharing the line's tiles
+  const D = hx - 1 - X;   // belt tiles from the picker to the hopper
   s.player.x = X - 0.5; s.player.y = hy - 0.5;
   assert.ok(S.useItem(s, 0, X, hy - 1).ok, 'hoe'); assert.ok(S.useItem(s, 2, X, hy - 1).ok, 'plant a carrot');
   tile(X, hy - 1).crop.growth = 100; tile(X, hy - 1).crop.ripeAt = s.minutes;
   s.minutes = (S.dayOf(s) - 1) * 1440 + 8 * 60 + 59;
+  assert.ok(!S.beltRunning(s, X + 1, hy), 'no generator: no powered hopper, the belt stands still'); assert.equal(S.beltDir(s, X + 1, hy), -1);
   tickMinutes(s, 2); assert.equal(tile(X, hy).obj.held.length, 0, 'no generator: the picker is dead'); assert.ok(tile(X, hy - 1).crop);
   assert.ok(!S.linePowered(s, X, hy) && !S.machinePowered(s, X, hy));
   tile(X + 1, hy + 1).obj = { kind: 'generator' }; s.lineRev++;   // a generator below the line
   assert.ok(S.linePowered(s, X, hy) && S.machinePowered(s, X, hy) && S.machinePowered(s, hx, hy));
+  assert.ok(S.beltRunning(s, X + 1, hy) && S.beltRunning(s, hx - 1, hy), 'the hopper drives the belt'); assert.equal(S.beltNet(s).dist.get(hy * W.w + hx - 1), 1); assert.equal(S.beltNet(s).dist.get(hy * W.w + X + 1), D);
+  assert.equal(S.beltDir(s, X + 1, hy), 1, 'the belt runs east toward the hopper'); assert.equal(S.beltDir(s, hx - 1, hy), 1);
   tickMinutes(s, 1); assert.equal(tile(X, hy).obj.held.length, 0, 'between hours nothing moves');
-  tickMinutes(s, 60);
-  assert.ok(!tile(X, hy - 1).crop, 'the bed is cleared'); assert.equal(tile(X, hy).obj.held.length, 0, 'the basket went down the line');
-  const hop = tile(hx, hy).obj.held; assert.equal(hop.length, 1); assert.equal(hop[0].species, carrot.id); assert.equal(hop[0].qty, carrot.genome.count);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60 + 59; s.beltClock = 0; tickMinutes(s, 1);   // across 10:00
+  assert.ok(!tile(X, hy - 1).crop, 'the bed is cleared'); assert.equal(tile(X, hy).obj.held.length, 0, 'the basket went onto the belt');
+  assert.equal(S.heldCount(tile(X + 1, hy).load), carrot.genome.count, 'on the first belt tile'); assert.equal(tile(hx, hy).obj.held.length, 0, 'not at the hopper yet');
   assert.equal(S.ledger(s).today.picked, carrot.genome.count);
+  for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(tile(X + 1, hy).load.length, 0, 'a step on, the first tile is clear'); assert.equal(S.heldCount(tile(X + 2, hy).load), carrot.genome.count, 'the crop moved one tile');
+  for (let i = 0; i < B.stepMinutes * (D - 1); i++) tickMinutes(s, 1);
+  const hop = tile(hx, hy).obj.held; assert.equal(hop.length, 1, 'it reached the hopper'); assert.equal(hop[0].species, carrot.id); assert.equal(hop[0].qty, carrot.genome.count);
+  assert.ok(!tile(X + 1, hy).load.length && !tile(hx - 1, hy).load.length, 'the belt is clear');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const m = s.money;
   const rep = S.sleep(s);
   assert.ok(rep.sale && rep.sale.count === carrot.genome.count, 'the hopper tipped into the crate and the cart took it: ' + JSON.stringify(rep.sale));
   assert.equal(tile(hx, hy).obj.held.length, 0); assert.equal(rep.fuel, CONFIG.power.generator.fuelPerDay); assert.equal(rep.picked, carrot.genome.count);
   assert.ok(Math.abs(s.money - (m + rep.sale.total - rep.fuel)) < 1e-9, 'sale in, fuel out');
   assert.ok(rep.lines.some(l => /pickers took/.test(l)));
-  // more machines than the generator powers: the furthest down the line goes dead
-  for (let x = X + 1; x <= X + 5; x++) tile(x, hy).obj = { kind: 'picker', held: [] }; s.lineRev++;
+  // a full hopper backs the belt up: the crops wait on the tile before it
+  tile(hx, hy).obj.held = [{ species: carrot.id, q: 0, qty: CONFIG.power.hopper.holds }]; tile(hx - 1, hy).load = [{ species: carrot.id, q: 0, qty: 2 }];
+  S.beltStep(s); assert.equal(S.heldCount(tile(hx - 1, hy).load), 2, 'nowhere to go'); tile(hx, hy).obj.held = []; S.beltStep(s); assert.equal(tile(hx - 1, hy).load.length, 0, 'emptied, it takes them');
+  // a belt tile holds so many: the rest waits a step behind
+  tile(X + 1, hy).load = [{ species: carrot.id, q: 0, qty: B.holds + 2 }]; S.beltStep(s); assert.equal(S.heldCount(tile(X + 2, hy).load), B.holds); assert.equal(S.heldCount(tile(X + 1, hy).load), 2);
+  for (let x = X + 1; x < hx; x++) tile(x, hy).load = []; tile(hx, hy).obj.held = [];
+  // more machines than the generator powers: the furthest down the line goes dead, and its belt stops
+  for (let x = X + 1; x <= X + 5; x++) { tile(x, hy).obj = { kind: 'picker', held: [] }; tile(x, hy).belt = false; } s.lineRev++; s.beltRev++;
   const net = S.lineNet(s); assert.equal(net.used[net.comp.get(hy * W.w + X)], CONFIG.power.generator.power);
   assert.ok(S.machinePowered(s, X, hy) && !S.machinePowered(s, hx, hy), 'the hopper, furthest from the generator, is the one cut');
-  // by hand: empty hands take a basket; the hoe refuses a machine that still holds crops
+  assert.ok(!S.beltRunning(s, hx - 1, hy), 'no powered hopper: the belt stands still');
+  for (let x = X + 1; x <= X + 5; x++) { tile(x, hy).obj = null; tile(x, hy).belt = true; } s.lineRev++; s.beltRev++; assert.ok(S.beltRunning(s, hx - 1, hy));
+  // by hand: empty hands take a basket or what lies on a belt tile; the hoe refuses either while it holds crops
   tile(X, hy).obj.held = [{ species: carrot.id, q: 0, qty: 2 }];
   s.player.x = X - 0.5; s.player.y = hy + 0.5; assert.equal(S.useItem(s, 0, X, hy).msg, 'Empty it first');
   const r = S.takeHeld(s, X, hy); assert.ok(r.ok && r.taken === 2, JSON.stringify(r)); assert.equal(tile(X, hy).obj.held.length, 0);
+  s.player.x = X + 0.5; tile(X + 1, hy).load = [{ species: carrot.id, q: 0, qty: 1 }]; assert.equal(S.useItem(s, 0, X + 1, hy).msg, 'Empty it first');
+  assert.ok(S.takeHeld(s, X + 1, hy).taken === 1); assert.equal(tile(X + 1, hy).load.length, 0);
   s.inventory.slots[s.inventory.slots.findIndex(i => i?.kind === 'crop')] = null;   // a pocket for it
   assert.ok(S.useItem(s, 0, X, hy).ok, 'now the hoe takes it'); assert.ok(s.inventory.slots.some(i => i?.kind === 'picker'));
+  s.inventory.slots[s.inventory.slots.findIndex(i => i && i.kind !== 'tool' && i.kind !== 'picker')] = null;   // and one for the belt
+  const r3 = S.useItem(s, 0, X + 1, hy); assert.ok(r3.ok && r3.float === 'Belt up', JSON.stringify(r3)); assert.ok(!tile(X + 1, hy).belt && tile(X + 1, hy).line, 'the belt is up, the line stays'); assert.ok(s.inventory.slots.some(i => i?.kind === 'belt'));
   // the switch: off, the line is dead and the night burns no fuel
   let r2 = S.toggleGenerator(s, X + 1, hy + 1); assert.ok(r2.ok && r2.float === 'Off' && r2.off); assert.ok(!S.linePowered(s, X + 1, hy) && !S.generatorLive(s, X + 1, hy + 1));
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep2 = S.sleep(s); assert.ok(!rep2.fuel, 'switched off: no fuel');
   r2 = S.toggleGenerator(s, X + 1, hy + 1); assert.ok(r2.float === 'On' && S.linePowered(s, X + 1, hy));
-  // power is in units: the generator makes 6, each machine draws its share
+  // power is in units: the generator makes 6, each machine draws its share (the hopper more: it drives the belt)
   const net2 = S.lineNet(s), c2 = net2.comp.get(hy * W.w + X + 1); assert.equal(net2.cap[c2], CONFIG.power.generator.power); assert.ok(net2.used[c2] <= net2.cap[c2]);
+  assert.ok(CONFIG.power.hopper.power > CONFIG.power.picker.power);
 });
-await test('placing the chain: line on clear ground only, picker and hopper on line, the hopper beside the crate; the catalogue sells and delivers all four', async () => {
+await test('placing the chain: line and belt on clear ground only and never on each other\'s machines, picker and hopper on line beside the belt; the catalogue sells and delivers all five', async () => {
   const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x]; s.inventory.slots[3] = null;
   addItem(s.inventory, { kind: 'line', qty: 10 }); addItem(s.inventory, { kind: 'generator', qty: 1 });
   const slotOf = kind => s.inventory.slots.findIndex(i => i?.kind === kind);
@@ -988,18 +1011,27 @@ await test('placing the chain: line on clear ground only, picker and hopper on l
   s.inventory.slots[slotOf('generator') >= 0 ? slotOf('generator') : 4] = { kind: 'hopper', qty: 1 };
   s.player.x = X + 1.5; s.player.y = Y + 1.5;
   assert.equal(S.useItem(s, slotOf('hopper'), X + 2, Y).msg, 'A hopper stands on the power line');
-  r = S.useItem(s, slotOf('hopper'), X + 1, Y); assert.ok(r.ok && r.msg === '', 'a hopper stands anywhere on powered line: ' + JSON.stringify(r));
+  r = S.useItem(s, slotOf('hopper'), X + 1, Y); assert.ok(r.ok && /Run belt/.test(r.msg), 'a hopper stands anywhere on powered line, and asks for belt: ' + JSON.stringify(r));
   tile(X + 1, Y).obj.held = [{ species: byName(s, 'Carrot').id, q: 0, qty: 3 }];
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s); assert.ok(!rep.sale, 'away from the crate it is a store: the cart sees nothing'); assert.equal(S.heldCount(tile(X + 1, Y).obj.held), 3);
-  tile(X + 1, Y).obj = null; s.lineRev++;
+  // belt: clear ground, not a bed, not under a machine; it shares a tile with line; a machine cannot stand on it
+  s.inventory.slots[s.inventory.slots.findIndex(i => !i)] = { kind: 'belt', qty: 10 };
+  assert.equal(S.useItem(s, slotOf('belt'), X + 2, Y + 1).msg, 'Not through a bed: flatten it first');
+  assert.equal(S.useItem(s, slotOf('belt'), X + 1, Y).msg, 'Something stands there');
+  r = S.useItem(s, slotOf('belt'), X + 2, Y); assert.ok(r.ok && r.float === 'Laid', 'beside the powered hopper, on its line tile, it runs at once: ' + JSON.stringify(r)); assert.ok(tile(X + 2, Y).belt && S.beltRunning(s, X + 2, Y));
+  r = S.useItem(s, slotOf('belt'), X + 2, Y + 2); assert.ok(r.ok && r.float === 'Laid (still)', 'a loose section: ' + JSON.stringify(r));
+  assert.equal(S.useItem(s, slotOf('belt'), X + 2, Y).msg, 'Belt is already laid here');
   s.inventory.slots[s.inventory.slots.findIndex(i => !i)] = { kind: 'picker', qty: 1 };
-  r = S.useItem(s, slotOf('picker'), X + 1, Y); assert.ok(r.ok && r.msg === '', JSON.stringify(r)); assert.ok(S.machinePowered(s, X + 1, Y));
+  s.player.x = X + 3.5; s.player.y = Y + 1.5; r = S.useItem(s, slotOf('belt'), X + 3, Y); assert.ok(r.ok && r.float === 'Laid', 'belt over the loose line, joined to the running run: ' + JSON.stringify(r));
+  assert.equal(S.useItem(s, slotOf('picker'), X + 3, Y).msg, 'Not on the belt: beside it');
+  s.player.x = X + 1.5; s.player.y = Y + 1.5; tile(X + 1, Y).obj = null; s.lineRev++;
+  r = S.useItem(s, slotOf('picker'), X + 1, Y); assert.ok(r.ok && r.msg === '', 'a picker beside belt: ' + JSON.stringify(r)); assert.ok(S.machinePowered(s, X + 1, Y));
   s.money = 3000; const { catalog, placeOrder } = await import('../src/catalog.js');
-  const ids = ['generator', 'line', 'picker', 'hopper']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Power', id); assert.ok(placeOrder(s, id).ok); }
+  const ids = ['generator', 'line', 'belt', 'picker', 'hopper']; for (const id of ids) { const it = catalog(s).find(i => i.id === id); assert.ok(it && !it.blocked && it.group === 'Power', id); assert.ok(placeOrder(s, id).ok); }
   assert.equal(catalog(s).find(i => i.id === 'picker').level, '2 owned');
   S.sleep(s); S.collectParcels(s);
   const all = [...s.inventory.slots, ...s.chest.slots];
-  assert.ok(all.some(i => i?.kind === 'generator') && all.some(i => i?.kind === 'picker') && all.some(i => i?.kind === 'hopper') && all.some(i => i?.kind === 'line' && i.qty >= CONFIG.power.line.packSize), 'everything arrived');
+  assert.ok(all.some(i => i?.kind === 'generator') && all.some(i => i?.kind === 'picker') && all.some(i => i?.kind === 'hopper') && all.some(i => i?.kind === 'line' && i.qty >= CONFIG.power.line.packSize) && all.some(i => i?.kind === 'belt' && i.qty >= CONFIG.power.belt.packSize), 'everything arrived');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
