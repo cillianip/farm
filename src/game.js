@@ -72,6 +72,7 @@ export class Game {
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { e.preventDefault(); this.keys.add(k); }
       else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) this.selected = +k - 1;   // number keys pick a hotbar slot
       else if (k === 'e') this.interactKey();
+      else if (k === 'n' && !this.ui.openPanel) { this.netView = !this.netView; if (this.netView) this.ui.toast('Network view: what is fed, powered and running. N hides it.'); }
       else if (k === 'escape' && this.ui.openPanel) this.ui.closePanel();
       else if (k === 'escape' && this.landMode) { this.landMode = false; this.ui.toast('The deed waits at the sign. Press E there and click Claim.'); }
       else if (k === 'escape' && !this.sleeping) this.ui.openSettings();   // nothing open: the settings (sound, save)
@@ -382,6 +383,36 @@ export class Game {
   }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
   // the "come and get it" arrow: ripe crops, dried seeds
+  // The network view (N): the scene dims and every pipe, line and belt shows its state, with a number on each source
+  // (the well's pressure, each generator's power) and a word on everything that does not run and why.
+  drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1) {
+    const fed = S.fedPipes(s), net = S.lineNet(s), bn = S.beltNet(s), P = S.pressure(s), u = CONFIG.scale, labels = [];
+    ctx.fillStyle = 'rgba(10,12,24,0.42)'; ctx.fillRect(0, 0, this.vw, this.vh);
+    const box = (sx, sy, inset, fill, stroke) => { ctx.fillStyle = fill; ctx.fillRect(sx + inset, sy + inset, T - 2 * inset, T - 2 * inset); ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.strokeRect(sx + inset + 1, sy + inset + 1, T - 2 * inset - 2, T - 2 * inset - 2); };
+    const say = (x, y, text, color, dy = 0) => labels.push({ x: x * T - cx + T / 2, y: y * T - cy + dy, text, color });
+    const RED = '#ff8a7a', GOLD = '#ffd866', BLUE = '#8fd0ff', GREEN = '#9fe87a', GREY = '#c9c9d2';
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const t = w.tiles[y * w.w + x], k = y * w.w + x, sx = x * T - cx, sy = y * T - cy;
+      if (t.pipe) { const on = fed.has(k); box(sx, sy, 0, on ? 'rgba(63,143,214,0.45)' : 'rgba(120,120,130,0.35)', on ? 'rgba(143,208,255,0.9)' : 'rgba(210,100,90,0.8)'); }          // pipe: the whole tile
+      if (t.line) { const on = net.dist.has(k); box(sx, sy, Math.round(T * 0.25), on ? 'rgba(246,196,83,0.55)' : 'rgba(70,60,50,0.6)', on ? 'rgba(255,230,140,0.95)' : 'rgba(210,100,90,0.8)'); }   // line: an inner square
+      if (t.belt) { const on = bn.dist.has(k); ctx.strokeStyle = on ? 'rgba(143,211,106,0.95)' : 'rgba(170,170,180,0.8)'; ctx.lineWidth = 3; ctx.setLineDash(on ? [] : [4, 4]); ctx.strokeRect(sx + 4, sy + 4, T - 8, T - 8); ctx.setLineDash([]); }   // belt: a ring
+      const o = t.obj; if (!o) continue;
+      if (o.kind === 'sprinkler') { if (!S.sprinklerFed(s, x, y)) say(x, y, S.pipeFed(s, x, y) ? 'no pressure' : 'dry', RED, T - 2); }
+      else if (o.kind === 'pump') { const tier = S.pumpTier(o); say(x, y, !S.pipeFed(s, x, y) ? 'dry' : tier.fuelPerDay && !S.fuelOf(o) ? 'no fuel' : !S.pumpRunning(s, t) ? 'still' : `+${tier.feeds}`, !S.pipeFed(s, x, y) || !S.pumpRunning(s, t) ? RED : BLUE, T - 2); }
+      else if (o.kind === 'generator') { const c = [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dy]) => net.comp.get((y + dy) * w.w + x + dx)).find(v => v != null); say(x, y, o.off ? 'off' : !S.fuelOf(o) ? 'no fuel' : c == null ? 'no line' : `${net.used[c]} / ${net.cap[c]} power`, o.off || !S.fuelOf(o) || c == null ? RED : GOLD, T - 2); }
+      else if (o.kind === 'picker' || o.kind === 'hopper') { if (!S.machinePowered(s, x, y)) say(x, y, S.linePowered(s, x, y) ? 'no power' : 'dead line', RED, T - 2); }
+    }
+    const Wl = BUILDINGS.well; say(Wl.x, Wl.y, `${P.used} / ${P.cap} pressure`, BLUE, -18 * u);
+    ctx.font = '9px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineJoin = 'round';
+    for (const l of labels) { ctx.lineWidth = 4; ctx.strokeStyle = '#1a1410'; ctx.strokeText(l.text, l.x, l.y); ctx.fillStyle = l.color; ctx.fillText(l.text, l.x, l.y); }
+    // the legend, top centre
+    const lines = [['Network view', GREY, 'N hides it'], ['Pipe', BLUE, 'blue fed, grey dry'], ['Line', GOLD, 'gold powered, dark dead'], ['Belt', GREEN, 'green running, grey still']];
+    const lw = 330, lh = 14 * lines.length + 10, lx = Math.round(this.vw / 2 - lw / 2), ly = 8;
+    ctx.fillStyle = 'rgba(20,16,12,0.85)'; ctx.fillRect(lx, ly, lw, lh); ctx.strokeStyle = 'rgba(255,241,184,0.5)'; ctx.lineWidth = 2; ctx.strokeRect(lx + 1, ly + 1, lw - 2, lh - 2);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = '8px "Press Start 2P", monospace';
+    lines.forEach(([k, c, v], i) => { ctx.fillStyle = c; ctx.fillText(k, lx + 8, ly + 7 + i * 14); ctx.fillStyle = GREY; ctx.fillText(v, lx + 8 + 120, ly + 7 + i * 14); });
+    ctx.textBaseline = 'alphabetic';
+  }
   drawArrow(ax, ay0, now) {
     const ctx = this.ctx, u = CONFIG.scale, ay = ay0 + Math.round(Math.sin(now / 220) * 3);
     ctx.fillStyle = '#3b2314'; ctx.fillRect(ax - 2 * u, ay - 3 * u, 4 * u, 4 * u); ctx.fillRect(ax - 4 * u, ay, 8 * u, 2 * u); ctx.fillRect(ax - 3 * u, ay + 2 * u, 6 * u, u); ctx.fillRect(ax - 2 * u, ay + 3 * u, 4 * u, u); ctx.fillRect(ax - u, ay + 4 * u, 2 * u, u);
@@ -543,6 +574,7 @@ export class Game {
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();
+    if (this.netView) this.drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1);
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
     if (!this.ui.openPanel && this.mouse.inside && !s.carrying) {
       const it = this.hotbarItem(), mt = tileAt(w, this.mouse.tx, this.mouse.ty), R = it?.kind === 'sprinkler' && !this.hit ? CONFIG.sprinkler.tiers[it.level || 0].radius : mt?.obj?.kind === 'sprinkler' ? S.sprinklerTier(mt.obj).radius : 1;

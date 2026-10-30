@@ -595,6 +595,8 @@ export class UI {
       body.appendChild(rrow);
       body.appendChild(el('div', 'pc-sec', 'Save'));
       body.appendChild(el('div', null, 'The game saves when you sleep and every 30 seconds. Offline time counts (growth, drying) up to one game day.'));
+      body.appendChild(el('div', 'pc-sec', 'Keys'));
+      body.appendChild(el('div', null, 'WASD or arrows walk · 1–5 pick a pocket · E uses what you stand by · N shows the network view (what is fed, powered and running) · Esc opens this.'));
       const row = el('div'); row.style.margin = '8px 0';
       const save = el('button', null, 'Save now'); save.onclick = () => { g.save(); this.toast('Saved'); };
       const exp = el('button', null, 'Export to text'); exp.onclick = () => { ta.value = g.exportSave(); ta.select(); };
