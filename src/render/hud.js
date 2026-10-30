@@ -80,6 +80,7 @@ export function drawHud(ctx, state, vw, vh, selected = 0, extra = {}) {
   const lines = [];
   lines.push(['Sold last night', y ? formatMoney(y.sale) : 'nothing yet', COL.text]);
   lines.push(['In the ground', rate > 0 ? `${formatMoney(rate)} at harvest` : 'nothing', rate > 0 ? '#3f7a1f' : COL.text]);
+  if (state.loan) lines.push(['Owed the bank', `${formatMoney(state.loan.owed)}, ${formatMoney(state.loan.nightly)} a night`, '#a0462f']);
   lines.push(['Crate', `${S.crateCount(state)} / ${state.crate.capacity}${state.crate.pickups ? ', noon & night' : ' a night'}`, S.crateCount(state) >= state.crate.capacity ? '#a0462f' : COL.text]);
   ctx.font = `20px ${FONT}`; const mw = ctx.measureText(money).width;
   ctx.font = `9px ${FONT}`; const lw = Math.max(...lines.map(([k, v]) => ctx.measureText(`${k}    ${v}`).width));

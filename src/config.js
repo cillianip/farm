@@ -78,6 +78,10 @@ export const CONFIG = {
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
   // running one burns `fuelPerDay` cans a night. A tank holds `tank` cans. Empty, the machine stops until you fill it.
   fuel: { price: 8, packSize: 5, tank: 7 },
+  // The bank, at the delivery sign. One loan at a time: the money comes at once, and every night the cart takes the
+  // night's share (size × (1 + interest) / nights) out of what you have, before anything else; short, it takes what
+  // there is and the rest waits. Bigger loans open once you have sold `gates` worth of crops in all.
+  loan: { sizes: [250, 600, 1500], gates: [0, 500, 2000], interest: 0.2, nights: 10 },
   // Humidity 0–100 is rolled each morning (rain days are near 100). Evaporation × (evapBase − humidity/100 × evapSpan):
   // dry air (20%) dries beds at full speed, a rainy day (95%) at about a third.
   weather: { humidityRain: [85, 98], humidityRange: [20, 70], evapBase: 1.2, evapSpan: 0.9, drainPerTurn: 35 },

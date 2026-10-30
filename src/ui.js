@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, fuelIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes } from './genetics.js';
@@ -380,7 +380,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.id) ? stationIcon(item.id) : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id === 'repay' || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -399,8 +399,8 @@ export class UI {
         const b = el('button', 'primary', 'Claim'); b.onclick = () => { this.game.landMode = true; this.closePanel(); this.toast('Click a highlighted plot to claim it (Esc = later)'); }; r.appendChild(b); body.appendChild(r);
       }
       // the catalogue by group
-      const items = catalog(s), groups = ['Tools', 'Stations', 'Water', 'Power', 'Land', 'Seeds'];
-      const subs = { Seeds: `new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}`, Water: `the well gives ${CONFIG.pump.wellFeeds} pressure, pumps add more`, Power: 'line carries power, belt carries crops' };
+      const items = catalog(s), groups = ['Tools', 'Stations', 'Water', 'Power', 'Land', 'Bank', 'Seeds'];
+      const subs = { Seeds: `new packets in ${seedRotationIn(s)} day${seedRotationIn(s) === 1 ? '' : 's'}`, Water: `the well gives ${CONFIG.pump.wellFeeds} pressure, pumps add more`, Power: 'line carries power, belt carries crops', Bank: 'one loan at a time; the cart takes the night\'s share before you see the money' };
       for (const gname of groups) {
         const list = items.filter(i => i.group === gname); if (!list.length) continue;
         body.appendChild(el('div', 'pc-sec', subs[gname] ? `${gname} <span class="muted">· ${subs[gname]}</span>` : gname));
@@ -408,13 +408,14 @@ export class UI {
           const row = el('div', 'cat-row' + (item.blocked ? ' blocked' : item.afford ? ' afford' : ' cant'));
           row.appendChild(icon(item));
           row.appendChild(el('div', 'grow', `<b>${esc(item.name)}</b>${item.level ? ` <span class="muted">${esc(item.level)}</span>` : ''}<br><span class="muted">${esc(item.blocked || item.effect)}</span>${item.why && !item.blocked ? `<br><span class="why">${esc(item.why)}</span>` : ''}`));
-          row.appendChild(el('div', 'cat-price', item.blocked ? '' : item.afford ? formatMoney(item.price) : `${formatMoney(item.price)}<br><span class="gap">${formatMoney(item.price - s.money)} to go</span>`));
-          const b = el('button', item.blocked || s.money < item.price ? null : 'primary', item.blocked ? '—' : 'Order'); b.disabled = !!item.blocked || s.money < item.price;
+          const loan = item.id.startsWith('loan:'), repay = item.id === 'repay';
+          row.appendChild(el('div', 'cat-price', item.blocked ? '' : loan ? `+${formatMoney(+item.id.slice(5))}` : item.afford ? formatMoney(item.price) : `${formatMoney(item.price)}<br><span class="gap">${formatMoney(item.price - s.money)} to go</span>`));
+          const b = el('button', item.blocked || s.money < item.price ? null : 'primary', item.blocked ? '—' : loan ? 'Borrow' : repay ? 'Pay off' : 'Order'); b.disabled = !!item.blocked || s.money < item.price;
           b.onclick = () => {
             const r = placeOrder(s, item.id); if (!r.ok) { this.toast(r.msg); return; }
             // the row lights up, the price floats away, the order slides into the cart box
-            row.classList.add('bought'); b.textContent = 'Ordered'; b.disabled = true;
-            const fl = el('div', 'cat-float', `−${formatMoney(item.price)}`); const pr = row.querySelector('.cat-price').getBoundingClientRect(), pb = $('panel-body').getBoundingClientRect();
+            row.classList.add('bought'); b.textContent = loan ? 'Borrowed' : repay ? 'Paid' : 'Ordered'; b.disabled = true; if (r.loan) this.toast(r.msg);
+            const fl = el('div', 'cat-float', loan ? `+${formatMoney(+item.id.slice(5))}` : `−${formatMoney(item.price)}`); const pr = row.querySelector('.cat-price').getBoundingClientRect(), pb = $('panel-body').getBoundingClientRect();
             fl.style.left = (pr.left - pb.left) + 'px'; fl.style.top = (pr.top - pb.top + $('panel-body').scrollTop) + 'px'; $('panel-body').appendChild(fl);
             this.game.onPurchase(); this.justOrdered = item.id;
             setTimeout(() => { fl.remove(); this.refresh(); }, 520);
@@ -498,9 +499,11 @@ export class UI {
         box.appendChild(el('div', 'pc-row total', `<span>Paid</span><span>+${formatMoney(report.sale.total)}</span>`));
         if (report.water) box.appendChild(el('div', 'pc-row', `<span>Water bill · ${report.water.pours} sprinkler pours</span><span class="down">−${formatMoney(report.water.bill)}</span></div>`));
         if (report.fuel?.cans) box.appendChild(el('div', 'pc-row', `<span>Fuel · engines and generators</span><span>${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned</span>`));
+        if (report.loan) box.appendChild(el('div', 'pc-row', `<span>Loan · the bank's share${report.loan.done ? ', paid off' : report.loan.short ? ', short by ' + formatMoney(report.loan.short) : ''}</span><span class="down">−${formatMoney(report.loan.pay)}</span>`));
         if (report.dayBefore) { const d = report.sale.total - report.dayBefore.sale; box.appendChild(el('div', 'pc-row muted', `<span>Day before: ${formatMoney(report.dayBefore.sale)}</span><span class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${formatMoney(Math.abs(d))}</span>`)); }
         cartNodes.push(`The cart took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the crate.`, box);
       } else cartNodes.push('The crate was empty, so the cart took nothing.' + (report.water ? ` Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.` : '') + (report.fuel?.cans ? ` Fuel: ${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned.` : ''));
+      if (report.loan && !report.sale) cartNodes.push(report.loan.done ? 'The bank took its last share: the loan is paid off.' : `The bank took ${formatMoney(report.loan.pay)}: ${formatMoney(report.loan.owed)} still owed.`);
       if (report.fuel?.dry) cartNodes.push(`${report.fuel.dry === 1 ? 'A machine is' : report.fuel.dry + ' machines are'} out of fuel: pour a can in.`);
       if (report.picked) cartNodes.push(`The pickers took ${report.picked} ${report.picked === 1 ? 'crop' : 'crops'}.`);
       if (report.delivery?.count) { const list = el('ul', 'mr-list'); for (const p of s.parcels || []) list.appendChild(el('li', null, esc(p.name))); cartNodes.push(`It left ${report.delivery.count === 1 ? 'a parcel' : report.delivery.count + ' parcels'} in the crate. Click the crate to open ${report.delivery.count === 1 ? 'it' : 'them'}.`, list); }

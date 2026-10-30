@@ -871,6 +871,12 @@ export function sleep(state, opts = {}) {
     for (const { x, y, t } of pumpTiles(state)) if (pumpTier(t.obj).fuelPerDay && pipeFed(state, x, y)) burn(t.obj, pumpTier(t.obj).fuelPerDay);
     for (const { t } of generatorTiles(state)) if (!t.obj.off) burn(t.obj, CONFIG.power.generator.fuelPerDay);
     if (cans || dry) { report.fuel = { cans, dry }; D.fuelCans = cans; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; } }
+  if (state.loan) {   // the bank's share of the night, after the sale and the bills
+    const Lo = state.loan, pay = Math.round(Math.min(Lo.owed, Lo.nightly, state.money) * 100) / 100;
+    state.money = Math.round((state.money - pay) * 100) / 100; Lo.owed = Math.round((Lo.owed - pay) * 100) / 100; D.loanPaid = pay;
+    report.loan = { pay, owed: Lo.owed, short: Math.round((Math.min(Lo.nightly, Lo.owed + pay) - pay) * 100) / 100, done: Lo.owed <= 0 };
+    if (Lo.owed <= 0) state.loan = null;
+  }
   report.yesterday = D; report.dayBefore = L.yesterday; report.picked = D.picked || 0;
   L.history.push(D); if (L.history.length > 7) L.history.shift();
   L.yesterday = D; L.today = freshDay();
@@ -882,6 +888,7 @@ export function sleep(state, opts = {}) {
   if (report.fuel?.cans) report.lines.push(`Fuel: ${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned.`);
   if (report.fuel?.dry) report.lines.push(`${report.fuel.dry === 1 ? 'A machine is' : report.fuel.dry + ' machines are'} out of fuel: pour a can in.`);
   if (report.picked) report.lines.push(`The pickers took ${report.picked} crops.`);
+  if (report.loan) report.lines.push(report.loan.done ? `The bank took its last ${formatMoney(report.loan.pay)}: the loan is paid off.` : report.loan.short ? `The bank took ${formatMoney(report.loan.pay)} of its ${formatMoney(report.loan.pay + report.loan.short)}: you had no more. ${formatMoney(report.loan.owed)} still owed.` : `The bank took ${formatMoney(report.loan.pay)}: ${formatMoney(report.loan.owed)} still owed.`);
   // breeder
   if (state.breeder.running) { report.breeder = resolveBreed(state); }
   if (composting && cp.ready) report.compost = `${cp.ready.name} ×${cp.readyCount || 1}`;

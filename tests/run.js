@@ -1050,5 +1050,28 @@ await test('placing the chain: line and belt on clear ground only and never on e
   assert.ok(all.some(i => i?.kind === 'generator') && all.some(i => i?.kind === 'picker') && all.some(i => i?.kind === 'hopper') && all.some(i => i?.kind === 'line' && i.qty >= CONFIG.power.line.packSize) && all.some(i => i?.kind === 'belt' && i.qty >= CONFIG.power.belt.packSize) && all.some(i => i?.kind === 'fuel' && i.qty >= CONFIG.fuel.packSize), 'everything arrived');
 });
 
+console.log('bank');
+await test('loans: the money comes at once, the cart takes the night\'s share, short nights carry over, one at a time, bigger ones open as you sell, pay off early', async () => {
+  const s = arm(S.createState(1)); const { catalog, placeOrder } = await import('../src/catalog.js'); const Lo = CONFIG.loan;
+  s.money = 10; s.stats.earned = 0;
+  const rows = () => catalog(s).filter(i => i.group === 'Bank');
+  assert.equal(rows().length, Lo.sizes.length); assert.ok(!rows()[0].blocked, 'the small loan is open from the start'); assert.ok(/sold first/.test(rows()[1].blocked), 'the bigger ones wait for sales');
+  assert.equal(placeOrder(s, 'loan:' + Lo.sizes[1]).ok, false);
+  const r = placeOrder(s, 'loan:' + Lo.sizes[0]); assert.ok(r.ok && r.loan, JSON.stringify(r)); assert.equal(s.money, 10 + Lo.sizes[0]); assert.equal(s.orders.length, 0, 'no parcel: it is money');
+  const nightly = Math.round(Lo.sizes[0] * (1 + Lo.interest) / Lo.nights * 100) / 100; assert.equal(s.loan.nightly, nightly); assert.equal(s.loan.owed, Lo.sizes[0] * (1 + Lo.interest));
+  assert.ok(rows().every(i => i.id === 'repay' || i.blocked === 'One loan at a time')); assert.ok(rows().some(i => i.id === 'repay' && i.price === s.loan.owed));
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; let m = s.money; let rep = S.sleep(s);
+  assert.equal(rep.loan.pay, nightly); assert.equal(s.money, Math.round((m - nightly + (rep.sale?.total || 0) - (rep.water?.bill || 0)) * 100) / 100, 'the night\'s share left'); assert.equal(s.loan.owed, Math.round((Lo.sizes[0] * (1 + Lo.interest) - nightly) * 100) / 100);
+  assert.ok(rep.lines.some(l => /The bank took/.test(l)));
+  s.money = 5; s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; rep = S.sleep(s);
+  assert.equal(rep.loan.pay, 5); assert.ok(rep.loan.short > 0, 'short: the rest waits'); assert.equal(s.money, 0); assert.ok(rep.lines.some(l => /you had no more/.test(l)));
+  s.money = 1000; const owed = s.loan.owed; assert.ok(placeOrder(s, 'repay').ok); assert.equal(s.loan, null); assert.equal(s.money, Math.round((1000 - owed) * 100) / 100);
+  assert.ok(!rows()[0].blocked, 'free to borrow again');
+  s.stats.earned = Lo.gates[2]; assert.ok(rows().every(i => !i.blocked), 'everything open once enough is sold');
+  // the last night of a loan pays it off and says so
+  placeOrder(s, 'loan:' + Lo.sizes[0]); s.loan.owed = 7; s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; rep = S.sleep(s); assert.ok(rep.loan.done && rep.loan.pay === 7 && !s.loan, JSON.stringify(rep.loan));
+  assert.ok(rep.lines.some(l => /paid off/.test(l)));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

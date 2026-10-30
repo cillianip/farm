@@ -639,6 +639,10 @@ export function handsIcon() {
 export function fuelIcon() {
   return sprite('fuel', 16, 16, P => { P.rect(4, 5, 9, 9, '#8f3730'); P.rect(5, 6, 7, 7, '#b84a3c'); P.rect(5, 6, 7, 1, '#d9736a'); P.rect(6, 3, 5, 2, '#5c6273'); P.rect(7, 2, 3, 1, '#5c6273'); P.rect(11, 3, 2, 2, '#c2c8d6'); P.rect(6, 9, 5, 2, '#f6c453'); P.rect(4, 14, 9, 1, 'rgba(30,20,10,0.25)'); });
 }
+// A coin, for the bank's rows.
+export function coinIcon() {
+  return sprite('coin', 16, 16, P => { P.rect(4, 3, 8, 10, '#b4863a'); P.rect(3, 4, 10, 8, '#b4863a'); P.rect(5, 4, 6, 8, PAL.gold); P.rect(4, 5, 8, 6, PAL.gold); P.rect(5, 4, 4, 1, '#fff1b8'); P.rect(4, 5, 1, 3, '#fff1b8'); P.rect(7, 6, 2, 4, '#b4863a'); P.rect(4, 14, 9, 1, 'rgba(30,20,10,0.25)'); });
+}
 export function fertIcon() {
   return sprite('fert', 16, 16, P => { P.rect(3, 5, 10, 9, '#5a4a2a'); P.rect(3, 4, 10, 1, '#7a6a3a'); P.px(5, 7, '#8bc34a'); P.px(9, 9, '#8bc34a'); P.px(7, 11, '#c9b07c'); });
 }
