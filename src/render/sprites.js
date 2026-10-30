@@ -363,15 +363,35 @@ export function fertOverlay() {
     for (const [x, y] of [[6, 2], [12, 7], [3, 9], [9, 14]]) P.px(x, y, straw);
   });
 }
-// Pipe or line under a bed: a seam of turned soil along its run, joined to each neighbour it meets.
-export function buriedSprite(mask = 0) {
-  return sprite(`buried${mask}`, 16, 16, P => {
-    const seam = 'rgba(52,32,16,0.5)', edge = 'rgba(120,84,48,0.35)';
-    const arm = (x, y, w, h) => { P.rect(x, y, w, h, seam); };
-    if (mask & 1) arm(7, 0, 3, 8); if (mask & 4) arm(7, 8, 3, 8); if (mask & 8) arm(0, 7, 8, 3); if (mask & 2) arm(8, 7, 8, 3);
-    if (!mask) arm(7, 7, 3, 3);
-    P.rect(7, 7, 3, 3, seam);
-    if (mask & 1) P.px(7, 2, edge); if (mask & 4) P.px(9, 13, edge); if (mask & 8) P.px(2, 7, edge); if (mask & 2) P.px(13, 9, edge);
+// Pipe or line under a bed: a backfilled trench along its run (`mask`: 1 up, 2 right, 4 down, 8 left), lit along its
+// top-left lip and shadowed on the bottom-right, the pipe showing through where the soil has settled (blue when the
+// well feeds it). Where the run meets open ground (`surf` bits) it dives: a stub of pipe at the edge goes into a dark
+// mouth with the dug soil heaped either side.
+export function buriedSprite(mask = 0, surf = 0, kind = 'pipe', fed = false) {
+  return sprite(`buried${mask}.${surf}.${kind}${fed ? 'f' : ''}`, 16, 16, P => {
+    const fill = 'rgba(44,26,12,0.5)', lip = 'rgba(200,160,108,0.45)', shade = 'rgba(16,8,3,0.45)', mouth = 'rgba(8,4,2,0.9)', heap = 'rgba(228,192,138,0.85)';
+    const line = kind === 'line', stub = line ? '#3b2314' : PAL.metal, stubEdge = line ? '#2a1810' : PAL.metalDark, core = line ? '#3b2314' : fed ? PAL.water : PAL.metal;
+    const up = mask & 1, right = mask & 2, down = mask & 4, left = mask & 8;
+    // the trench
+    P.rect(6, 6, 5, 5, fill);
+    if (up) P.rect(6, 0, 5, 6, fill); if (down) P.rect(6, 11, 5, 5, fill); if (left) P.rect(0, 6, 6, 5, fill); if (right) P.rect(11, 6, 5, 5, fill);
+    // lips: lit on the left of a vertical run and the top of a horizontal one, shadow opposite; the joint closes the open sides
+    if (up) { P.rect(6, 0, 1, 6, lip); P.rect(10, 0, 1, 6, shade); } if (down) { P.rect(6, 11, 1, 5, lip); P.rect(10, 11, 1, 5, shade); }
+    if (left) { P.rect(0, 6, 6, 1, lip); P.rect(0, 10, 6, 1, shade); } if (right) { P.rect(11, 6, 5, 1, lip); P.rect(11, 10, 5, 1, shade); }
+    if (!up) P.rect(6, 6, 5, 1, lip); if (!left) P.rect(6, 6, 1, 5, lip); if (!down) P.rect(6, 10, 5, 1, shade); if (!right) P.rect(10, 6, 1, 5, shade);
+    // the pipe showing through, or the mouth where it dives
+    const dive = dir => {   // drawn as if the run came in from the top, then turned to its side
+      const R = (x, y, w, h, c) => { if (dir === 1) P.rect(x, y, w, h, c); else if (dir === 4) P.rect(x, 16 - y - h, w, h, c); else if (dir === 8) P.rect(y, x, h, w, c); else P.rect(16 - y - h, x, h, w, c); };
+      R(6, 0, 5, 1, stubEdge); R(7, 0, 3, 1, stub); R(6, 1, 5, 1, stubEdge);                  // the last of the pipe and its elbow turning down
+      R(3, 2, 2, 3, heap); R(12, 2, 2, 3, heap); R(3, 5, 2, 1, shade); R(12, 5, 2, 1, shade);   // the dug soil heaped either side
+      R(5, 2, 7, 3, mouth);                                                                      // the hole
+    };
+    const glimpse = (x, y, w, h) => { P.rect(x, y, w, h, core); if (w > h) P.rect(x, y + h, w, 1, shade); else P.rect(x + w, y, 1, h, shade); };
+    if (up) { if (surf & 1) dive(1); else glimpse(8, 2, 1, 2); }
+    if (down) { if (surf & 4) dive(4); else glimpse(8, 12, 1, 2); }
+    if (left) { if (surf & 8) dive(8); else glimpse(2, 8, 2, 1); }
+    if (right) { if (surf & 2) dive(2); else glimpse(12, 8, 2, 1); }
+    if (!mask) glimpse(8, 7, 1, 2);
   });
 }
 export function breederSprite(frame = 0) {

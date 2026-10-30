@@ -434,6 +434,7 @@ export class Game {
     const sprays = [];      // sprinklers spraying right now: drawn over their 3×3 after the ground pass
     const fed = S.fedPipes(s), wellB = BUILDINGS.well, pipeOrWell = (x, y) => { const t = tileAt(w, x, y); return !!t?.pipe || (x === wellB.x && y === wellB.y); };
     const net = S.lineNet(s), lineOrGen = (x, y) => { const t = tileAt(w, x, y); return !!t?.line || S.isGenerator(t); };
+    const buriedMask = (x, y, has) => { let m = 0, sf = 0; for (const [b, nx, ny] of [[1, x, y - 1], [2, x + 1, y], [4, x, y + 1], [8, x - 1, y]]) if (has(nx, ny)) { m |= b; if (!tileAt(w, nx, ny)?.tilled) sf |= b; } return [m, sf]; };
     const beltOrMachine = (x, y) => { const t = tileAt(w, x, y); return !!t?.belt || S.isMachine(t); }, beltFrame = Math.floor(now / 150) % 4;
     // ground + flat things
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
@@ -452,7 +453,10 @@ export class Game {
         }
       }
       if (tree) { ctx.fillStyle = 'rgba(20,40,20,0.35)'; ctx.fillRect(sx, sy, T, T); }
-      if (t.tilled && (t.pipe || t.line)) ctx.drawImage(buriedSprite((t.pipe ? (pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0) : 0) | (t.line ? (lineOrGen(x, y - 1) ? 1 : 0) | (lineOrGen(x + 1, y) ? 2 : 0) | (lineOrGen(x, y + 1) ? 4 : 0) | (lineOrGen(x - 1, y) ? 8 : 0) : 0)), sx, sy, T, T);   // under a bed: a seam in the soil
+      if (t.tilled && (t.pipe || t.line)) {   // under a bed: a backfilled trench, diving in where it meets open ground
+        const [pm, ps] = t.pipe ? buriedMask(x, y, pipeOrWell) : [0, 0], [lm, ls] = t.line ? buriedMask(x, y, lineOrGen) : [0, 0];
+        ctx.drawImage(buriedSprite(pm | lm, ps | ls, t.pipe ? 'pipe' : 'line', !!t.pipe && fed.has(y * w.w + x)), sx, sy, T, T);
+      }
       if (t.fert && t.tilled) ctx.drawImage(fertOverlay(), sx, sy, T, T);
       if (t.pipe && !t.tilled) ctx.drawImage(pipeSprite((pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0), fed.has(y * w.w + x)), sx, sy, T, T);
       if (t.line && !t.tilled) ctx.drawImage(lineSprite((lineOrGen(x, y - 1) ? 1 : 0) | (lineOrGen(x + 1, y) ? 2 : 0) | (lineOrGen(x, y + 1) ? 4 : 0) | (lineOrGen(x - 1, y) ? 8 : 0), net.dist.has(y * w.w + x)), sx, sy, T, T);
