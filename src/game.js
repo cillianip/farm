@@ -474,11 +474,11 @@ export class Game {
     lines.forEach(([k, c, v], i) => { ctx.fillStyle = c; ctx.fillText(k, lx + 8, ly + 7 + i * 14); ctx.fillStyle = GREY; ctx.fillText(v, lx + 8 + 120, ly + 7 + i * 14); });
     ctx.textBaseline = 'alphabetic';
   }
-  drawArrow(ax, ay0, now) {
+  drawArrow(ax, ay0, now, body = '#fff1b8', stripe = '#f6c453') {
     const ctx = this.ctx, u = CONFIG.scale, ay = ay0 + Math.round(Math.sin(now / 220) * 3);
     ctx.fillStyle = '#3b2314'; ctx.fillRect(ax - 2 * u, ay - 3 * u, 4 * u, 4 * u); ctx.fillRect(ax - 4 * u, ay, 8 * u, 2 * u); ctx.fillRect(ax - 3 * u, ay + 2 * u, 6 * u, u); ctx.fillRect(ax - 2 * u, ay + 3 * u, 4 * u, u); ctx.fillRect(ax - u, ay + 4 * u, 2 * u, u);
-    ctx.fillStyle = '#fff1b8'; ctx.fillRect(ax - u, ay - 2 * u, 2 * u, 3 * u); ctx.fillRect(ax - 3 * u, ay + u, 6 * u, u); ctx.fillRect(ax - 2 * u, ay + 2 * u, 4 * u, u); ctx.fillRect(ax - u, ay + 3 * u, 2 * u, u);
-    ctx.fillStyle = '#f6c453'; ctx.fillRect(ax - u, ay - 2 * u, u, 3 * u);
+    ctx.fillStyle = body; ctx.fillRect(ax - u, ay - 2 * u, 2 * u, 3 * u); ctx.fillRect(ax - 3 * u, ay + u, 6 * u, u); ctx.fillRect(ax - 2 * u, ay + 2 * u, 4 * u, u); ctx.fillRect(ax - u, ay + 3 * u, 2 * u, u);
+    ctx.fillStyle = stripe; ctx.fillRect(ax - u, ay - 2 * u, u, 3 * u);
   }
 
   // ---------- render ----------
@@ -534,8 +534,11 @@ export class Game {
       if (t.crop) {
         const sp = s.species[t.crop.speciesId]; if (!sp) continue;
         const stage = S.cropStage(t.crop);
-        ctx.drawImage(stage === 'dead' ? witheredSprite() : cropSprite(sp, stage, t.crop.v || 0), sx, sy, T, T);
-        if (stage === 3 && !this.ui.openPanel) this.drawArrow(sx + T / 2, sy - 14, now);   // bobbing outlined arrow: ready to harvest
+        const rf = stage === 3 ? S.rotFactor(s, t.crop) : 1, rot = 1 - rf;   // overripe: the plant browns and sags, spots appear, the arrow goes brown
+        if (rot > 0) ctx.filter = `sepia(${(0.85 * rot).toFixed(2)}) saturate(${(1 - 0.55 * rot).toFixed(2)}) brightness(${(1 - 0.3 * rot).toFixed(2)})`;
+        ctx.drawImage(stage === 'dead' ? witheredSprite() : cropSprite(sp, stage, t.crop.v || 0), sx, sy + (rot > 0 ? Math.round(rot * 2) * CONFIG.scale : 0), T, T);
+        if (rot > 0) { ctx.filter = 'none'; const u = CONFIG.scale, n = Math.min(5, Math.floor(rot * 6)); ctx.fillStyle = 'rgba(70,40,15,0.75)'; for (let k = 0; k < n; k++) { const [ox, oy] = [[5, 6], [10, 4], [7, 10], [12, 9], [4, 11]][k]; ctx.fillRect(sx + ox * u, sy + oy * u, 2 * u, u); ctx.fillRect(sx + (ox + 1) * u, sy + (oy + 1) * u, u, u); } }
+        if (stage === 3 && !this.ui.openPanel) this.drawArrow(sx + T / 2, sy - 14, now, rot > 0.04 ? '#c9925a' : '#fff1b8', rot > 0.04 ? '#8a5a2b' : '#f6c453');   // bobbing outlined arrow: ready to harvest; brown once it is overripe
         if (stage !== 'dead' && stage !== 3 && S.moistureGrowthFactor(S.feltMoisture(t, sp.genome)) === 0 && t.crop.health < 70) { ctx.fillStyle = '#e86a6a'; ctx.fillRect(sx + T - 8, sy + 2, 6, 6); }
       }
     }

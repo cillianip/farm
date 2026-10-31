@@ -109,7 +109,7 @@ export const CONFIG = {
     dryHealthLossPerHour: 4, // base health lost per dry hour (scaled by thirst and hardiness)
     wetHealthGainPerHour: 2,
     soggyHealthLossPerHour: 3,
-    rotHours: 24,            // after the ripe window, value falls to 0 over this long, then the crop dies
+    rotHours: 48,            // after the ripe window, value falls to 0 over this long (two days: it browns visibly first), then the crop dies
     regrowResetTo: 55,       // growth % a regrowing crop drops back to after harvest
     neighbourBonus: 0.05,    // +growth speed per different neighbouring species (max 4)
     nightGrowth: 0.5,        // growth speed from 8pm to 6am, awake or asleep: plants slow down in the dark
