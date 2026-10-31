@@ -1,5 +1,7 @@
-// Sound. Everything is synthesised with the Web Audio API: no files, so it ships with the code like the pixel art.
-// Short effects for the hands-on actions, a looping theme, a rain bed. Volumes live in localStorage, not the save.
+// Sound. Everything is synthesised with the Web Audio API unless a recording is dropped into assets/sfx and named in
+// its manifest: then the recording plays instead, pitched a little differently each time like Minecraft's, and a name
+// with several files picks one at random. Short effects for the hands-on actions, a looping theme, a rain bed.
+// Volumes live in localStorage, not the save.
 const KEY = 'farm-audio';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
 
@@ -21,7 +23,27 @@ export class Sound {
   constructor() {
     this.ctx = null;
     this.prefs = Object.assign({ master: 0.8, sfx: 0.8, music: 0.5, muted: false }, load() || {});
-    this.musicOn = false; this.stepT = 0;
+    this.musicOn = false; this.stepT = 0; this.samples = {}; this.v = 1;
+  }
+  // every synthesised effect is pitched a little differently each play (±8%); recordings get the same nudge in playbackRate
+  vary(pct = 0.08) { return 1 + (Math.random() * 2 - 1) * pct; }
+  // recordings: the manifest maps a name to files in assets/sfx; whatever decodes is used, the rest stays synthesised
+  async loadSamples() {
+    let man = null; try { const r = await fetch('assets/sfx/manifest.json'); if (r.ok) man = await r.json(); } catch {}
+    if (!man) return;
+    for (const [name, files] of Object.entries(man)) {
+      if (!Array.isArray(files) || !files.length) continue;
+      const bufs = [];
+      for (const f of files) { try { const r = await fetch('assets/sfx/' + f); if (!r.ok) continue; bufs.push(await this.ctx.decodeAudioData(await r.arrayBuffer())); } catch {} }
+      if (bufs.length) this.samples[name] = bufs;
+    }
+  }
+  playSample(name, gain = 1) {
+    const bufs = this.samples[name]; if (!bufs?.length) return false;
+    const c = this.ctx, s = c.createBufferSource(), g = c.createGain();
+    s.buffer = bufs[Math.floor(Math.random() * bufs.length)]; s.playbackRate.value = this.vary(0.1);
+    g.gain.value = gain; s.connect(g); g.connect(this.sfxBus); s.start();
+    return true;
   }
   // Browsers only let audio start after a gesture: call this from the first click or key.
   unlock() {
@@ -34,7 +56,7 @@ export class Sound {
       const n = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate), d = n.getChannelData(0);   // two seconds of white noise, reused
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       this.noiseBuf = n;
-      this.apply();
+      this.apply(); this.loadSamples();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     if (!this.musicOn) this.startMusic();
@@ -52,7 +74,7 @@ export class Sound {
   // ---------- building blocks ----------
   osc(type, f, t0, dur, gain, dest, { to = null, attack = 0.005, decay = null } = {}) {
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t0); if (to) o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t0 + dur);
+    o.type = type; o.frequency.setValueAtTime(f * this.v, t0); if (to) o.frequency.exponentialRampToValueAtTime(Math.max(20, to * this.v), t0 + dur);
     g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(gain, t0 + attack);
     if (decay != null) g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * decay), t0 + dur * 0.6);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
@@ -60,7 +82,7 @@ export class Sound {
   }
   noise(t0, dur, gain, dest, { type = 'lowpass', f = 1000, to = null, q = 1, attack = 0.005 } = {}) {
     const c = this.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
-    s.buffer = this.noiseBuf; s.loop = true; fl.type = type; fl.frequency.setValueAtTime(f, t0); if (to) fl.frequency.exponentialRampToValueAtTime(to, t0 + dur); fl.Q.value = q;
+    s.buffer = this.noiseBuf; s.loop = true; fl.type = type; fl.frequency.setValueAtTime(f * this.v, t0); if (to) fl.frequency.exponentialRampToValueAtTime(to * this.v, t0 + dur); fl.Q.value = q;
     g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(gain, t0 + attack); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     s.connect(fl); fl.connect(g); g.connect(dest || this.sfxBus); s.start(t0, Math.random()); s.stop(t0 + dur + 0.05);
   }
@@ -68,14 +90,16 @@ export class Sound {
   // ---------- effects ----------
   play(name) {
     if (!this.ctx || this.prefs.muted) return;
-    const t = this.ctx.currentTime, fx = this.FX[name]; if (fx) fx.call(this, t);
+    if (this.playSample(name)) return;
+    this.v = this.vary(); const t = this.ctx.currentTime, fx = this.FX[name]; if (fx) fx.call(this, t); this.v = 1;
   }
   get FX() { return FX; }
   // soft footsteps while walking, paced by the caller
   step(dt, moving, factor = 1) {
     if (!moving || !this.ctx) { this.stepT = 0.2; return; }
     this.stepT -= dt; if (this.stepT > 0) return; this.stepT = 0.32 / Math.max(0.5, factor);
-    this.noise(this.ctx.currentTime, 0.06, 0.05, null, { f: 500, to: 250 });
+    if (this.playSample('step', 0.5)) return;
+    this.v = this.vary(0.12); this.noise(this.ctx.currentTime, 0.06, 0.05, null, { f: 500, to: 250 }); this.v = 1;
   }
   // the rain bed: a hiss that fades in and out with the weather
   rain(on) {
@@ -117,20 +141,20 @@ const FX = {
   water(t) { this.noise(t, 0.45, 0.2, null, { type: 'bandpass', f: 1600, to: 700, q: 0.7, attack: 0.03 }); for (let k = 0; k < 5; k++) this.noise(t + 0.08 + k * 0.07, 0.03, 0.12, null, { type: 'bandpass', f: 2200 + k * 300, q: 3 }); this.osc('sine', 700, t + 0.1, 0.1, 0.04, null, { to: 1400 }); },
   fill(t) { this.noise(t, 0.7, 0.25, null, { type: 'bandpass', f: 700, to: 1800, q: 1, attack: 0.05 }); this.osc('sine', 300, t, 0.7, 0.05, null, { to: 700 }); },
   plant(t) { this.osc('sine', 520, t, 0.08, 0.25, null, { to: 260 }); this.noise(t + 0.02, 0.05, 0.12, null, { f: 700 }); },
-  harvest(t) { this.osc('sine', 330, t, 0.09, 0.3, null, { to: 720 }); this.osc('triangle', 880, t + 0.08, 0.12, 0.18, null, { to: 1320 }); },
+  harvest(t) { this.noise(t, 0.05, 0.3, null, { f: 1800, to: 400 }); this.osc('sine', 300, t, 0.08, 0.2, null, { to: 150 }); this.osc('triangle', 900, t + 0.05, 0.1, 0.07, null, { to: 1300 }); },   // a snap with a small bright tail
   eat(t) { for (let k = 0; k < 3; k++) this.noise(t + k * 0.11, 0.07, 0.35, null, { f: 1800, to: 500 }); },
   drink(t) {   // two gulps: a watery bandpass swallow with a rising bubble in each, then a small satisfied breath
     for (let k = 0; k < 2; k++) { const g = t + k * 0.22; this.noise(g, 0.14, 0.22, null, { type: 'bandpass', f: 600, to: 1500, q: 2, attack: 0.02 }); this.osc('sine', 380, g + 0.02, 0.12, 0.08, null, { to: 760 }); }
     this.noise(t + 0.5, 0.12, 0.08, null, { type: 'highpass', f: 2500 }); },
   drop(t) { this.osc('sine', 190, t, 0.1, 0.35, null, { to: 120 }); this.noise(t, 0.04, 0.25, null, { f: 1200 }); },
-  coin(t) { this.osc('sine', 1318, t, 0.08, 0.2); this.osc('sine', 1975, t + 0.07, 0.22, 0.2, null, { decay: 0.3 }); },
+  coin(t) { this.noise(t, 0.02, 0.1, null, { type: 'highpass', f: 5000 }); this.osc('sine', 1318, t, 0.08, 0.14); this.osc('sine', 1975, t + 0.07, 0.22, 0.14, null, { decay: 0.3 }); },
   buy(t) { this.osc('sine', 1046, t, 0.08, 0.18); this.osc('sine', 1318, t + 0.08, 0.08, 0.18); this.osc('sine', 1760, t + 0.16, 0.3, 0.18, null, { decay: 0.3 }); this.noise(t, 0.05, 0.15, null, { type: 'highpass', f: 4000 }); },
   chest(t) { this.osc('sawtooth', 130, t, 0.22, 0.08, null, { to: 95 }); this.noise(t + 0.18, 0.06, 0.2, null, { f: 900 }); },
-  ui(t) { this.osc('sine', 820, t, 0.04, 0.12); },
-  hover(t) { this.noise(t, 0.025, 0.09, null, { type: 'highpass', f: 5000 }); this.osc('sine', 1900, t, 0.02, 0.03); },   // the tick as the cursor lands on a thing
-  move(t) { this.noise(t, 0.05, 0.18, null, { type: 'bandpass', f: 1800, q: 2 }); this.osc('sine', 600, t + 0.01, 0.06, 0.08, null, { to: 900 }); },   // an item changing pockets
-  close(t) { this.osc('sine', 520, t, 0.05, 0.1); },
-  no(t) { this.osc('square', 180, t, 0.08, 0.06); this.osc('square', 150, t + 0.09, 0.1, 0.06); },
+  ui(t) { this.noise(t, 0.03, 0.22, null, { f: 2200, to: 900 }); this.osc('sine', 420, t, 0.05, 0.07, null, { to: 300 }); },   // a wooden click, not a beep
+  hover(t) { this.noise(t, 0.02, 0.05, null, { type: 'highpass', f: 5000 }); },   // the faintest tick as the cursor lands on a thing
+  move(t) { this.osc('sine', 520, t, 0.05, 0.12, null, { to: 260 }); this.noise(t, 0.03, 0.15, null, { f: 2500, to: 800 }); },   // a pop: an item changing pockets
+  close(t) { this.noise(t, 0.03, 0.18, null, { f: 1500, to: 700 }); this.osc('sine', 300, t, 0.05, 0.06, null, { to: 220 }); },   // the same click, lower
+  no(t) { this.osc('sine', 160, t, 0.07, 0.14, null, { to: 120 }); this.noise(t, 0.03, 0.12, null, { f: 900 }); this.osc('sine', 140, t + 0.1, 0.09, 0.12, null, { to: 100 }); this.noise(t + 0.1, 0.03, 0.1, null, { f: 800 }); },   // a dull double knock, never a buzzer
   bird(t) { for (let k = 0; k < 3; k++) this.osc('sine', 2400 + k * 150, t + k * 0.12, 0.08, 0.1, null, { to: 3300 }); },
   cart(t) { this.noise(t, 1.4, 0.18, null, { f: 300, to: 200, attack: 0.3 }); this.osc('triangle', 1568, t + 0.9, 0.4, 0.12, null, { decay: 0.3 }); },
   sleep(t) { ['C5', 'G4', 'E4'].forEach((n, k) => this.osc('triangle', freq(n), t + k * 0.25, 0.6, 0.12, null, { attack: 0.03, decay: 0.4 })); },

@@ -666,7 +666,10 @@ export class UI {
       slider('Master', 'master'); slider('Effects', 'sfx'); slider('Music', 'music');
       const mute = el('label', 'set-row'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!P.muted; cb.onchange = () => snd.set('muted', cb.checked);
       mute.appendChild(cb); mute.appendChild(el('span', null, 'Mute everything')); body.appendChild(mute);
-      body.appendChild(el('div', 'pc-note', 'All sound is made by the game as it plays: no recordings. The theme loops while you farm.'));
+      body.appendChild(el('div', 'pc-note', 'The game makes its own sounds unless a recording is dropped into assets/sfx (see the README there): then the recording plays, pitched a little differently each time. The theme loops while you farm.'));
+      const aud = el('div', 'set-row'); aud.appendChild(el('span', null, 'Audition')); const grid = el('div', 'aud-grid');
+      for (const name of ['step', ...Object.keys(g.sound.FX)]) { const b = el('button', 'small', name + (g.sound.samples?.[name] ? ' ●' : '')); b.title = g.sound.samples?.[name] ? 'a recording' : 'synthesised'; b.onclick = () => { g.sound.unlock(); if (name === 'step') { g.sound.stepT = 0; g.sound.step(1, true, 1); } else g.sound.play(name); }; grid.appendChild(b); }
+      aud.appendChild(grid); body.appendChild(aud);
       // view: how big a tile is. Wide suits a half-screen window beside a video.
       body.appendChild(el('div', 'pc-sec', 'View'));
       const vrow = el('div', 'set-row'); vrow.appendChild(el('span', null, 'Zoom'));
