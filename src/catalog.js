@@ -74,7 +74,7 @@ export function catalog(state) {
     items.push({ id: 'fuel', group: 'Power', name: `Fuel ×${CONFIG.fuel.packSize}`, effect: `A can runs a generator or an engine for a night · pour it in by hand, a tank holds ${CONFIG.fuel.tank}`, level: '', price: CONFIG.fuel.price * CONFIG.fuel.packSize, blocked: null });
     items.push({ id: 'belt', group: 'Power', name: `Belt ×${PW.belt.packSize}`, effect: `Carries crops from the pickers to a hopper, one tile a section · ${PW.belt.holds} crops a tile`, level: '', price: PW.belt.packPrice, blocked: null });
     items.push({ id: 'picker', group: 'Power', name: 'Picker', effect: `Takes ${PW.picker.perHour === 1 ? 'a ripe crop' : PW.picker.perHour + ' ripe crops'} an hour from the ${(2 * PW.picker.radius + 1) ** 2 - 1} beds around it, drops it on the belt beside it · ${PW.picker.power} power`, level: owned('picker'), price: PW.picker.price, blocked: null });
-    items.push({ id: 'chest', group: 'Stations', name: 'Field chest', effect: `Holds ${CONFIG.chest.field.slots} stacks. Set it anywhere on your land and open it like the chest by the porch · the hoe picks it up when it is empty`, level: owned('chest'), price: CONFIG.chest.field.price, blocked: null });
+    items.push({ id: 'chest', group: 'Stations', name: 'Field chest', effect: `Holds ${CONFIG.chest.field.slots} stacks. Carry it to where you want it, yard or farm; click it with something in hand to put the stack away, E opens it · hold on it to lift it, contents and all`, level: owned('chest'), price: CONFIG.chest.field.price, blocked: null });
     items.push({ id: 'hopper', group: 'Power', name: 'Hopper', effect: `Drives the belt that runs to it, holds ${PW.hopper.holds} crops. Beside the crate it tips in when the cart comes · ${PW.hopper.power} power`, level: owned('hopper'), price: PW.hopper.price, blocked: null }); }
   for (const key of seedOffers(state)) {
     const sp = seedSpecies(state, key);
@@ -167,12 +167,12 @@ export function deliverOrders(state) {
 }
 // Open the parcels. Small upgrades apply on the spot; the bench and the compost bin are handed to you to carry and place.
 export function collectParcels(state) {
-  const lines = []; let bench = false, compost = false;
+  const lines = []; let bench = false, compost = false, chest = false;
   const keep = [];
   // a single machine lands in your pockets, else in the chest by the porch (and the line says so), else it waits in the parcel
   const land = (o, it, line) => { if (!addItem(state.inventory, it)) { lines.push(line); return true; } if (!addItem(state.chest, it)) { lines.push(`${o.name}: no pocket free, so it went in the chest by the porch`); return true; } keep.push(o); lines.push(`${o.name}: no room in your pockets or the chest, it waits here`); return false; };
   for (const o of state.parcels || []) {
-    if (o.id === 'chest') { if (!land(o, { kind: 'chest', qty: 1 }, 'Field chest: set it on your land, E opens it')) continue; }
+    if (o.id === 'chest') { if (state.carrying) { keep.push(o); lines.push('Field chest: put down what you carry first'); continue; } state.carrying = 'chest'; state.carriedChest = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; chest = true; lines.push('Field chest: carry it and put it down'); }
     else
     if (o.id === 'tray') { state.seedRack.trays.push({ item: null, readyAt: null, startedAt: null }); lines.push(`Drying tray fitted: ${state.seedRack.trays.length} trays`); }
     else if (o.id === 'hoe') { state.hoe = state.hoe || { level: 0 }; state.hoe.level = Math.min(CONFIG.hoe.seconds.length - 1, state.hoe.level + 1); lines.push(`Sharper hoe: ${CONFIG.hoe.seconds[state.hoe.level]}s a bed`); }
@@ -193,5 +193,5 @@ export function collectParcels(state) {
     else if (o.id === 'compost') { if (state.carrying) { keep.push(o); lines.push('Compost bin: put down what you carry first'); continue; } state.hasCompost = true; state.carrying = 'compost'; compost = true; lines.push('Compost bin: carry it and put it down'); }
   }
   state.parcels = keep;
-  return { ok: lines.length > 0, lines, bench, compost, msg: lines.length ? '' : 'Nothing to collect' };
+  return { ok: lines.length > 0, lines, bench, compost, chest, msg: lines.length ? '' : 'Nothing to collect' };
 }

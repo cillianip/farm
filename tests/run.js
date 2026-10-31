@@ -883,20 +883,27 @@ await test('hybrid vigour: a cross between families steps the price up and passe
   const o = S.createState(2); for (const sp of Object.values(o.species)) delete sp.genome.vigor; S.migrate(o); assert.ok(Object.values(o.species).every(sp => sp.genome.vigor === 0));
 });
 
-await test('field chests: bought, set on your land, filled by hand, opened, picked up only when empty; a machine that lands in the chest says so', async () => {
+await test('field chests: bought and carried like the bench, put down on any open grass, filled by hand, lifted with what is in it; a machine that lands in the chest says so', async () => {
   const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const C2 = CONFIG.chest.field; s.money = 500; s.player.x = X + 0.5; s.player.y = Y + 1.5;
   assert.ok(catalog(s).some(i => i.id === 'chest' && i.price === C2.price), 'the catalogue sells it');
-  assert.ok(placeOrder(s, 'chest').ok); S.sleep(s); let r = S.collectParcels(s); assert.ok(r.lines.some(l => /Field chest: set it/.test(l)), r.lines.join('|'));
-  const slot = () => s.inventory.slots.findIndex(i => i?.kind === 'chest'); assert.ok(slot() >= 0);
-  s.player.x = WB.well.x + 0.5; s.player.y = WB.well.y + 2.5; assert.equal(S.useItem(s, slot(), WB.well.x, WB.well.y + 1).msg, 'Set it on your own land');
-  s.player.x = X + 0.5; s.player.y = Y + 1.5; r = S.useItem(s, slot(), X + 1, Y); assert.ok(r.ok && r.float === 'Set', JSON.stringify(r)); const t = s.world.tiles[Y * s.world.w + X + 1]; assert.ok(S.isChest(t) && t.obj.slots.length === C2.slots); assert.equal(slot(), -1);
+  assert.ok(placeOrder(s, 'chest').ok); S.sleep(s); let r = S.collectParcels(s); assert.ok(r.chest && s.carrying === 'chest' && s.carriedChest?.slots.length === C2.slots, r.lines.join('|'));
+  s.player.x = X + 0.5; s.player.y = Y + 1.5;   // the night took you home
+  assert.ok(!S.placeObject(s, WB.well.x, WB.well.y + 1).ok, 'too far');
+  r = S.placeObject(s, X + 1, Y); assert.ok(r.ok, r.msg); const t = s.world.tiles[Y * s.world.w + X + 1]; assert.ok(S.isChest(t) && t.obj.slots.length === C2.slots && !s.carrying && !s.carriedChest);
   assert.equal(S.chestTiles(s).length, 1);
   const carrot = byName(s, 'Carrot'); addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 7 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
   r = S.stash(s, ci, t.obj); assert.ok(r.ok && r.moved === 7, JSON.stringify(r)); assert.equal(t.obj.slots[0].qty, 7); assert.equal(s.chest.slots.filter(Boolean).length, 0, 'the porch chest got nothing');
-  assert.equal(S.useItem(s, 0, X + 1, Y).msg, 'Empty it first');
-  assert.ok(S.moveSome(s, t.obj, 0, s.chest, Infinity).ok, 'empty it into the porch chest'); assert.ok(!t.obj.slots.some(Boolean));
-  r = S.useItem(s, 0, X + 1, Y); assert.ok(r.ok && r.float === 'Picked up', JSON.stringify(r)); assert.ok(!t.obj && slot() >= 0);
+  assert.equal(S.useItem(s, 0, X + 1, Y).msg, 'Hold on it to pick it up');
+  assert.ok(S.pickUpChest(s, X + 1, Y).ok); assert.ok(!t.obj && s.carrying === 'chest' && s.carriedChest.slots[0].qty === 7, 'carried with what is in it');
+  s.player.x = X + 1.5; r = S.placeObject(s, X + 2, Y); assert.ok(r.ok, r.msg); assert.equal(s.world.tiles[Y * s.world.w + X + 2].obj.slots[0].qty, 7); assert.ok(!s.carrying);
+  // the yard is fine too: any open grass that is yours
+  assert.ok(S.pickUpChest(s, X + 2, Y).ok); let spot = null; for (let y = W.YARD.y0; y <= W.YARD.y1 && !spot; y++) for (let x = W.YARD.x0; x <= W.YARD.x1 && !spot; x++) { s.player.x = x + 0.5; s.player.y = y + 1.5; if (S.canPlaceAt(s, x, y)) spot = [x, y]; }
+  assert.ok(spot, 'somewhere in the yard'); r = S.placeObject(s, spot[0], spot[1]); assert.ok(r.ok, 'in the yard: ' + r.msg); assert.equal(s.world.tiles[spot[1] * s.world.w + spot[0]].obj.slots[0].qty, 7);
+  // a chest still in a pocket (an older delivery) is set down with a click and sells back second-hand
+  s.player.x = X + 0.5; s.player.y = Y + 1.5; addItem(s.inventory, { kind: 'chest', qty: 1 }); const slot = () => s.inventory.slots.findIndex(i => i?.kind === 'chest');
   assert.equal(S.secondHand(s.inventory.slots[slot()]), C2.price * CONFIG.crate.secondHand);
+  assert.ok(S.useItem(s, 0, X, Y).ok, 'hoe a bed'); assert.equal(S.useItem(s, slot(), X, Y).msg, 'Flatten the bed first');
+  r = S.useItem(s, slot(), X + 1, Y); assert.ok(r.ok && r.float === 'Set', JSON.stringify(r)); assert.equal(S.chestTiles(s).length, 2); assert.equal(slot(), -1);
   // a windmill bought with full pockets lands in the porch chest, and the collection line says so
   s.money = 1000; const empties = s.inventory.slots.map((it, i) => it ? -1 : i).filter(i => i >= 0); for (const i of empties) s.inventory.slots[i] = { kind: 'sprinkler', level: 0, qty: 1 };
   assert.ok(placeOrder(s, 'pump1').ok); S.sleep(s); r = S.collectParcels(s); assert.ok(r.lines.some(l => /Windmill: no pocket free, so it went in the chest by the porch/.test(l)), r.lines.join('|'));

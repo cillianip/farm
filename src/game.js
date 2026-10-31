@@ -102,7 +102,7 @@ export class Game {
     const hb = hotbarRects(this.vw, this.vh), slot = hb.slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h);
     if (slot >= 0) { this.drag = { from: slot, x0: this.mouse.x, y0: this.mouse.y, moved: false }; return; }
     if (this.state.carrying) return this.placeCarried();
-    if (this.hit && MOVABLE.includes(this.hit.kind) && !this.action && !this.ui.openPanel) { this.press = { t: 0, hit: this.hit }; return; }
+    if (this.hit && (MOVABLE.includes(this.hit.kind) || this.hit.kind === 'fchest') && !this.action && !this.ui.openPanel) { this.press = { t: 0, hit: this.hit }; return; }
     this.click();
   }
   mouseUp() {
@@ -164,7 +164,7 @@ export class Game {
     if (it.kind === 'tool' && it.tool === 'can') { if (!t?.tilled) return this.ui.toast('Only tilled soil takes water'); if (s.can.water <= 0) return this.ui.toast('The can is empty. Fill it at the well.'); return this.startAction('water', tx, ty, CONFIG.actions.waterSeconds); }
     if (it.kind === 'seed') { if (!t?.tilled) return this.ui.toast('Till the soil first'); if (t.crop) return this.ui.toast(''); return this.startAction('plant', tx, ty, CONFIG.actions.plantSeconds); }
     const r = S.useItem(s, this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, tx + 0.5, ty, '#ffffff');
-    if (r.ok && ['sprinkler', 'pipe', 'pump', 'generator', 'line', 'belt', 'picker', 'hopper', 'fuel'].includes(it.kind)) { this.sound.play('move'); this.save(); }
+    if (r.ok && ['sprinkler', 'pipe', 'pump', 'generator', 'line', 'belt', 'picker', 'hopper', 'fuel', 'chest'].includes(it.kind)) { this.sound.play('move'); this.save(); }
   }
   hotbarItem() { return this.state.inventory.slots[this.selected]; }
   // Everything clickable that is not a soil tile: a rect to highlight (world px, 16 per tile) and a prompt.
@@ -184,7 +184,7 @@ export class Game {
     const CP = S.objectPos(s, 'compost');
     if (CP && s.carrying !== 'compost') out.push({ kind: 'compost', near: { ...CP, w: 1, h: 1 }, rect: [CP.x * 16, (CP.y + 1) * 16 - 20 + 1, 16, 19], label: (s.compost.ready ? (it && it.kind !== 'fert' ? 'Compost ready: empty hands to take it' : 'Take the compost') : s.compost.running ? 'Rotting down, ready by morning' : it && S.COMPOSTABLE.includes(it.kind) ? (S.compostCount(s) >= CONFIG.fertiliser.compostMax ? 'The bin is full' : 'Drop it in') : 'Compost bin') + '  (E: open, hold: pick up)' });
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
-    if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? 'Put away  (E: open)' : 'Field chest  (E: open)' });
+    for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Field chest') + '  (E: open, hold: pick up)' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
     for (const { x, y, t } of S.machineTiles(s)) if (t.obj.held?.length) { const n = S.heldCount(t.obj.held); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); }
     { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && t.load?.length && !t.obj) { const n = S.heldCount(t.load); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); } } }
@@ -230,7 +230,7 @@ export class Game {
       }
       case 'bench': { if (s.breeder.result) { const r = S.takeBreedResult(s); const BP = S.objectPos(s, 'bench'); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BP.x + 0.5, BP.y - 0.2, '#f6c453'); this.sound.play('seeds'); } this.save(); return true; } this.ui.openBench(); return true; }
       case 'crate': {
-        if (s.parcels?.length) { const r = S.collectParcels(s); for (const l of r.lines) this.ui.toast(l); if (r.lines.length) { this.addFloat('Parcels!', BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.4, '#f6c453'); this.sound.play('buy'); } if (s.deeds > 0) this.landMode = true; if (r.bench) this.ui.toast('Carry the bench to where you want it and click to put it down'); if (r.compost) this.ui.toast('Carry the bin to where you want it and click to put it down'); this.save(); return true; }
+        if (s.parcels?.length) { const r = S.collectParcels(s); for (const l of r.lines) this.ui.toast(l); if (r.lines.length) { this.addFloat('Parcels!', BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.4, '#f6c453'); this.sound.play('buy'); } if (s.deeds > 0) this.landMode = true; if (r.bench) this.ui.toast('Carry the bench to where you want it and click to put it down'); if (r.compost) this.ui.toast('Carry the bin to where you want it and click to put it down'); if (r.chest) this.ui.toast('Carry the chest to where you want it and click to put it down'); this.save(); return true; }
         if (!it || (it.kind !== 'crop' && !S.SELLABLE.includes(it.kind))) { this.ui.toast(S.crateCount(s) ? 'The cart collects it tonight.' : 'Hold a crop to drop it in, or a machine to sell it second-hand'); return true; }
         if (S.crateCount(s) >= s.crate.capacity) { this.ui.toast('The crate is full. The cart comes tonight.'); return true; }
         this.startAction('drop', BUILDINGS.crate.x, BUILDINGS.crate.y, S.dropSeconds(s)); return true;
@@ -277,7 +277,7 @@ export class Game {
     if (t.t === 'bench') return { title: 'Breeding bench', sub: this.state.breeder.running ? 'A seedling grows under the glass.' : 'Press E. Two parents, one child by morning.' };
     if (t.t === 'compost') return { title: 'Compost bin', sub: this.state.compost.ready ? 'Ready. Take the compost with empty hands.' : this.state.compost.running ? 'Rotting down. Ready by morning.' : 'Drop in spare crops or the plants the hoe pulls up. It rots down while you sleep.' };
     if (t.t === 'chest') return { title: 'Chest', sub: 'Your pockets empty into here. Click with something in hand to put it away, E to open.' };
-    if (t.obj?.kind === 'chest') return { title: 'Field chest', sub: `${t.obj.slots.filter(Boolean).length} / ${t.obj.slots.length} slots. Click with something in hand to put it away, E to open. The hoe picks it up when it is empty.` };
+    if (t.obj?.kind === 'chest') return { title: 'Field chest', sub: `${t.obj.slots.filter(Boolean).length} / ${t.obj.slots.length} slots. Click with something in hand to put it away, E to open. Hold on it to lift it, contents and all.` };
     if (t.t === 'sign') return { title: 'Delivery sign', sub: 'Crops left in the crate are collected at night.' };
     if (t.t === 'seedrack') return { title: 'Seed rack', sub: S.activeTray(this.state) ? `${this.state.seedRack.trays.length} ${this.state.seedRack.trays.length === 1 ? 'tray' : 'trays'}` : 'Lay a crop on a tray. It dries into seeds.' };
     if (t.t === 'crate') return { title: 'Delivery crate', sub: 'Drop crops in. The cart collects them at night and pays in the morning.' };
@@ -328,7 +328,7 @@ export class Game {
       for (const e of events) if (e.type === 'sleep') { this.save(); this.ui.openMorning(e.report); }
     }
     this.moving = false;
-    if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const r = S.pickUp(s, this.press.hit.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
+    if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const h = this.press.hit, r = h.kind === 'fchest' ? S.pickUpChest(s, h.x, h.y) : S.pickUp(s, h.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
     if (this.ui.openPanel?.tick) { this.panelT = (this.panelT || 0) + dt; if (this.panelT > 0.5) { this.panelT = 0; this.ui.openPanel.tick(); } }
     if (this.action) { this.action.t += dt; if (this.action.t >= this.action.dur) this.finishAction(); }
     else if (!this.ui.openPanel && !this.sleeping) this.movePlayer(dt);
@@ -553,7 +553,7 @@ export class Game {
       const bobPx = playerBob(frame) * CONFIG.scale;   // overlays ride the walk bob
       if (s.carrying) {   // the object rides above the raised hands
         const bob = bobPx, key = s.carrying;
-        const img = key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
+        const img = key === 'chest' ? chestSprite(false) : key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
         const h = img.height * CONFIG.scale;
         ctx.drawImage(img, px, py - h + 4 * CONFIG.scale + bob, T, h);
       }

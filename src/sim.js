@@ -410,7 +410,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (t.obj.held?.length || t.obj.slots?.some(Boolean)) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
+    if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
     // under a bed they stay put: flatten the bed first, then the hoe lifts them
@@ -469,11 +469,11 @@ export function useItem(state, slotIndex, x, y) {
     t.tilled = false; t.fert = null; t.obj = { kind: 'generator' }; state.lineRev = (state.lineRev || 0) + 1;
     return { ok: true, msg: generatorLive(state, x, y) ? '' : 'Lay line from it: pickers and hoppers stand on the line', float: 'Set' };
   }
-  if (item.kind === 'chest') {   // a field chest: anywhere on your land that is open ground
-    if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
+  if (item.kind === 'chest') {   // a field chest still in a pocket (older deliveries): set it on open grass anywhere that is yours, yard or farm
+    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : t?.tilled ? 'Flatten the bed first' : 'Set it on open grass');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.tilled = false; t.fert = null; t.obj = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) };
+    t.obj = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) };
     return { ok: true, msg: '', float: 'Set' };
   }
   if (item.kind === 'line') {   // on open ground, or under a bed
@@ -577,6 +577,14 @@ export function pickUp(state, key) {
   state.carrying = key;
   return { ok: true, msg: '' };
 }
+// A field chest is lifted with what is in it and carried like the bench; it goes back down with placeObject.
+export function pickUpChest(state, x, y) {
+  if (state.carrying) return fail('Hands full');
+  const t = tileAt(state.world, x, y); if (!isChest(t)) return fail('');
+  if (!inReach(state, x, y)) return fail('Too far');
+  state.carriedChest = t.obj; t.obj = null; state.carrying = 'chest';
+  return { ok: true, msg: '' };
+}
 export function canPlaceAt(state, x, y) {
   const t = tileAt(state.world, x, y);
   if (!t || t.t !== 'grass' || t.tilled || t.crop || t.obj || t.track || !isCleared(state.world, x, y)) return false;
@@ -586,6 +594,8 @@ export function canPlaceAt(state, x, y) {
 export function placeObject(state, x, y) {
   const key = state.carrying; if (!key) return fail('Nothing to place');
   if (!canPlaceAt(state, x, y)) return fail('Not here');
+  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; state.carriedChest = null; state.carrying = null; return { ok: true, msg: '' }; }
+  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; state.carriedChest = null; state.carrying = null; return { ok: true, msg: '' }; }
   tileAt(state.world, x, y).t = key;
   state.objects[key] = { x, y };
   state.carrying = null;
