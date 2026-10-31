@@ -63,7 +63,7 @@ export class Game {
   importSave(text) { const s = deserialize(text); applyOffline(s); this.state = s; this.save(); this.ui.refresh(); }
   newGame() { clearLocal(); this.state = S.createState(); this.save(); this.ui.closePanel(); this.ui.refresh(); this.ui.toast('A fresh farm.'); }
   earned(amount) { if (amount > 0) { this.addFloat(`+${formatMoney(amount)}`, this.state.player.x, this.state.player.y - 1.2, '#f6c453'); this.sound.play('coin'); } }
-  onPurchase() { this.ui.updateHud(); this.sound.play('buy'); }
+  onPurchase(kind = 'buy') { this.ui.updateHud(); this.sound.play(kind); }
 
   // ---------- input ----------
   // Only movement for now (WASD / arrows). Everything else comes back one step at a time.
@@ -72,7 +72,7 @@ export class Game {
     window.addEventListener('keydown', e => {
       const k = e.key.toLowerCase(); this.sound.unlock();
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { e.preventDefault(); this.keys.add(k); }
-      else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) this.selected = +k - 1;   // number keys pick a hotbar slot
+      else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) { this.selected = +k - 1; this.sound.play('tap'); }   // number keys pick a hotbar slot
       else if (k === 'e') this.interactKey();
       else if (k === 'n' && !this.ui.openPanel) { this.netView = !this.netView; if (this.netView) this.ui.toast('Network view: what is fed, powered and running. N hides it.'); }
       else if (k === 'escape' && this.ui.openPanel) this.ui.closePanel();
@@ -85,7 +85,7 @@ export class Game {
     c.addEventListener('mouseleave', () => { this.mouse.inside = false; this.ui.hideHover(); });
     c.addEventListener('mousedown', e => { e.preventDefault(); this.sound.unlock(); if (e.button === 0) { this.mouseHeld = true; this.mouseDown(); } });
     window.addEventListener('mouseup', e => { if (e.button === 0) { this.mouseHeld = false; this.mouseUp(); } });
-    c.addEventListener('wheel', e => { e.preventDefault(); this.selected = (this.selected + (e.deltaY > 0 ? 1 : CONFIG.inventory.hotbar - 1)) % CONFIG.inventory.hotbar; }, { passive: false });
+    c.addEventListener('wheel', e => { e.preventDefault(); this.selected = (this.selected + (e.deltaY > 0 ? 1 : CONFIG.inventory.hotbar - 1)) % CONFIG.inventory.hotbar; this.sound.play('tap'); }, { passive: false });
     c.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('beforeunload', () => this.save());
     document.addEventListener('visibilitychange', () => {   // the farm stands still while the tab is hidden; nothing catches up on return
@@ -106,7 +106,7 @@ export class Game {
       const hb = hotbarRects(this.vw, this.vh), to = hb.slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h);
       const inv = this.state.inventory.slots;
       if (d.moved && to >= 0 && to !== d.from) { [inv[d.from], inv[to]] = [inv[to], inv[d.from]]; this.selected = to; this.sound.play('move'); }
-      else this.selected = d.from;
+      else { if (this.selected !== d.from) this.sound.play('tap'); this.selected = d.from; }
       return;
     }
     const p = this.press; this.press = null;
@@ -140,7 +140,7 @@ export class Game {
     if (this.action || this.sleeping || this.ui.openPanel) return;
     if (this.landMode) {   // claim a highlighted plot with a deed
       const c = chunkOfTile(tx, ty), r = S.claimLand(s, c.cx, c.cy);
-      this.ui.toast(r.msg); if (r.ok) { this.landMode = s.deeds > 0; this.save(); const o = chunkOrigin(c.cx, c.cy); this.addFloat('Yours', o.x + CHUNK / 2, o.y + CHUNK / 2, '#f6c453'); this.sound.play('dig'); this.sound.play('buy'); }
+      this.ui.toast(r.msg); if (r.ok) { this.landMode = s.deeds > 0; this.save(); const o = chunkOrigin(c.cx, c.cy); this.addFloat('Yours', o.x + CHUNK / 2, o.y + CHUNK / 2, '#f6c453'); this.sound.play('stake'); }
       return;
     }
     const it = this.hotbarItem();
@@ -153,19 +153,21 @@ export class Game {
     if (!S.inReach(s, tx, ty)) return this.ui.toast('Too far');
     const t = tileAt(s.world, tx, ty);
     if (it.kind === 'tool' && it.tool === 'hoe') {
-      if (t?.crop?.dead) return this.startAction('clear', tx, ty, S.hoeSeconds(s));                                   // clear a withered plant
+      if (t?.obj || (t?.pipe && !t.tilled) || (t?.line && !t.tilled) || t?.belt) { const r = S.useItem(s, this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, tx + 0.5, ty, '#ffffff'); if (r.ok) { this.sound.play('pickup'); this.save(); } return; }   // the hoe lifts a machine, a pipe, a line or a belt at once
+      if (t?.crop?.dead) return this.startAction('wither', tx, ty, S.hoeSeconds(s));                                  // clear a withered plant
       if (t?.tilled && !t.crop && S.moistureOf(t) > CONFIG.soil.soggyAbove) return this.startAction('drain', tx, ty, S.hoeSeconds(s));   // turn a waterlogged bed
       if (t?.tilled && t.crop && S.moistureOf(t) > CONFIG.soil.soggyAbove) return this.startAction('drain', tx, ty, S.hoeSeconds(s));
       if (t?.crop && t.crop.growth >= 100) return this.ui.toast('Ripe: pick it by hand first');
-      if (t?.crop) return this.startAction('clear', tx, ty, S.hoeSeconds(s) * 2);                                       // dig up a living plant (a regrowing bed can be moved)
-      if (t?.tilled && !t.crop) return this.startAction('clear', tx, ty, S.hoeSeconds(s));                               // flatten an empty bed back to grass
+      if (t?.crop) return this.startAction('pull', tx, ty, S.hoeSeconds(s) * 2);                                        // dig up a living plant (a regrowing bed can be moved)
+      if (t?.tilled && !t.crop) return this.startAction('flatten', tx, ty, S.hoeSeconds(s));                             // flatten an empty bed back to grass
       if (!t || t.t !== 'grass' || t.track || t.tilled || t.crop || isTree(s.world, tx, ty)) return this.ui.toast('');
       return this.startAction('hoe', tx, ty, S.hoeSeconds(s));
     }
     if (it.kind === 'tool' && it.tool === 'can') { if (!t?.tilled) return this.ui.toast('Only tilled soil takes water'); if (s.can.water <= 0) return this.ui.toast('The can is empty. Fill it at the well.'); return this.startAction('water', tx, ty, CONFIG.actions.waterSeconds); }
     if (it.kind === 'seed') { if (!t?.tilled) return this.ui.toast('Till the soil first'); if (t.crop) return this.ui.toast(''); return this.startAction('plant', tx, ty, CONFIG.actions.plantSeconds); }
     const r = S.useItem(s, this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, tx + 0.5, ty, '#ffffff');
-    if (r.ok && ['sprinkler', 'pipe', 'pump', 'generator', 'line', 'belt', 'picker', 'hopper', 'fuel', 'chest'].includes(it.kind)) { this.sound.play('move'); this.save(); }
+    if (r.ok && it.kind === 'fert') this.sound.play('fertilise');
+    { const snd = { sprinkler: 'sprinklerSet', pipe: 'pipeLay', pump: 'pumpSet', generator: 'pumpSet', line: 'post', belt: 'beltLay', picker: 'pumpSet', hopper: 'pumpSet', fuel: 'fuelPour', chest: 'drop' }[it.kind]; if (r.ok && snd) { this.sound.play(snd); this.save(); } }
   }
   hotbarItem() { return this.state.inventory.slots[this.selected]; }
   // Everything clickable that is not a soil tile: a rect to highlight (world px, 16 per tile) and a prompt.
@@ -227,19 +229,19 @@ export class Game {
       }
       case 'compost': {
         const CP = S.objectPos(s, 'compost');
-        if (s.compost.ready && (!it || it.kind === 'fert')) { const r = S.takeCompost(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, CP.x + 0.5, CP.y - 0.2, '#f6c453'); this.sound.play('harvest'); this.save(); } return true; }
+        if (s.compost.ready && (!it || it.kind === 'fert')) { const r = S.takeCompost(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, CP.x + 0.5, CP.y - 0.2, '#f6c453'); this.sound.play('scoop'); this.save(); } return true; }
         if (it && S.COMPOSTABLE.includes(it.kind)) { const chk = S.canCompost(s); if (!chk.ok) { this.ui.toast(chk.msg); return true; } this.startAction('compost', CP.x, CP.y, S.dropSeconds(s)); return true; }
         this.ui.openCompost(); return true;
       }
-      case 'bench': { if (s.breeder.result) { const r = S.takeBreedResult(s); const BP = S.objectPos(s, 'bench'); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BP.x + 0.5, BP.y - 0.2, '#f6c453'); this.sound.play('seeds'); } this.save(); return true; } this.ui.openBench(); return true; }
+      case 'bench': { if (s.breeder.result) { const r = S.takeBreedResult(s); const BP = S.objectPos(s, 'bench'); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BP.x + 0.5, BP.y - 0.2, '#f6c453'); this.sound.play('seedsBred'); } this.save(); return true; } this.ui.openBench(); return true; }
       case 'crate': {
-        if (s.parcels?.length) { const r = S.collectParcels(s); for (const l of r.lines) this.ui.toast(l); if (r.lines.length) { this.addFloat('Parcels!', BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.4, '#f6c453'); this.sound.play('buy'); } if (s.deeds > 0) this.landMode = true; if (r.bench) this.ui.toast('Carry the bench to where you want it and click to put it down'); if (r.compost) this.ui.toast('Carry the bin to where you want it and click to put it down'); if (r.chest) this.ui.toast('Carry the chest to where you want it and click to put it down'); this.save(); return true; }
+        if (s.parcels?.length) { const r = S.collectParcels(s); for (const l of r.lines) this.ui.toast(l); if (r.lines.length) { this.addFloat('Parcels!', BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.4, '#f6c453'); this.sound.play('parcel'); } if (s.deeds > 0) this.landMode = true; if (r.bench) this.ui.toast('Carry the bench to where you want it and click to put it down'); if (r.compost) this.ui.toast('Carry the bin to where you want it and click to put it down'); if (r.chest) this.ui.toast('Carry the chest to where you want it and click to put it down'); this.save(); return true; }
         if (!it || (it.kind !== 'crop' && !S.SELLABLE.includes(it.kind))) { this.ui.toast(S.crateCount(s) ? 'The cart collects it tonight.' : 'Hold a crop to drop it in, or a machine to sell it second-hand'); return true; }
         if (S.crateCount(s) >= s.crate.capacity) { this.ui.toast('The crate is full. The cart comes tonight.'); return true; }
         this.startAction('drop', BUILDINGS.crate.x, BUILDINGS.crate.y, S.dropSeconds(s)); return true;
       }
-      case 'machine': { if (it) { this.ui.toast('Empty hands to take the crops'); return true; } const r = S.takeHeld(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('harvest'); this.save(); } return true; }
-      case 'generator': { if (it?.kind === 'fuel') { const r = S.useItem(s, this.selected, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('move'); this.save(); } return true; } const r = S.toggleGenerator(s, o.x, o.y); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('move'); this.save(); } return true; }
+      case 'machine': { if (it) { this.ui.toast('Empty hands to take the crops'); return true; } const r = S.takeHeld(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('scoop'); this.save(); } return true; }
+      case 'generator': { if (it?.kind === 'fuel') { const r = S.useItem(s, this.selected, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('fuelPour'); this.save(); } return true; } const r = S.toggleGenerator(s, o.x, o.y); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('switch'); this.save(); } return true; }
       case 'sign': { this.openSign(); return true; }
       case 'roadsign': { this.travelTo('market'); return true; }
       case 'homesign': { this.travelTo('farm'); return true; }
@@ -257,7 +259,7 @@ export class Game {
   near(b, d) { const p = this.state.player; const cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h); return Math.hypot(p.x - cx, p.y - cy) < d; }
   startAction(type, x, y, dur) {
     this.facePoint(x + 0.5, y + 0.5); this.action = { type, x, y, t: 0, dur: dur * S.actionFactor(this.state), slot: this.selected };
-    this.sound.play({ hoe: 'dig', drain: 'dig', clear: 'dig', fill: 'fill', plant: 'plant', drop: 'drop', dry: 'drop', compost: 'drop', eat: 'eat', drink: 'drink', water: 'water' }[type]);
+    this.sound.play({ hoe: 'dig', drain: 'drain', clear: 'dig', wither: 'wither', pull: 'pull', flatten: 'flatten', fill: 'fill', plant: 'plant', drop: 'drop', dry: 'rackPlace', compost: 'drop', eat: 'eat', drink: 'drink', water: 'water' }[type]);
   }
   actionItem() { return this.action ? this.state.inventory.slots[this.action.slot] : null; }
   finishAction() {
@@ -266,10 +268,10 @@ export class Game {
     if (a.type === 'drink') { const r = S.drink(s); this.addFloat(r.float, s.player.x, s.player.y - 1.6, '#8cc6f0'); return; }
     if (a.type === 'eat') { const r = S.eat(s, a.slot); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); return; }
     if (a.type === 'dry') { const r = S.putOnSeedRack(s, a.slot); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y - 0.2, '#f6c453'); return; }
-    if (a.type === 'drop') { const r = S.putInCrate(s, a.slot, 1); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y - 0.2, '#f6c453'); if (r.full) this.ui.toast('The crate is full. The cart comes tonight.'); else if (r.ok && this.mouseHeld) this.dropAgain = 'crate'; return; }
+    if (a.type === 'drop') { const r = S.putInCrate(s, a.slot, 1); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y - 0.2, '#f6c453'); if (r.full) { this.ui.toast('The crate is full. The cart comes tonight.'); this.sound.play('crateFull'); } else if (r.ok && this.mouseHeld) this.dropAgain = 'crate'; return; }
     if (a.type === 'compost') { const r = S.addToCompost(s, a.slot, 1); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y - 0.2, '#f6c453'); if (r.full) this.ui.toast(`The bin is full. It rots down while you sleep.`); else if (r.ok && this.mouseHeld) this.dropAgain = 'compost'; return; }
     if (a.type === 'drain') { const r = S.drainSoil(s, a.x, a.y); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y, '#8cc6f0'); return; }
-    if (a.type === 'clear') { const r = S.useItem(s, a.slot, a.x, a.y); if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y, r.float === 'Seed back' ? '#f6c453' : '#8a6a44'); return; }
+    if (['clear', 'wither', 'pull', 'flatten'].includes(a.type)) { const r = S.useItem(s, a.slot, a.x, a.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, a.x + 0.5, a.y, r.float === 'Seed back' ? '#f6c453' : '#8a6a44'); if (r.float === 'Seed back') this.sound.play('seedback'); } return; }
     const r = S.useItem(s, a.slot, a.x, a.y);
     if (r.msg) this.ui.toast(r.msg); if (r.float) this.addFloat(r.float, a.x + 0.5, a.y, '#ffffff');
   }
@@ -312,7 +314,7 @@ export class Game {
     this.sleeping = true; this.ui.hideHover(); this.sound.play('sleep');
     const fade = document.getElementById('fade'); fade.classList.add('on');
     setTimeout(() => {   // dark, a few breaths of zzz, then the morning comes up slowly behind the report
-      const report = S.sleep(this.state);
+      const report = S.sleep(this.state); if (report.breeder) this.sound.play('brew');
       this.save();
       fade.classList.remove('on');
       this.sleeping = false;
@@ -333,8 +335,8 @@ export class Game {
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt / 1.6);
     if (!this.sleeping) {
       const events = S.advance(s, dt);
-      for (const e of events) if (e.type === 'sleep') { this.save(); this.ui.openMorning(e.report); }
-      for (const ev of (s.market?.events || [])) if (ev.type === 'sale') { this.addFloat(`+${formatMoney(ev.total)}`, ev.x, ev.y - 0.6, '#f6c453'); this.sound.play('coin'); }
+      for (const e of events) if (e.type === 'sleep') { if (e.forced) this.sound.play('passout'); this.save(); this.ui.openMorning(e.report); }
+      for (const ev of (s.market?.events || [])) { if (ev.type === 'sale') { this.addFloat(`+${formatMoney(ev.total)}`, ev.x, ev.y - 0.6, '#f6c453'); this.sound.play('coin'); this.sound.play('hmYes'); } else if (ev.type === 'pass') this.sound.play('hmNo'); }
       if (s.market?.events?.length) s.market.events = [];
     }
     this.moving = false;
@@ -353,7 +355,7 @@ export class Game {
     { const it = this.hotbarItem(), key = it ? `${this.selected}:${it.kind}:${it.species || it.tool || ''}` : ''; if (key !== this.heldKey) { this.heldKey = key; this.heldLabel = it ? { text: itemName(it, s.species) + (it.qty > 1 && it.kind !== 'tool' ? ` ×${it.qty}` : ''), t: 0 } : null; } if (this.heldLabel) { this.heldLabel.t += dt; if (this.heldLabel.t > 1.6) this.heldLabel = null; } }
     { const tired = S.isTired(s), heavy = S.isHeavy(s);   // one word when your state changes, not a nag
       if (tired && !this.wasTired) { this.ui.toast('Worn out. You drag your feet and everything takes longer. Eat, drink, or sleep.'); this.sound.play('tired'); }
-      if (heavy && !this.wasHeavy) this.ui.toast('Your pockets are heavy. Put things in the chest by the porch.');
+      if (heavy && !this.wasHeavy) { this.ui.toast('Your pockets are heavy. Put things in the chest by the porch.'); this.sound.play('heavy'); }
       this.wasTired = tired; this.wasHeavy = heavy; }
     // the money counter rolls towards the real figure instead of jumping
     if (this.shownMoney == null) this.shownMoney = s.money; else { const d = s.money - this.shownMoney; this.shownMoney = Math.abs(d) < 0.01 ? s.money : this.shownMoney + d * Math.min(1, dt * 5); }
@@ -362,13 +364,13 @@ export class Game {
     if (this.bird) {
       this.bird.t += dt;
       const f = this.bird.t / CONFIG.bird.flightSeconds;
-      if (!this.bird.dropped && f >= 0.5) { this.bird.dropped = true; const r = S.birdDrop(s); if (r) this.splat = { x: r.x, y: r.y, t: 0 }; }
+      if (!this.bird.dropped && f >= 0.5) { this.bird.dropped = true; const r = S.birdDrop(s); if (r) { this.sound.play('splat'); } if (r) this.splat = { x: r.x, y: r.y, t: 0 }; }
       if (f >= 1) this.bird = null;
     }
     if (this.splat) { this.splat.t += dt; if (this.splat.t > 2.5) this.splat = null; }
     // the midday cart: rolls up the track, takes the crate, rolls away
     if (s.crate.pendingPickup && !this.cart) { this.cart = { t: 0, sale: s.crate.pendingPickup, paid: false }; s.crate.pendingPickup = null; }
-    if (this.cart) { this.cart.t += dt; if (this.cart.t < dt * 1.5) this.sound.play('cart'); if (!this.cart.paid && this.cart.t > 2.0) { this.cart.paid = true; this.sound.play('coin'); this.addFloat(`+${formatMoney(this.cart.sale.total)}`, BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.6, '#f6c453'); this.ui.toast(`The cart took ${this.cart.sale.count} ${this.cart.sale.count === 1 ? 'crop' : 'crops'} for ${formatMoney(this.cart.sale.total)}.`); } if (this.cart.t > 5) this.cart = null; }
+    if (this.cart) { this.cart.t += dt; if (this.cart.t < dt * 1.5) this.sound.play('cart'); if (!this.cart.left && this.cart.t > 3.6) { this.cart.left = true; this.sound.play('cartLeave'); } if (!this.cart.paid && this.cart.t > 2.0) { this.cart.paid = true; this.sound.play('coin'); this.addFloat(`+${formatMoney(this.cart.sale.total)}`, BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.6, '#f6c453'); this.ui.toast(`The cart took ${this.cart.sale.count} ${this.cart.sale.count === 1 ? 'crop' : 'crops'} for ${formatMoney(this.cart.sale.total)}.`); } if (this.cart.t > 5) this.cart = null; }
     const ww = s.market?.at ? MARKET.w : s.world.w, wh = s.market?.at ? MARKET.h : s.world.h;   // a small place sits centred
     this.cam.x = ww * T < this.vw ? -(this.vw - ww * T) / 2 : Math.max(0, Math.min(ww * T - this.vw, s.player.x * T - this.vw / 2));
     this.cam.y = wh * T < this.vh ? -(this.vh - wh * T) / 2 : Math.max(0, Math.min(wh * T - this.vh, s.player.y * T - this.vh / 2));
@@ -383,11 +385,13 @@ export class Game {
     for (const f of this.floats) f.t += dt; this.floats = this.floats.filter(f => f.t < 2.2);
     { // a footfall when a foot lands in the walk animation (frames 1 and 3): the sound, and a print left behind
       const frame = this.moving && !this.action ? Math.floor(this.walkT * 7) % 4 : 0;
-      if (frame !== this.lastFrame && (frame === 1 || frame === 3)) this.sound.footfall();
+      if (frame !== this.lastFrame && (frame === 1 || frame === 3)) { const p = s.player; let surf = 'grass'; if (s.market?.at) surf = p.y >= MARKET.laneY && p.y < MARKET.laneY + 2 ? 'track' : 'grass'; else { const t = tileAt(s.world, Math.floor(p.x), Math.floor(p.y)); surf = t?.track ? 'track' : t?.tilled ? 'soil' : 'grass'; } this.sound.footfall(surf); }
       this.lastFrame = frame;
       for (const f of this.prints) f.t += dt; if (this.prints.length && this.prints[0].t > 9) this.prints = this.prints.filter(f => f.t < 9);
     }
     this.sound.rain(!!s.rainToday && !this.sleeping);
+    this.updateLoops(dt);
+    for (const ev of S.SFX.splice(0, 3)) { if (!s.market?.at && Math.hypot(ev.x + 0.5 - s.player.x, ev.y + 0.5 - s.player.y) < 9) this.sound.play(ev.type); } if (S.SFX.length > 3) S.SFX.length = 0;
     if (now - this.lastSave > 30000) this.save();
   }
   movePlayer(dt) {
@@ -406,6 +410,26 @@ export class Game {
     this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
     if (this.printDist >= 0.55) { this.printDist = 0; const side = p.dir === 'left' || p.dir === 'right'; this.leftFoot = !this.leftFoot; this.prints.push({ x: p.x + (this.leftFoot ? -0.14 : 0.14) * (side ? 0.4 : 1), y: p.y + (side ? (this.leftFoot ? -0.06 : 0.06) : 0), t: 0 }); if (this.prints.length > 64) this.prints.shift(); }
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
+  }
+  // Running things you can hear when near: each loop's level is how close the nearest one is. Nothing while asleep or on the road.
+  updateLoops(dt) {
+    const snd = this.sound; snd.tickLoops(dt);
+    this.loopT = (this.loopT || 0) - dt; if (this.loopT > 0) return; this.loopT = 0.15;
+    if (snd.previewUntil > performance.now()) return;
+    const s = this.state, p = s.player, near = (pts, R = 7) => { let best = 0; for (const [x, y] of pts) best = Math.max(best, 1 - Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) / R); return Math.max(0, best); };
+    const lv = { sprinkler: 0, windmill: 0, engine: 0, generator: 0, belt: 0, murmur: 0, crickets: 0 };
+    if (s.market?.at) lv.murmur = M.marketOpen(s) ? 1 : 0.15;
+    else {
+      const w = s.world, spr = [], wind = [], eng = [], gen = [], belt = [];
+      for (const { x, y } of S.sprinklerTiles(s)) if ((tileAt(w, x, y).obj.sprayUntil || 0) > s.minutes) spr.push([x, y]);
+      for (const { x, y, t } of S.pumpTiles(s)) if (S.pumpInFlow(s, x, y)) (t.obj.level === 1 ? wind : t.obj.level === 2 ? eng : []).push([x, y]);
+      for (const { x, y } of S.generatorTiles(s)) if (S.generatorLive(s, x, y)) gen.push([x, y]);
+      for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && S.beltDir(s, x, y) >= 0) belt.push([x, y]); }
+      lv.sprinkler = near(spr); lv.windmill = near(wind, 9); lv.engine = near(eng, 9); lv.generator = near(gen, 8); lv.belt = near(belt, 6);
+      const h = S.hourOf(s); lv.crickets = (h >= 21 || h < 5) && !s.rainToday ? 0.7 : 0;
+    }
+    if (this.sleeping || this.travelling) for (const k in lv) lv[k] = 0;
+    for (const [k, v] of Object.entries(lv)) snd.setLoop(k, v);
   }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
   // footprints: small dark marks where each foot landed, fading over a few seconds; drawn on the ground under everything
@@ -667,7 +691,7 @@ export class Game {
         ctx.fillStyle = '#5e4a2a'; ctx.fillRect(Math.round(hx + (tx - hx) * f), Math.round(hy + (ty - hy) * f - Math.sin(f * Math.PI) * 10), u, u);
         if (f > 0.7) { ctx.fillStyle = 'rgba(94,74,42,0.6)'; ctx.fillRect(tx - 2 * u, ty - u, u, u); ctx.fillRect(tx + u, ty - 2 * u, u, u); }
       }
-      { const at = this.action?.type, hoeing = at === 'hoe' || at === 'clear' || at === 'drain';
+      { const at = this.action?.type, hoeing = at === 'hoe' || at === 'clear' || at === 'drain' || at === 'wither' || at === 'pull' || at === 'flatten';
         if (hoeing || at === 'water') { const phase = hoeing ? Math.floor(this.action.t / (this.action.dur / 3) * 2) % 2 : Math.floor(now / 120) % 2; ctx.drawImage(toolOverlay(hoeing ? 'hoe' : 'can', p.dir, phase), px, py, T, PLAYER_H * CONFIG.scale); } }
     } });
     return { p, px, py };
@@ -722,7 +746,7 @@ export class Game {
   travelTo(dest) {
     if (this.travelling || this.sleeping) return;
     const s = this.state, chk = M.depart(s, dest); if (!chk.ok) { this.ui.toast(chk.msg); return; }
-    this.travelling = true; this.ui.hideHover(); this.ui.closePanel(); this.action = null; this.press = null;
+    this.travelling = true; this.ui.hideHover(); this.ui.closePanel(); this.action = null; this.press = null; this.sound.play('depart');
     const fade = document.getElementById('fade'); fade.classList.add('on');
     setTimeout(() => {
       const r = S.travel(s, dest);

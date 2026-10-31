@@ -1,5 +1,1 @@
-{
-  "step": [], "dig": [], "water": [], "fill": [], "plant": [], "harvest": [], "eat": [], "drink": [], "drop": [],
-  "coin": [], "buy": [], "chest": [], "ui": [], "hover": [], "move": [], "close": [], "no": [],
-  "cart": [], "sleep": [], "morning": [], "seeds": [], "tired": []
-}
+{ "step":[], "stepSoil":[], "stepTrack":[], "tired":[], "heavy":[], "eat":[], "drink":[], "passout":[], "dig":[], "flatten":[], "drain":[], "water":[], "fill":[], "plant":[], "harvest":[], "pull":[], "wither":[], "fertilise":[], "seedback":[], "chest":[], "chestClose":[], "move":[], "rackPlace":[], "seeds":[], "seedsBred":[], "glass":[], "brew":[], "drop":[], "scoop":[], "crateFull":[], "ui":[], "buy":[], "parcel":[], "loan":[], "pipeLay":[], "post":[], "beltLay":[], "pickup":[], "sprinklerSet":[], "pumpSet":[], "switch":[], "fuelPour":[], "snip":[], "cascade":[], "stake":[], "depart":[], "hmYes":[], "hmNo":[], "coin":[], "coins":[], "cart":[], "cartLeave":[], "morning":[], "sleep":[], "splat":[], "close":[], "hover":[], "tap":[], "no":[], "sprinkler":[], "windmill":[], "engine":[], "generator":[], "belt":[], "murmur":[], "crickets":[] }

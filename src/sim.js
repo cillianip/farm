@@ -8,6 +8,7 @@ import { salePrice, breedCost, seedBookBonus, formatMoney } from './economy.js';
 import { makeCompost } from './fertiliser.js';
 import { deliverOrders, collectParcels } from './catalog.js';
 import * as M from './market.js';
+export const SFX = [];   // what machines did this tick, for the game to turn into sound if you are near: {type, x, y}
 export { collectParcels };
 
 export const MIN_PER_DAY = 1440;
@@ -891,7 +892,7 @@ export function machinePass(state) {
       const bed = ripeBedNear(state, x, y, P.radius); if (!bed) break;
       const g = state.species[bed.t.crop.speciesId]?.genome; if (!g) { bed.t.crop = null; continue; }
       const produce = harvestYield(state, bed.t, bed.x, bed.y);
-      addHeld(held, produce); state.stats.harvests++; bed.t.crop.harvests++; clearReaped(bed.t, g); picked += produce.qty;
+      addHeld(held, produce); state.stats.harvests++; bed.t.crop.harvests++; clearReaped(bed.t, g); picked += produce.qty; if (SFX.length < 40) SFX.push({ type: 'snip', x, y });
     }
   }
   if (picked) { const D = today(state); D.picked = (D.picked || 0) + picked; }
@@ -899,7 +900,8 @@ export function machinePass(state) {
   return picked;
 }
 // The hoppers tip into the crate, as much as fits; the rest waits for the next cart.
-export function drainHoppers(state) {
+export function drainHoppers(state) { const n = drainHoppersInto(state); if (n && SFX.length < 40) SFX.push({ type: 'cascade', x: BUILDINGS.crate.x, y: BUILDINGS.crate.y }); return n; }
+function drainHoppersInto(state) {
   let moved = 0;
   for (const { x, y, t } of machineTiles(state, 'hopper')) {
     if (!hopperByCrate(x, y)) continue;   // a hopper elsewhere is a store you empty by hand

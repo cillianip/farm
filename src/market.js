@@ -97,12 +97,12 @@ export function marketTick(state, dtMinutes) {
 function buy(state, n) {
   const m = state.market, C = CONFIG.market, r = makeRng(state.seed ^ hashString('buy' + n.id));
   const stacks = m.counter.slots.map((it, i) => ({ it, i })).filter(s => s.it);
-  if (!stacks.length) { n.bubble = { kind: 'none' }; return; }
+  if (!stacks.length) { n.bubble = { kind: 'none' }; m.events.push({ type: 'pass', x: n.x, y: n.y }); return; }
   const matches = stacks.filter(s => n.want && state.species[s.it.species]?.genome.family === n.want);
   let pick = null, match = false;
   if (matches.length) { pick = r.pick(matches); match = true; }
   else if (!n.want || r.chance(C.buyAnyChance)) pick = r.pick(stacks);
-  if (!pick) { n.bubble = { kind: 'want', want: n.want }; return; }
+  if (!pick) { n.bubble = { kind: 'want', want: n.want }; m.events.push({ type: 'pass', x: n.x, y: n.y }); return; }
   const it = pick.it, qty = Math.min(it.qty, n.qty), base = salePrice(state, it) * qty;
   const tipRate = r.range(0, C.tipMax) + (match ? C.matchTip : 0) + (it.q || 0) * C.starTip, tip = Math.round(base * tipRate * 100) / 100, total = Math.round((base + tip) * 100) / 100;
   removeFromSlot(m.counter, pick.i, qty);

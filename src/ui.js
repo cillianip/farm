@@ -204,7 +204,7 @@ export class UI {
   }
 
   // ---------- panels ----------
-  closePanel() { if (this.onClosePanel) { this.onClosePanel(); this.onClosePanel = null; } if (this.openPanel) this.game.sound.play('close'); const pn = $('panel'); pn.classList.remove('open'); setTimeout(() => { if (!this.openPanel) pn.classList.add('hidden'); }, 220); this.openPanel = null; this.held = null; this.renderHotbar(); }
+  closePanel() { if (this.onClosePanel) { this.onClosePanel(); this.onClosePanel = null; } if (this.openPanel) this.game.sound.play(this.openPanel.key === 'chest' ? 'chestClose' : 'close'); const pn = $('panel'); pn.classList.remove('open'); setTimeout(() => { if (!this.openPanel) pn.classList.add('hidden'); }, 220); this.openPanel = null; this.held = null; this.renderHotbar(); }
   show(title, builder, key = null) {
     if (this.onClosePanel) { this.onClosePanel(); this.onClosePanel = null; }   // a panel's window listeners (the chest's drag) go with it
     $('panel-title').textContent = title; const body = $('panel-body'); body.innerHTML = '';
@@ -435,7 +435,7 @@ export class UI {
             row.classList.add('bought'); b.textContent = loan ? 'Borrowed' : repay ? 'Paid' : 'Ordered'; b.disabled = true; if (r.loan) this.toast(r.msg);
             const fl = el('div', 'cat-float', loan ? `+${formatMoney(+item.id.slice(5))}` : `−${formatMoney(item.price)}`); const pr = row.querySelector('.cat-price').getBoundingClientRect(), pb = $('panel-body').getBoundingClientRect();
             fl.style.left = (pr.left - pb.left) + 'px'; fl.style.top = (pr.top - pb.top + $('panel-body').scrollTop) + 'px'; $('panel-body').appendChild(fl);
-            this.game.onPurchase(); this.justOrdered = item.id;
+            this.game.onPurchase(loan || repay ? 'loan' : 'buy'); this.justOrdered = item.id;
             setTimeout(() => { fl.remove(); this.refresh(); }, 520);
           };
           row.appendChild(b);
@@ -467,7 +467,7 @@ export class UI {
     };
     const onMove = e => {
       if (!drag) return;
-      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; drag.live = true; dragged = true; this.hideHover(); const gh = drag.sl.cloneNode(true); gh.className = 'pslot drag-ghost'; document.body.appendChild(gh); drag.ghost = gh; drag.sl.classList.add('dragging'); }
+      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; drag.live = true; dragged = true; this.hideHover(); this.game.sound.play('tap'); const gh = drag.sl.cloneNode(true); gh.className = 'pslot drag-ghost'; document.body.appendChild(gh); drag.ghost = gh; drag.sl.classList.add('dragging'); }
       drag.ghost.style.left = (e.clientX - 28) + 'px'; drag.ghost.style.top = (e.clientY - 28) + 'px';
       const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pslot');
       $('panel-body').querySelectorAll('.pslot.over').forEach(x => x.classList.remove('over'));
@@ -641,7 +641,7 @@ export class UI {
         const grow = el('div', 'grow'); grow.appendChild(el('div', 'cat-head-line', `<b>${esc(o.name)}</b>`)); row.appendChild(grow);
         row.appendChild(el('div', 'cat-price', formatMoney(o.price)));
         const b = el('button', s.money >= o.price ? 'primary' : null, 'Buy'); b.disabled = s.money < o.price;
-        b.onclick = () => { const r = M.buyFromMerchant(s, key, o.id); if (!r.ok) { this.toast(r.msg); return; } g.sound.play('buy'); g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
+        b.onclick = () => { const r = M.buyFromMerchant(s, key, o.id); if (!r.ok) { this.toast(r.msg); return; } g.sound.play('coins'); g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
         row.appendChild(b);
         row.appendChild(el('div', 'cat-desc', `<span class="muted">${esc(o.effect)}${o.species ? ' · ' + esc(roles(o.species).map(r => r.replace(/:.*$/, '')).join(' · ')) : ''}</span>`));
         body.appendChild(row);
@@ -667,7 +667,8 @@ export class UI {
       mute.appendChild(cb); mute.appendChild(el('span', null, 'Mute everything')); body.appendChild(mute);
       body.appendChild(el('div', 'pc-note', 'The game makes its own sounds unless a recording is dropped into assets/sfx (see the README there): then the recording plays, pitched a little differently each time. The theme loops while you farm.'));
       const aud = el('div', 'set-row'); aud.appendChild(el('span', null, 'Audition')); const grid = el('div', 'aud-grid');
-      for (const name of ['step', ...Object.keys(g.sound.FX)]) { const b = el('button', 'small', name + (g.sound.samples?.[name] ? ' ●' : '')); b.title = g.sound.samples?.[name] ? 'a recording' : 'synthesised'; b.onclick = () => { g.sound.unlock(); if (name === 'step') { g.sound.stepT = 0; g.sound.step(1, true, 1); } else g.sound.play(name); }; grid.appendChild(b); }
+      for (const name of Object.keys(g.sound.FX)) { const b = el('button', 'small', name + (g.sound.samples?.[name] ? ' ●' : '')); b.title = g.sound.samples?.[name] ? 'a recording' : 'synthesised'; b.onclick = () => { g.sound.unlock(); g.sound.play(name); }; grid.appendChild(b); }
+      for (const name of g.sound.LOOP_NAMES) { const b = el('button', 'small', name + ' ~'); b.title = 'a loop: plays for a moment'; b.onclick = () => g.sound.previewLoop(name); grid.appendChild(b); }
       aud.appendChild(grid); body.appendChild(aud);
       // view: how big a tile is. Wide suits a half-screen window beside a video.
       body.appendChild(el('div', 'pc-sec', 'View'));

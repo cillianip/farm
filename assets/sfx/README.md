@@ -36,3 +36,13 @@ What each should be, with the Minecraft sound it is closest to. Keep them short 
 Where to get them without a licence problem: Kenney's audio packs (kenney.nl/assets, CC0: "Impact Sounds",
 "Interface Sounds", "RPG Audio"), freesound.org filtered to CC0, OpenGameArt filtered to CC0. Record your own with a
 phone for steps, digs and seeds: it is what Minecraft did. Trim silence off the start, normalise to about −6 dB.
+
+## Build 61: the full set
+
+The manifest now lists every sound the game has, 59 effects and 7 loops. The new effects, by family:
+you (`stepSoil`, `stepTrack`, `heavy`, `passout`); earth (`flatten`, `drain`, `pull`, `wither`, `fertilise`, `seedback`);
+wood and stations (`chestClose`, `rackPlace`, `seedsBred`, `glass`, `brew`, `scoop`, `crateFull`, `parcel`, `loan`);
+metal and machines (`pipeLay`, `post`, `beltLay`, `pickup`, `sprinklerSet`, `pumpSet`, `switch`, `fuelPour`, `snip`, `cascade`, `stake`);
+market (`depart`, `hmYes`, `hmNo`, `coins`); world (`cartLeave`, `splat`); interface (`tap`).
+Loops: `sprinkler`, `windmill`, `engine`, `generator`, `belt`, `murmur`, `crickets`. A recording named for a loop plays
+looped in place of the synthesis (make it seamless: a few seconds, fading ends). Loops are heard by how near you stand.
