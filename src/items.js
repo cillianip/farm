@@ -50,6 +50,7 @@ export function itemName(it, species) {
   if (it.kind === 'belt') return 'Belt';
   if (it.kind === 'picker') return 'Picker';
   if (it.kind === 'hopper') return 'Hopper';
+  if (it.kind === 'chest') return 'Field chest';
   if (it.kind === 'withered') return 'Withered plant';
   if (it.kind === 'pulled') return it.unknown ? 'Pulled sprout' : `Pulled ${species[it.species]?.name || 'plant'}`;
   return it.kind;

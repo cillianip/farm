@@ -333,7 +333,7 @@ export function priceCrate(state, items) {
 }
 export const crateValue = state => priceCrate(state, state.crate.items).total;
 // Second-hand: the cart buys machines, pipe, line and belt back at a share of the list price. Each takes a crate place.
-export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'pipe', 'line', 'belt'];
+export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'pipe', 'line', 'belt', 'chest'];
 export function listPrice(it) {
   const C = CONFIG;
   switch (it.kind) {
@@ -342,6 +342,7 @@ export function listPrice(it) {
     case 'generator': return C.power.generator.price;
     case 'picker': return C.power.picker.price;
     case 'hopper': return C.power.hopper.price;
+    case 'chest': return C.chest.field.price;
     case 'pipe': return C.pipe.packPrice / C.pipe.packSize;
     case 'line': return C.power.line.packPrice / C.power.line.packSize;
     case 'belt': return C.power.belt.packPrice / C.power.belt.packSize;
@@ -409,7 +410,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
+    if (t.obj) { if (t.obj.held?.length || t.obj.slots?.some(Boolean)) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
     // under a bed they stay put: flatten the bed first, then the hoe lifts them
@@ -467,6 +468,13 @@ export function useItem(state, slotIndex, x, y) {
     removeFromSlot(state.inventory, slotIndex, 1);
     t.tilled = false; t.fert = null; t.obj = { kind: 'generator' }; state.lineRev = (state.lineRev || 0) + 1;
     return { ok: true, msg: generatorLive(state, x, y) ? '' : 'Lay line from it: pickers and hoppers stand on the line', float: 'Set' };
+  }
+  if (item.kind === 'chest') {   // a field chest: anywhere on your land that is open ground
+    if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.tilled = false; t.fert = null; t.obj = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) };
+    return { ok: true, msg: '', float: 'Set' };
   }
   if (item.kind === 'line') {   // on open ground, or under a bed
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Line goes on clear ground');
@@ -756,6 +764,8 @@ export function sprinklerPass(state, dtMinutes = CONFIG.sprinkler.sprayMinutes) 
 // ---------- power ----------
 const N4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 export const isGenerator = t => t?.obj?.kind === 'generator';
+export const isChest = t => t?.obj?.kind === 'chest';
+export function chestTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isChest(t)) out.push({ x, y, t }); } return out; }
 export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper';
 export const heldCount = held => (held || []).reduce((n, it) => n + it.qty, 0);
 function addHeld(held, it) { const key = `${it.species}:${it.q || 0}`; const have = held.find(h => `${h.species}:${h.q || 0}` === key); if (have) have.qty += it.qty; else held.push({ species: it.species, q: it.q || 0, qty: it.qty }); }
@@ -980,15 +990,15 @@ export function moveSome(state, from, fi, to, n = 1) {
   const it = from.slots[fi]; if (!it) return fail('');
   if (it.kind === 'tool') return fail('Tools hang on the rack');
   const take = Math.min(n, it.qty), left = addItem(to, { ...it, qty: take });
-  const moved = take - left; if (!moved) return fail(to === state.chest ? 'The chest is full' : 'Your pockets are full');
+  const moved = take - left; if (!moved) return fail(to === state.inventory ? 'Your pockets are full' : 'The chest is full');
   removeFromSlot(from, fi, moved);
   return { ok: true, msg: '', moved };
 }
-// Click the chest holding something: the whole stack goes in.
-export function stash(state, slotIndex) {
+// Click a chest holding something: the whole stack goes in (the chest by the porch unless another is given).
+export function stash(state, slotIndex, to = state.chest) {
   const it = state.inventory.slots[slotIndex]; if (!it) return fail('');
   const name = it.kind === 'seed' ? `${state.species[it.species]?.name || '?'} seeds` : it.kind === 'crop' ? state.species[it.species]?.name || 'crop' : it.kind;
-  const r = moveSome(state, state.inventory, slotIndex, state.chest, Infinity);
+  const r = moveSome(state, state.inventory, slotIndex, to, Infinity);
   if (!r.ok) return r;
   return { ok: true, msg: '', float: `${r.moved} ${name} stored`, moved: r.moved };
 }

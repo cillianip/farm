@@ -120,7 +120,7 @@ export const CONFIG = {
   player: { speed: 5.5, reach: 1.7, carrySpeed: 0.55, pickUpSeconds: 0.5,     // tiles per second, tiles; carrying slows you; hold LMB this long to lift
     heavyAt: 60, heavySpeed: 0.75 },                                           // this many crops in your pockets and you walk slower
   inventory: { slots: 5, hotbar: 5, stack: 99 },   // what you carry IS the hotbar: five pockets. Everything else lives in the chest.
-  chest: { slots: 24 },
+  chest: { slots: 24, field: { price: 80, slots: 16 } },   // the chest by the porch, and the field chests the catalogue sells: set anywhere on your land
 
   economy: {
     startMoney: 15,

@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes } from './genetics.js';
@@ -31,6 +31,7 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'pipe') src = pipeSprite(10);
   else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
   else if (['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.kind)) src = stationIcon(item.kind);
+  else if (item.kind === 'chest') src = chestSprite(false);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
   if (src) ctx.drawImage(src, 0, 0, size, size);
@@ -384,7 +385,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'chest' ? chestSprite(false) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -444,8 +445,8 @@ export class UI {
   }
   // The chest by the porch: your five pockets on top, the chest below. Click moves a stack across, right-click moves
   // one, and dragging a stack onto any slot puts it there (onto a like stack it merges, onto another it swaps).
-  openChest() {
-    const s = this.state, invs = { pocket: s.inventory, chest: s.chest };
+  openChest(chest = this.state.chest) {
+    const s = this.state, invs = { pocket: s.inventory, chest }, field = chest !== s.chest; this.chestOpen = chest;
     let drag = null, dragged = false;
     const endDrag = () => { if (!drag) return; drag.ghost.remove(); drag.sl.classList.remove('dragging'); $('panel-body').querySelectorAll('.pslot.over').forEach(e => e.classList.remove('over')); drag = null; };
     const grid = (inv, other, hintWord, key) => {
@@ -478,12 +479,12 @@ export class UI {
       if (over && over.dataset.inv && !over.classList.contains('locked')) { const to = invs[over.dataset.inv], ti = +over.dataset.i; if (!(to === inv && ti === i)) { S.moveSlot(s, inv, i, to, ti); this.game.sound.play('move'); } }
       this.refresh();
     };
-    this.show('Chest', body => {
+    this.show(field ? 'Field chest' : 'Chest', body => {
       body.appendChild(el('div', 'pc-sec', `Pockets · ${S.carriedCount(s)} things${S.isHeavy(s) ? ' · heavy' : ''}`));
-      body.appendChild(grid(s.inventory, s.chest, 'pocket', 'pocket'));
-      const used = s.chest.slots.filter(Boolean).length;
-      body.appendChild(el('div', 'pc-sec', `Chest · ${used} / ${s.chest.slots.length} slots`));
-      body.appendChild(grid(s.chest, s.inventory, '', 'chest'));
+      body.appendChild(grid(s.inventory, chest, 'pocket', 'pocket'));
+      const used = chest.slots.filter(Boolean).length;
+      body.appendChild(el('div', 'pc-sec', `${field ? 'Field chest' : 'Chest'} · ${used} / ${chest.slots.length} slots`));
+      body.appendChild(grid(chest, s.inventory, '', 'chest'));
       body.appendChild(el('div', 'pc-note', 'Click a stack to move it across, right-click moves one. Drag a stack onto a slot to put it there. Tools stay on the rack.'));
     }, 'chest');
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
