@@ -368,7 +368,7 @@ export class Game {
     // the money counter rolls towards the real figure instead of jumping
     if (this.shownMoney == null) this.shownMoney = s.money; else { const d = s.money - this.shownMoney; this.shownMoney = Math.abs(d) < 0.01 ? s.money : this.shownMoney + d * Math.min(1, dt * 5); }
     // bird: fly in from the side, drop the seed over the tile, fly out
-    if (s.bird.pending && !this.bird) { this.bird = { x: s.bird.pending.x, y: s.bird.pending.y, t: 0, dropped: false }; this.sound.play('bird'); }
+    if (s.bird.pending && !this.bird) { this.bird = { x: s.bird.pending.x, y: s.bird.pending.y, t: 0, dropped: false }; }
     if (this.bird) {
       this.bird.t += dt;
       const f = this.bird.t / CONFIG.bird.flightSeconds;

@@ -99,7 +99,7 @@ export class Sound {
     if (!moving || !this.ctx) { this.stepT = 0.2; return; }
     this.stepT -= dt; if (this.stepT > 0) return; this.stepT = 0.32 / Math.max(0.5, factor);
     if (this.playSample('step', 0.5)) return;
-    this.v = this.vary(0.12); this.noise(this.ctx.currentTime, 0.06, 0.05, null, { f: 500, to: 250 }); this.v = 1;
+    this.v = this.vary(0.12); const t = this.ctx.currentTime; this.noise(t, 0.08, 0.14, null, { f: 700, to: 300 }); this.osc('sine', 90, t, 0.05, 0.1, null, { to: 60 }); this.v = 1;   // a soft crunch with a little weight under it
   }
   // the rain bed: a hiss that fades in and out with the weather
   rain(on) {
@@ -138,7 +138,7 @@ export class Sound {
 // Each effect is a few oscillators or a filtered noise burst: the sound of the thing, not a recording of it.
 const FX = {
   dig(t) { this.noise(t, 0.14, 0.5, null, { f: 500, to: 180 }); this.osc('sine', 110, t, 0.16, 0.35, null, { to: 45 }); },
-  water(t) { this.noise(t, 0.45, 0.2, null, { type: 'bandpass', f: 1600, to: 700, q: 0.7, attack: 0.03 }); for (let k = 0; k < 5; k++) this.noise(t + 0.08 + k * 0.07, 0.03, 0.12, null, { type: 'bandpass', f: 2200 + k * 300, q: 3 }); this.osc('sine', 700, t + 0.1, 0.1, 0.04, null, { to: 1400 }); },
+  water(t) { this.noise(t, 0.12, 0.3, null, { type: 'highpass', f: 2500, to: 800 }); this.osc('sine', 420, t + 0.01, 0.08, 0.1, null, { to: 150 }); for (let k = 0; k < 3; k++) this.noise(t + 0.1 + k * 0.06, 0.02, 0.1, null, { type: 'bandpass', f: 3200 - k * 400, q: 4 }); },   // a short splash: a hiss, a plop, three drops
   fill(t) { this.noise(t, 0.7, 0.25, null, { type: 'bandpass', f: 700, to: 1800, q: 1, attack: 0.05 }); this.osc('sine', 300, t, 0.7, 0.05, null, { to: 700 }); },
   plant(t) { this.osc('sine', 520, t, 0.08, 0.25, null, { to: 260 }); this.noise(t + 0.02, 0.05, 0.12, null, { f: 700 }); },
   harvest(t) { this.noise(t, 0.05, 0.3, null, { f: 1800, to: 400 }); this.osc('sine', 300, t, 0.08, 0.2, null, { to: 150 }); this.osc('triangle', 900, t + 0.05, 0.1, 0.07, null, { to: 1300 }); },   // a snap with a small bright tail
@@ -149,16 +149,15 @@ const FX = {
   drop(t) { this.osc('sine', 190, t, 0.1, 0.35, null, { to: 120 }); this.noise(t, 0.04, 0.25, null, { f: 1200 }); },
   coin(t) { this.noise(t, 0.02, 0.1, null, { type: 'highpass', f: 5000 }); this.osc('sine', 1318, t, 0.08, 0.14); this.osc('sine', 1975, t + 0.07, 0.22, 0.14, null, { decay: 0.3 }); },
   buy(t) { this.osc('sine', 1046, t, 0.08, 0.18); this.osc('sine', 1318, t + 0.08, 0.08, 0.18); this.osc('sine', 1760, t + 0.16, 0.3, 0.18, null, { decay: 0.3 }); this.noise(t, 0.05, 0.15, null, { type: 'highpass', f: 4000 }); },
-  chest(t) { this.osc('sawtooth', 130, t, 0.22, 0.08, null, { to: 95 }); this.noise(t + 0.18, 0.06, 0.2, null, { f: 900 }); },
+  chest(t) { this.noise(t, 0.03, 0.25, null, { f: 1400, to: 600 }); this.noise(t + 0.03, 0.22, 0.09, null, { type: 'bandpass', f: 380, to: 820, q: 2.5, attack: 0.02 }); this.noise(t + 0.24, 0.04, 0.22, null, { f: 1000 }); this.osc('sine', 170, t + 0.24, 0.07, 0.1, null, { to: 110 }); },   // a wooden lid: a click, the hinge creaking up, the lid knocking back
   ui(t) { this.noise(t, 0.03, 0.22, null, { f: 2200, to: 900 }); this.osc('sine', 420, t, 0.05, 0.07, null, { to: 300 }); },   // a wooden click, not a beep
   hover(t) { this.noise(t, 0.02, 0.05, null, { type: 'highpass', f: 5000 }); },   // the faintest tick as the cursor lands on a thing
   move(t) { this.osc('sine', 520, t, 0.05, 0.12, null, { to: 260 }); this.noise(t, 0.03, 0.15, null, { f: 2500, to: 800 }); },   // a pop: an item changing pockets
   close(t) { this.noise(t, 0.03, 0.18, null, { f: 1500, to: 700 }); this.osc('sine', 300, t, 0.05, 0.06, null, { to: 220 }); },   // the same click, lower
-  no(t) { this.osc('sine', 160, t, 0.07, 0.14, null, { to: 120 }); this.noise(t, 0.03, 0.12, null, { f: 900 }); this.osc('sine', 140, t + 0.1, 0.09, 0.12, null, { to: 100 }); this.noise(t + 0.1, 0.03, 0.1, null, { f: 800 }); },   // a dull double knock, never a buzzer
-  bird(t) { for (let k = 0; k < 3; k++) this.osc('sine', 2400 + k * 150, t + k * 0.12, 0.08, 0.1, null, { to: 3300 }); },
+  no(t) { this.osc('sine', 150, t, 0.07, 0.1, null, { to: 110 }); this.noise(t, 0.03, 0.08, null, { f: 800 }); },   // "that doesn't go": one soft low knock when a click is refused
   cart(t) { this.noise(t, 1.4, 0.18, null, { f: 300, to: 200, attack: 0.3 }); this.osc('triangle', 1568, t + 0.9, 0.4, 0.12, null, { decay: 0.3 }); },
   sleep(t) { ['C5', 'G4', 'E4'].forEach((n, k) => this.osc('triangle', freq(n), t + k * 0.25, 0.6, 0.12, null, { attack: 0.03, decay: 0.4 })); },
   morning(t) { ['C5', 'E5', 'G5', 'C6'].forEach((n, k) => this.osc('triangle', freq(n), t + k * 0.16, 0.5, 0.12, null, { attack: 0.02, decay: 0.4 })); },
-  seeds(t) { for (let k = 0; k < 4; k++) this.noise(t + k * 0.05, 0.03, 0.2, null, { type: 'highpass', f: 3000 }); this.osc('sine', 1200, t + 0.1, 0.15, 0.08, null, { to: 1800 }); },
+  seeds(t) { let at = t; for (let k = 0; k < 9; k++) { this.noise(at, 0.012, 0.16 + Math.random() * 0.08, null, { type: 'bandpass', f: 2600 + Math.random() * 1200, q: 3 }); at += 0.018 + Math.random() * 0.03; } },   // a dry rattle in a paper packet: short ticks at uneven gaps, no tone
   tired(t) { this.osc('triangle', 220, t, 0.5, 0.08, null, { to: 160 }); },
 };

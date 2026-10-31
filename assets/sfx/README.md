@@ -27,7 +27,6 @@ What each should be, with the Minecraft sound it is closest to. Keep them short 
 | move | a stack changes pockets | a pop (`item.pickup`) | 0.08 s |
 | close | a panel closes | a lower wooden click | 0.05 s |
 | no | an action refused | a dull double knock, never a buzzer (`villager.no` feel, softer) | 0.2 s |
-| bird | the bird comes | a short chirp, two or three notes (`parrot` / `bat` are too much) | 0.3 s |
 | cart | the cart arrives | wheels on dirt and a bell (`minecart.inside`, quiet) | 1.5 s |
 | sleep | going to bed | three descending soft notes, or a yawn | 1 s |
 | morning | waking | a rooster, or rising soft notes | 1 s |
