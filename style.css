@@ -152,6 +152,8 @@ button.small { padding: 3px 7px; font-size: 8px; box-shadow: 1px 1px 0 #3b2314; 
 .lin-row canvas { image-rendering: pixelated; flex: none; background: #e4cf9f; border: 2px solid #3b2314; }
 .lin-row .grow { flex: 1; line-height: 1.6; }
 .lin-branch { color: #8a6a44; }
+.lin-chip { display: inline-block; padding: 1px 5px; margin: 1px 3px 1px 0; border: 1px solid #c9a86c; background: #f3e3bd; font-size: 8px; color: #5a3a1e; }
+#panel, #panel * { user-select: none; -webkit-user-select: none; }
 /* settings */
 .set-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
 .set-row > span:first-child { width: 80px; color: #8a6a44; }

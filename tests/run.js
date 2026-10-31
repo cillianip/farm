@@ -911,7 +911,7 @@ await test('field chests: bought and carried like the bench, put down on any ope
 });
 
 console.log('pumps');
-await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split gives each branch what it asks for and shares the rest; the windmill stands still in calm air; the engine burns a can a night', () => {
+await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split gives each branch what it asks for and shares the rest; the windmill turns slowly in calm air; the engine burns a can a night', () => {
   const s = arm(S.createState(1)); const W = s.world, well = WB.well; s.money = 100; s.humidity = 50; const H0 = CONFIG.pump.wellHead, T = CONFIG.pump.tiers;
   const tile = (x, y) => W.tiles[y * W.w + x];
   // a trunk from the well down to row Y+1, then west along it: sprinklers at four distances
@@ -923,7 +923,7 @@ await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks
   // the reference walk along a single chain: what every tile should get
   const walk = () => { let r = H0; for (const [x, y] of chain) { const t = tile(x, y), h = r; assert.equal(S.headAt(s, x, y), h, `head at ${x},${y}`); assert.equal(S.pipeFed(s, x, y), h > 0, `wet at ${x},${y}`);
     if (t.obj?.kind === 'sprinkler') { const d = S.sprinklerTier(t.obj).draw; assert.equal(S.sprinklerFed(s, x, y), h >= d, `sprinkler at ${x},${y}`); if (h >= d) r -= d; }
-    if (t.obj?.kind === 'pump') { if (h > 0 && S.pumpRunning(s, t)) r += S.pumpTier(t.obj).head; assert.equal(S.pumpInFlow(s, x, y), h > 0 && S.pumpRunning(s, t)); }
+    if (t.obj?.kind === 'pump') { if (h > 0 && S.pumpRunning(s, t)) r += S.pumpHead(s, t.obj); assert.equal(S.pumpInFlow(s, x, y), h > 0 && S.pumpRunning(s, t)); }
     r = Math.max(0, r - 1); } };
   walk();
   assert.equal(S.headAt(s, well.x, well.y + 1), H0, 'the first tile has the well\'s whole head'); assert.equal(S.headAt(s, well.x, well.y + H0), 1); assert.equal(S.headAt(s, well.x, well.y + H0 + 1), 0, 'and then it runs out');
@@ -962,8 +962,8 @@ await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks
   // a windmill: still when the air is calm
   s.inventory.slots[slot()] = { kind: 'pump', level: 1, qty: 1 };
   r = S.useItem(s, slot(), well.x, well.y + 2); assert.ok(r.ok, r.msg);
-  s.humidity = T[1].stillBelow - 1; assert.ok(!S.pumpRunning(s, tile(well.x, well.y + 2))); walk(); assert.ok(!S.sprinklerFed(s, X + 4, row), 'calm day: no help');
-  s.humidity = 60; assert.ok(S.pumpRunning(s, tile(well.x, well.y + 2))); walk(); assert.ok(S.sprinklerFed(s, X - 1, row), 'wind: it turns and the whole row runs');
+  s.humidity = T[1].stillBelow - 1; const mill = tile(well.x, well.y + 2); assert.ok(S.pumpRunning(s, mill) && S.pumpCalm(s, mill.obj)); assert.equal(S.pumpHead(s, mill.obj), T[1].calmHead); walk(); assert.equal(S.headAt(s, well.x, well.y + 3), H0 - 1 + T[1].calmHead - 1, 'calm day: it turns slowly');
+  s.humidity = 60; assert.ok(!S.pumpCalm(s, mill.obj)); assert.equal(S.pumpHead(s, mill.obj), T[1].head); walk(); assert.ok(S.sprinklerFed(s, X - 1, row), 'wind: it turns and the whole row runs');
   // an engine on loose pipe counts for nothing and burns nothing; in the flow it burns a can a night
   tile(28, 26).pipe = true; tile(28, 26).obj = { kind: 'pump', level: 2, fuel: 2 }; s.pipeRev++;   // a loose section, no line to the well
   assert.ok(!S.pipeLinked(s, 28, 26) && !S.pumpInFlow(s, 28, 26)); walk();

@@ -116,18 +116,20 @@ export function soilEdge(side, variant, level = 0) {
   });
 }
 // The storage chest (18×16): a wooden box with iron bands and a clasp. open: the lid lifted.
-export function chestSprite(open = false) {
-  return sprite(`chest${open ? 'o' : 'c'}`, 18, 16, P => {
-    P.rect(1, 7, 16, 8, PAL.wood); P.rect(1, 14, 16, 1, PAL.woodDark); P.rect(1, 7, 1, 8, PAL.woodDark); P.rect(16, 7, 1, 8, PAL.woodDark);   // body
-    P.rect(2, 11, 14, 1, PAL.woodDark); P.rect(2, 8, 14, 1, PAL.woodLight);                                                               // boards
-    P.rect(4, 7, 1, 8, PAL.metalDark); P.rect(13, 7, 1, 8, PAL.metalDark); P.px(4, 9, PAL.metal); P.px(13, 13, PAL.metal);             // iron bands
+// The chest by the porch fills its 18-wide sprite; a field chest (`narrow`) is a pixel in on each side, so two side by side stay two.
+export function chestSprite(open = false, narrow = false) {
+  return sprite(`chest${open ? 'o' : 'c'}${narrow ? 'n' : ''}`, 18, 16, P => {
+    const L = narrow ? 2 : 1, R = narrow ? 15 : 16, W = R - L + 1, bL = narrow ? 5 : 4, bR = narrow ? 12 : 13;
+    P.rect(L, 7, W, 8, PAL.wood); P.rect(L, 14, W, 1, PAL.woodDark); P.rect(L, 7, 1, 8, PAL.woodDark); P.rect(R, 7, 1, 8, PAL.woodDark);   // body
+    P.rect(L + 1, 11, W - 2, 1, PAL.woodDark); P.rect(L + 1, 8, W - 2, 1, PAL.woodLight);                                                 // boards
+    P.rect(bL, 7, 1, 8, PAL.metalDark); P.rect(bR, 7, 1, 8, PAL.metalDark); P.px(bL, 9, PAL.metal); P.px(bR, 13, PAL.metal);          // iron bands
     if (!open) {
-      P.rect(1, 3, 16, 4, PAL.woodLight); P.rect(2, 2, 14, 1, PAL.woodLight); P.rect(3, 2, 12, 1, '#c99a66'); P.rect(1, 6, 16, 1, PAL.woodDark);   // domed lid
-      P.px(1, 3, PAL.wood); P.px(16, 3, PAL.wood); P.rect(4, 2, 1, 5, PAL.metalDark); P.rect(13, 2, 1, 5, PAL.metalDark);
+      P.rect(L, 3, W, 4, PAL.woodLight); P.rect(L + 1, 2, W - 2, 1, PAL.woodLight); P.rect(L + 2, 2, W - 4, 1, '#c99a66'); P.rect(L, 6, W, 1, PAL.woodDark);   // domed lid
+      P.px(L, 3, PAL.wood); P.px(R, 3, PAL.wood); P.rect(bL, 2, 1, 5, PAL.metalDark); P.rect(bR, 2, 1, 5, PAL.metalDark);
       P.rect(8, 5, 2, 3, PAL.gold); P.px(8, 7, '#b57a1f'); P.px(9, 5, '#fff1b8');   // brass clasp
     } else {
-      P.rect(2, 5, 14, 3, '#2a1a0c'); P.rect(2, 5, 14, 1, '#1d1208'); P.rect(1, 5, 1, 3, PAL.woodDark); P.rect(16, 5, 1, 3, PAL.woodDark);   // the dark inside, walls up to the hinge
-      P.rect(1, 1, 16, 4, PAL.woodLight); P.rect(2, 1, 14, 1, '#c99a66'); P.rect(1, 4, 16, 1, PAL.woodDark); P.rect(4, 1, 1, 4, PAL.metalDark); P.rect(13, 1, 1, 4, PAL.metalDark);   // lid tipped back, sitting on the hinge
+      P.rect(L + 1, 5, W - 2, 3, '#2a1a0c'); P.rect(L + 1, 5, W - 2, 1, '#1d1208'); P.rect(L, 5, 1, 3, PAL.woodDark); P.rect(R, 5, 1, 3, PAL.woodDark);   // the dark inside, walls up to the hinge
+      P.rect(L, 1, W, 4, PAL.woodLight); P.rect(L + 1, 1, W - 2, 1, '#c99a66'); P.rect(L, 4, W, 1, PAL.woodDark); P.rect(bL, 1, 1, 4, PAL.metalDark); P.rect(bR, 1, 1, 4, PAL.metalDark);   // lid tipped back, sitting on the hinge
       P.rect(8, 9, 2, 2, PAL.gold);
     }
   }, 'rgba(40,25,15,0.95)');

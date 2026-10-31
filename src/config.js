@@ -59,7 +59,7 @@ export const CONFIG = {
   pipe: { packSize: 10, packPrice: 20 },
   // Pumps: flow. (The old model: the well ran `wellFeeds` sprinklers and every pump on fed pipe added
   // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
-  // still when the air is calm (humidity under `stillBelow`); the engine burns fuel every day it stands on fed pipe.
+  // turns slowly when the air is calm (humidity under `stillBelow`: `calmHead` instead of `head`); the engine burns fuel every day it stands on fed pipe.
   // Power (the start of stage 4). A generator stands on your land and, while switched on and fuelled, burns a can of fuel a night and
   // makes `power` for the line laid from it; each machine on the line draws its own `power`, nearest the generator
   // first by line distance. The line carries power only. A picker on powered line takes `perHour` ripe crops an hour
@@ -78,7 +78,7 @@ export const CONFIG = {
   // `head` tiles from where it stands. Pipe the flow does not reach is dry. The well alone wets the yard, not the farm.
   pump: { wellHead: 6, tiers: [
     { name: 'Hand pump', head: 16, price: 120 },
-    { name: 'Windmill', head: 36, price: 400, stillBelow: 30 },
+    { name: 'Windmill', head: 36, calmHead: 12, price: 400, stillBelow: 30 },   // calmHead: what it adds on a calm day (humidity under stillBelow), turning slowly
     { name: 'Engine', head: 90, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
   ] },
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each

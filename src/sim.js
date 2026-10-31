@@ -691,7 +691,10 @@ export const headAt = (state, x, y) => pressure(state).head.get(y * state.world.
 export const isPump = t => t?.obj?.kind === 'pump';
 export const pumpTier = obj => CONFIG.pump.tiers[obj?.level || 0];
 // turning: fuelled and in wind; whether it is in the flow is pressure()'s business
-export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); if (tier.fuelPerDay && !fuelOf(t.obj)) return false; return tier.stillBelow == null || humidityOf(state) >= tier.stillBelow; }
+export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); if (tier.fuelPerDay && !fuelOf(t.obj)) return false; return true; }
+// A windmill in calm air (humidity under its stillBelow) turns slowly: calmHead instead of head.
+export const pumpCalm = (state, obj) => { const tier = pumpTier(obj); return tier.stillBelow != null && humidityOf(state) < tier.stillBelow; };
+export const pumpHead = (state, obj) => pumpCalm(state, obj) ? pumpTier(obj).calmHead : pumpTier(obj).head;
 // Fuel: generators and engines hold cans of it and burn one a night while they run; empty, they stop.
 export const burnsFuel = obj => obj?.kind === 'generator' || (obj?.kind === 'pump' && !!pumpTier(obj).fuelPerDay);
 export const fuelOf = obj => obj?.fuel || 0;
@@ -712,7 +715,7 @@ export function pressure(state) {
   // What has to arrive at a tile for everything beyond it to run: its sprinkler's draw, a tile for the step on, and the
   // needs of every branch it feeds; a pump there pays for part of that, but something must still reach it to turn it.
   const need = new Map();
-  const needOf = i => { if (need.has(i)) return need.get(i); const t = w.tiles[i], out = next(i); let n = isSprinkler(t) ? sprinklerTier(t.obj).draw : 0; if (out.length) n += 1 + out.reduce((a, k) => a + needOf(k), 0); if (isPump(t) && pumpRunning(state, t)) n = Math.max(1, n - pumpTier(t.obj).head); need.set(i, n); return n; };
+  const needOf = i => { if (need.has(i)) return need.get(i); const t = w.tiles[i], out = next(i); let n = isSprinkler(t) ? sprinklerTier(t.obj).draw : 0; if (out.length) n += 1 + out.reduce((a, k) => a + needOf(k), 0); if (isPump(t) && pumpRunning(state, t)) n = Math.max(1, n - pumpHead(state, t.obj)); need.set(i, n); return n; };
   const give = (k, v) => { if (v > 0) head.set(k, (head.get(k) || 0) + v); };
   const exits = order.filter(i => net.dist.get(i) === 1);
   for (const i of exits) head.set(i, Math.floor(CONFIG.pump.wellHead / exits.length));
@@ -720,7 +723,7 @@ export function pressure(state) {
     const t = w.tiles[i], hIn = head.get(i) || 0; let r = hIn;
     if (hIn > 0) wet.add(i);
     if (isSprinkler(t)) { fed++; const d = sprinklerTier(t.obj).draw; if (hIn >= d) { on.add(i); r -= d; } }
-    if (isPump(t)) { pumps++; if (hIn > 0 && pumpRunning(state, t)) { running++; pumpsOn.add(i); r += pumpTier(t.obj).head; } }
+    if (isPump(t)) { pumps++; if (hIn > 0 && pumpRunning(state, t)) { running++; pumpsOn.add(i); r += pumpHead(state, t.obj); } }
     const out = next(i); if (!out.length || r <= 1) continue;
     if (out.length === 1) { give(out[0], r - 1); continue; }
     // a split: each branch gets what it asks for, the smallest asker first so a stub never starves a long run; what no

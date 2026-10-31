@@ -5,9 +5,9 @@ import { itemName, itemKey } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
 import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
-import { catalog, placeOrder, cancelOrder, seedRotationIn } from './catalog.js';
+import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
-import { growRealMinutes } from './genetics.js';
+import { growRealMinutes, RARE_TRAITS } from './genetics.js';
 
 const $ = id => document.getElementById(id);
 // money a day for the cards: short, no cents past $10
@@ -170,7 +170,7 @@ export class UI {
       html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Flow</span><span>drinks ${tier.draw} ${tier.draw === 1 ? 'tile' : 'tiles'} of it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on pipe the flow reaches with at least that much left. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
     } else if (it.kind === 'pump') {
       const tier = CONFIG.pump.tiers[it.level || 0];
-      html += `<div class="pc-row"><span>Adds</span><span>${tier.head} tiles of flow</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} a night, holds ${CONFIG.fuel.tank}</span></div>` : '') + `<div class="pc-note">Set it on pipe the flow still reaches: from there the flow carries ${tier.head} tiles further. The well alone gives ${CONFIG.pump.wellHead}, a tile costs 1, a split gives each branch what it asks for and shares the rest, and a sprinkler drinks its draw.${tier.stillBelow != null ? ' It stands still on a calm day.' : ''}${tier.fuelPerDay ? ' Pour fuel in with cans in hand; empty, it stops.' : ''} The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Adds</span><span>${tier.head} tiles of flow</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} a night, holds ${CONFIG.fuel.tank}</span></div>` : '') + `<div class="pc-note">Set it on pipe the flow still reaches: from there the flow carries ${tier.head} tiles further. The well alone gives ${CONFIG.pump.wellHead}, a tile costs 1, a split gives each branch what it asks for and shares the rest, and a sprinkler drinks its draw.${tier.stillBelow != null ? ` On a calm day it turns slowly and adds ${tier.calmHead}.` : ''}${tier.fuelPerDay ? ' Pour fuel in with cans in hand; empty, it stops.' : ''} The hoe picks it up.</div>`;
     } else if (it.kind === 'generator') {
       const G = CONFIG.power.generator;
       html += `<div class="pc-row"><span>Makes</span><span>${G.power} power</span></div><div class="pc-row"><span>Fuel</span><span>${G.fuelPerDay === 1 ? 'a can' : G.fuelPerDay + ' cans'} a night while on, holds ${CONFIG.fuel.tank}</span></div><div class="pc-note">Set it on your land, pour fuel in with cans in hand, and lay power line from it. Each machine on the line draws its share; when the line asks for more than the generator makes, the nearest run. Click it to switch it off and on: off, it burns nothing. The hoe picks it up.</div>`;
@@ -577,34 +577,29 @@ export class UI {
     });
   }
 
-  // The seed book: every species you know, bred ones under their parents, so you can see the line you have made.
+  // The seed book, organised: what you bred (newest first, with its parents and what it does), what the starters and the
+  // catalogue gave you, and what the birds brought. Every row carries the species' traits as chips.
   openLineage() {
-    const s = this.state;
+    const s = this.state, TRAIT = { golden: 'golden (×3 price)', glowing: 'glowing', multiHarvest: 'bounty', frostHardy: 'frost-hardy' };
     this.show('Seed book', body => {
       const known = Object.values(s.species).filter(sp => s.discovered.includes(sp.id) || sp.sterile);
-      const bred = known.filter(sp => sp.parents), base = known.filter(sp => !sp.parents);
+      const bred = known.filter(sp => sp.parents).sort((a, b) => (b.genome.gen || 0) - (a.genome.gen || 0) || (b.discoveredDay || 0) - (a.discoveredDay || 0));
+      const byFamily = arr => arr.sort((a, b) => (a.genome.family || '').localeCompare(b.genome.family || '') || b.value - a.value);
+      const base = byFamily(known.filter(sp => !sp.parents && !sp.wild)), wild = byFamily(known.filter(sp => !sp.parents && sp.wild));
       body.appendChild(el('div', 'muted', `${known.length} species known · ${bred.length} bred by you`));
       body.appendChild(el('div', 'pc-note', `Every species beyond the starters adds +${Math.round(CONFIG.economy.seedBookBonusPerSpecies * 100)}% to every sale. Right now: <b class="up">+${Math.round(seedBookBonus(s) * 100)}%</b>. Each generation of breeding steps the price up about ×1.5.`));
       const icon = sp => { const c = document.createElement('canvas'); c.width = 40; c.height = 40; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(cropSprite(sp, 3), 0, 0, 40, 40); return c; };
-      const row = (sp, depth) => {
-        const r = el('div', 'lin-row'); r.style.marginLeft = (depth * 22) + 'px';
-        if (depth) r.appendChild(el('span', 'lin-branch', '└'));
-        r.appendChild(icon(sp));
-        const g = sp.genome, from = sp.parents ? `from ${sp.parents.map(p => esc(s.species[p]?.name || '?')).join(' × ')} · day ${sp.discoveredDay ?? '?'}` : sp.wild ? 'brought by a bird' : 'starter';
-        r.appendChild(el('div', 'grow', `<b class="tier-${sp.tier}">${esc(sp.name)}</b> <span class="muted">${sp.tier} · gen ${g.gen || 0}</span><br><span class="muted">${from} · ${formatMoney(sp.value)} × ${g.count} · ${growRealMinutes(g).toFixed(1)} min</span>`));
+      const chips = sp => { const g = sp.genome, out = roles(sp).map(r => r.replace(/:.*$/, '')); for (const t of RARE_TRAITS) if (g.traits?.[t]) out.unshift(TRAIT[t]); if (sp.sterile) out.push('sterile'); return out.map(c => `<span class="lin-chip">${esc(c)}</span>`).join(''); };
+      const row = sp => {
+        const r = el('div', 'lin-row'); r.appendChild(icon(sp)); const g = sp.genome;
+        const from = sp.parents ? `from ${sp.parents.map(p => esc(s.species[p]?.name || '?')).join(' × ')} · day ${sp.discoveredDay ?? '?'}` : sp.wild ? 'brought by a bird' : sp.starter ? 'starter' : 'catalogue';
+        r.appendChild(el('div', 'grow', `<b class="tier-${sp.tier}">${esc(sp.name)}</b> <span class="muted">${sp.tier} · gen ${g.gen || 0} · ${from}</span><br>${chips(sp)}<br><span class="muted">${formatMoney(sp.value)} × ${g.count} a harvest</span>`));
         return r;
       };
-      const childrenOf = id => bred.filter(c => c.parents[0] === id || c.parents[1] === id);
-      const seen = new Set();
-      const walk = (sp, depth) => { if (seen.has(sp.id)) return; seen.add(sp.id); body.appendChild(row(sp, depth)); for (const c of childrenOf(sp.id)) walk(c, depth + 1); };
-      body.appendChild(el('div', 'pc-sec', 'Your lines'));
-      const parentsUsed = new Set(bred.flatMap(c => c.parents));
-      const roots = base.filter(sp => parentsUsed.has(sp.id));
-      if (!roots.length) body.appendChild(el('div', 'muted', 'Nothing bred yet. Two parents on the bench, one child by morning.'));
-      for (const sp of roots) walk(sp, 0);
-      for (const sp of bred) if (!seen.has(sp.id)) walk(sp, 0);
-      body.appendChild(el('div', 'pc-sec', 'Not yet crossed'));
-      for (const sp of base) if (!seen.has(sp.id)) body.appendChild(row(sp, 0));
+      const section = (title, arr, empty) => { body.appendChild(el('div', 'pc-sec', `${title} · ${arr.length}`)); if (!arr.length && empty) body.appendChild(el('div', 'muted', empty)); for (const sp of arr) body.appendChild(row(sp)); };
+      section('Bred by you', bred, 'Nothing bred yet. Two parents on the bench, one child by morning.');
+      section('Starters and the catalogue', base, '');
+      if (wild.length) section('Brought by birds', wild, '');
     }, 'lineage');
   }
 
