@@ -193,6 +193,8 @@ function neighbourSpeciesBonus(state, x, y, speciesId) {
 }
 
 // rot factor 1 → fresh, 0 → about to die. Only meaningful when ripe.
+// Game hours a ripe crop keeps before it starts to rot (null if not ripe).
+export function ripeHoursLeft(state, crop) { if (!crop || crop.growth < 100 || crop.ripeAt == null) return null; const sp = speciesOfCrop(state, crop); return Math.max(0, (crop.ripeAt + sp.genome.ripeHours * 60 - state.minutes) / 60); }
 export function rotFactor(state, crop) {
   if (!crop || crop.growth < 100 || crop.ripeAt == null) return 1;
   const sp = speciesOfCrop(state, crop);

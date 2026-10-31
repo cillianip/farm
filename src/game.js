@@ -13,6 +13,9 @@ import { formatMoney } from './economy.js';
 import { catalogueFlag, markCatalogueSeen } from './catalog.js';
 import * as M from './market.js';
 import { MARKET } from './market.js';
+// What each timed action sounds like, and how often the sound strikes again while the animation runs (seconds of action time).
+const ACTION_SOUND = { hoe: 'dig', drain: 'drain', clear: 'dig', wither: 'wither', pull: 'pull', flatten: 'flatten', fill: 'fill', plant: 'plant', drop: 'drop', dry: 'rackPlace', compost: 'drop', eat: 'eat', drink: 'drink', water: 'water' };
+const ACTION_PERIOD = { hoe: 0.3, drain: 0.3, clear: 0.3, wither: 0.3, pull: 0.35, flatten: 0.35, water: 0.28, eat: 0.42, fill: 0.75 };
 import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
@@ -259,7 +262,8 @@ export class Game {
   near(b, d) { const p = this.state.player; const cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h); return Math.hypot(p.x - cx, p.y - cy) < d; }
   startAction(type, x, y, dur) {
     this.facePoint(x + 0.5, y + 0.5); this.action = { type, x, y, t: 0, dur: dur * S.actionFactor(this.state), slot: this.selected };
-    this.sound.play({ hoe: 'dig', drain: 'drain', clear: 'dig', wither: 'wither', pull: 'pull', flatten: 'flatten', fill: 'fill', plant: 'plant', drop: 'drop', dry: 'rackPlace', compost: 'drop', eat: 'eat', drink: 'drink', water: 'water' }[type]);
+    { const p = ACTION_PERIOD[type]; if (p) { this.action.period = p; this.action.nextSound = p; } }   // the sound keeps time with the animation: a stroke every period until it is done
+    this.sound.play(ACTION_SOUND[type]);
   }
   actionItem() { return this.action ? this.state.inventory.slots[this.action.slot] : null; }
   finishAction() {
@@ -342,7 +346,7 @@ export class Game {
     this.moving = false;
     if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const h = this.press.hit, r = h.kind === 'fchest' ? S.pickUpChest(s, h.x, h.y) : S.pickUp(s, h.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
     if (this.ui.openPanel?.tick) { this.panelT = (this.panelT || 0) + dt; if (this.panelT > 0.5) { this.panelT = 0; this.ui.openPanel.tick(); } }
-    if (this.action) { this.action.t += dt; if (this.action.t >= this.action.dur) this.finishAction(); }
+    if (this.action) { const a = this.action; a.t += dt; if (a.period && a.t >= a.nextSound && a.nextSound < a.dur - 0.08) { a.nextSound += a.period; this.sound.play(ACTION_SOUND[a.type]); } if (a.t >= a.dur) this.finishAction(); }
     else if (!this.ui.openPanel && !this.sleeping) this.movePlayer(dt);
     if (this.dropAgain && !this.action) {   // holding the button: the rest follow at the same pace
       const kind = this.dropAgain, h = this.hitTest(), it = this.hotbarItem(); this.dropAgain = false;

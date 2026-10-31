@@ -35,6 +35,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .pc-sec { margin-top: 8px; padding-top: 6px; border-top: 3px dotted #c9a97a; color: #8a6a44; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; }
 .pc-name { font-size: 11px; margin: 2px 0; }
 .pc-row { display: flex; justify-content: space-between; gap: 12px; }
+.pc-note.warn { color: #a0462f; }
 .pc-note { color: #6f5a3e; font-size: 8px; line-height: 1.6; margin: 2px 0 2px; }
 .pc-bar { height: 9px; background: #3b2314; padding: 2px; margin: 1px 0 4px; }
 .pc-bar > div { height: 100%; box-shadow: inset 0 2px 0 rgba(255,255,255,.35); }

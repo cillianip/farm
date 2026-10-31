@@ -108,10 +108,11 @@ export class UI {
       html += `<div class="pc-sec">${stage === 0 ? 'In the soil' : 'Plant'}</div><div class="pc-name tier-${c.unknown ? 'unknown' : sp.tier}">${esc(name)}</div>`;
       if (hint) html += `<div class="pc-note">${esc(hint)}</div>`;
       if (!c.dead) {
-        const stageName = stage === 3 ? (S.rotFactor(s, c) < 1 ? `Rotting (${Math.round(S.rotFactor(s, c) * 100)}%)` : 'Ripe') : ['Seed', 'Sprout', 'Growing'][stage];
+        const rf = S.rotFactor(s, c), stageName = stage === 3 ? (rf < 1 ? 'Overripe' : 'Ripe') : ['Seed', 'Sprout', 'Growing'][stage];
         html += `<div class="pc-row"><span>${stageName}</span><span>${Math.floor(c.growth)}%</span></div>${bar(c.growth, '#5cb85c')}`;
         html += `<div class="pc-row"><span>Health</span><span>${Math.round(c.health)}%</span></div>${bar(c.health, c.health > 50 ? '#5cb85c' : '#d9453d')}`;
-        if (stage === 3) html += `<div class="pc-note">Ripe. Click it to harvest.</div>`;
+        if (stage === 3 && rf >= 1) { const left = S.ripeHoursLeft(s, c); html += `<div class="pc-note">Ripe. Click it to harvest.${left != null ? ` It keeps for ${left < 1 ? 'under an hour' : '~' + Math.ceil(left) + ' h'}, then it starts to rot.` : ''}</div>`; }
+        if (stage === 3 && rf < 1) html += `<div class="pc-note warn">Overripe: left standing too long. Worth ${Math.round(rf * 100)}% of its price now, and it withers in ~${Math.ceil(rf * CONFIG.crop.rotHours)} h unless you pick it.</div>`;
         const f = tile.fert?.stats || {}, fmtMin = v => v < 1 ? 'under a minute' : `~${Math.ceil(v)} min`;
         if (stage < 3) { const base = factor > 0 ? ((100 - c.growth) / 100) * growRealMinutes(g) / factor : null, mins = base == null ? null : base / (1 + (f.speed || 0)); html += `<div class="pc-row"><span>Ripe in</span><span>${mins == null ? 'not growing (dry)' : f.speed && fmtMin(base) !== fmtMin(mins) ? `${fmtMin(base)} → ${fmtMin(mins)}` : fmtMin(mins)}</span></div>`; }
         if (!c.unknown) { const n = g.count + (f.yield || 0) * 3, nStr = Number.isInteger(n) ? `${n}` : n.toFixed(1); html += `<div class="pc-row"><span>Harvest</span><span>${f.yield ? `${g.count}× → ${nStr}×` : `${g.count}×`} · ${formatMoney(salePrice(s, { species: sp.id }))} each</span></div>`; }

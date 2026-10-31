@@ -165,7 +165,7 @@ const FX = {
   stepTrack(t) { this.noise(t, 0.07, 0.28, null, { type: 'bandpass', f: 1400, to: 700, q: 0.8 }); this.osc('sine', 90, t, 0.04, 0.12, null, { to: 60 }); },   // the dirt track: a dry scuff
   tired(t) { this.breath(t, 0.5, 0.08, 220, 160); },
   heavy(t) { this.osc('triangle', 150, t, 0.18, 0.08, null, { to: 110, attack: 0.03 }); this.noise(t, 0.18, 0.06, null, { type: 'bandpass', f: 700, to: 400, q: 1.5, attack: 0.03 }); },   // a small grunt
-  eat(t) { for (let k = 0; k < 3; k++) this.noise(t + k * 0.11, 0.07, 0.35, null, { f: 1800, to: 500 }); },
+  eat(t) { this.noise(t, 0.012, 0.3, null, { type: 'highpass', f: 3000 }); this.noise(t + 0.01, 0.09, 0.32, null, { f: 1500, to: 300, attack: 0.003 }); this.osc('sine', 180, t + 0.01, 0.06, 0.08, null, { to: 90 }); this.noise(t + 0.16, 0.07, 0.14, null, { f: 600, to: 250, attack: 0.02 }); this.noise(t + 0.28, 0.07, 0.1, null, { f: 500, to: 220, attack: 0.02 }); },   // one bite: a crisp snap and crunch, then two soft chews; the action repeats it
   drink(t) { for (let k = 0; k < 2; k++) { const g = t + k * 0.22; this.noise(g, 0.14, 0.22, null, { type: 'bandpass', f: 600, to: 1500, q: 2, attack: 0.02 }); this.osc('sine', 380, g + 0.02, 0.12, 0.08, null, { to: 760 }); } this.noise(t + 0.5, 0.12, 0.08, null, { type: 'highpass', f: 2500 }); },
   passout(t) { this.noise(t, 0.12, 0.3, null, { f: 400, to: 150 }); this.osc('sine', 70, t, 0.12, 0.25, null, { to: 40 }); this.breath(t + 0.25, 0.9, 0.07, 200, 120); },   // a thud and a long exhale
   // --- earth
@@ -177,7 +177,7 @@ const FX = {
   plant(t) { this.osc('sine', 520, t, 0.08, 0.25, null, { to: 260 }); this.noise(t + 0.02, 0.05, 0.12, null, { f: 700 }); },
   harvest(t) { this.noise(t, 0.05, 0.3, null, { f: 1800, to: 400 }); this.osc('sine', 300, t, 0.08, 0.2, null, { to: 150 }); this.osc('triangle', 900, t + 0.05, 0.1, 0.07, null, { to: 1300 }); },
   pull(t) { this.noise(t, 0.05, 0.3, null, { f: 1800, to: 400 }); this.osc('sine', 260, t, 0.08, 0.15, null, { to: 120 }); this.ticks(t + 0.04, 7, 0.02, 0.05, 2200, 2, 0.14, 0.015); this.noise(t + 0.12, 0.16, 0.18, null, { f: 600, to: 250, attack: 0.03 }); },   // roots tearing
-  wither(t) { this.ticks(t, 10, 0.012, 0.035, 3200, 3, 0.16, 0.012); this.noise(t, 0.18, 0.1, null, { type: 'highpass', f: 2500 }); },   // dry brittle crackle
+  wither(t) { this.noise(t, 0.22, 0.26, null, { type: 'bandpass', f: 1300, to: 500, q: 0.9, attack: 0.02 }); this.noise(t + 0.06, 0.16, 0.2, null, { f: 700, to: 250, attack: 0.02 }); this.osc('sine', 90, t + 0.14, 0.08, 0.12, null, { to: 50 }); },   // a dry crumble into the soil, no clicks
   fertilise(t) { this.ticks(t, 8, 0.015, 0.03, 1800, 2, 0.1, 0.015); this.noise(t + 0.25, 0.08, 0.18, null, { f: 600, to: 250 }); },   // a shake of crumbs then a pat
   seedback(t) { this.noise(t, 0.012, 0.14, null, { type: 'bandpass', f: 2800, q: 4 }); this.osc('sine', 1400, t + 0.01, 0.03, 0.04, null, { to: 1000 }); },
   // --- wood and stations
