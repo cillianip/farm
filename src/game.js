@@ -87,7 +87,7 @@ export class Game {
     c.addEventListener('mousemove', e => { const r = c.getBoundingClientRect(); this.mouse.x = e.clientX - r.left; this.mouse.y = e.clientY - r.top; this.mouse.inside = true; if (this.drag && Math.hypot(this.mouse.x - this.drag.x0, this.mouse.y - this.drag.y0) > 6) this.drag.moved = true; });
     c.addEventListener('mouseleave', () => { this.mouse.inside = false; this.ui.hideHover(); });
     c.addEventListener('mousedown', e => { e.preventDefault(); this.sound.unlock(); if (e.button === 0) { this.mouseHeld = true; this.mouseDown(); } });
-    window.addEventListener('mouseup', e => { if (e.button === 0) { this.mouseHeld = false; this.mouseUp(); } });
+    window.addEventListener('mouseup', e => { if (e.button === 0) { this.mouseHeld = false; this.lastHoldKey = null; this.holdT = 0; this.mouseUp(); } });
     c.addEventListener('wheel', e => { e.preventDefault(); this.selected = (this.selected + (e.deltaY > 0 ? 1 : CONFIG.inventory.hotbar - 1)) % CONFIG.inventory.hotbar; this.sound.play('tap'); }, { passive: false });
     c.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('beforeunload', () => this.save());
@@ -395,6 +395,21 @@ export class Game {
     }
     this.sound.rain(!!s.rainToday && !this.sleeping);
     this.updateLoops(dt);
+    // hold the button and sweep: ripe crops are picked, and with seeds, the can or the hoe in hand each new bed under the
+    // cursor is planted, watered (only if it wants it) or hoed, one after another, the way Minecraft keeps acting while you hold
+    if (this.mouseHeld && !this.action && !this.ui.openPanel && !this.sleeping && !s.carrying && !this.landMode && !this.drag && !this.press && !this.travelling && !s.market?.at) {
+      this.holdT = (this.holdT || 0) - dt;
+      if (this.holdT <= 0) {
+        const h = this.hit, it = this.hotbarItem(), tx = this.mouse.tx, ty = this.mouse.ty, t = tileAt(s.world, tx, ty), key = tx + ',' + ty; let go = false;
+        if (h?.kind === 'harvest') go = true;
+        else if (!h && it && t && key !== this.lastHoldKey && S.inReach(s, tx, ty)) {
+          if (it.kind === 'seed') go = t.tilled && !t.crop;
+          else if (it.kind === 'tool' && it.tool === 'can') go = t.tilled && s.can.water > 0 && S.moistureOf(t) < CONFIG.soil.idealMax;
+          else if (it.kind === 'tool' && it.tool === 'hoe') go = t.t === 'grass' && !t.tilled && !t.crop && !t.track && !t.obj && !t.pipe && !t.line && !t.belt && !isTree(s.world, tx, ty);
+        }
+        if (go) { this.lastHoldKey = key; this.holdT = 0.12; this.click(); }
+      }
+    }
     for (const ev of S.SFX.splice(0, 3)) { if (!s.market?.at && Math.hypot(ev.x + 0.5 - s.player.x, ev.y + 0.5 - s.player.y) < 9) this.sound.play(ev.type); } if (S.SFX.length > 3) S.SFX.length = 0;
     if (now - this.lastSave > 30000) this.save();
   }
