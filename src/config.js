@@ -38,7 +38,7 @@ export const CONFIG = {
   // seeds = fruits per harvest × seedsPerFruit, rolled within ±seedVariance, never below minSeeds. Drying takes dryHours
   // × (0.7 + size × 0.6) × (0.8 + thirst × 0.4): big, juicy fruit dries slowly, small dry grain fast.
   seedRack: { trays: 1, dryHours: 4, seedsPerFruit: 2, minSeeds: 2, seedVariance: 0.35 },
-  actions: { hoeSeconds: 0.9, waterSeconds: 0.7, fillSeconds: 1.0, drinkSeconds: 0.9, eatSeconds: 1.6, plantSeconds: 0.5 },
+  actions: { hoeSeconds: 0.9, waterSeconds: 0.7, fillSeconds: 1.0, drinkSeconds: 0.9, eatSeconds: 1.6, plantSeconds: 0.5, pumpSeconds: 2.5 },
   // Quick hands: seconds per crop into the crate (or onto a tray) at each level. Level 1 is you, untrained.
   hands: { dropSeconds: [0.35, 0.22, 0.12] },
   // Sprinkler I (stage 3, the first automation). Sits on a tile of your land and, while you are awake, gives a pour to
@@ -77,8 +77,8 @@ export const CONFIG = {
   // `draw` from the flow at its tile and runs only when that much arrives; a running pump standing in the flow adds its
   // `head` tiles from where it stands. Pipe the flow does not reach is dry. The well alone wets the yard, not the farm.
   pump: { wellHead: 6, tiers: [
-    { name: 'Hand pump', head: 16, price: 120 },
-    { name: 'Windmill', head: 36, calmHead: 12, price: 400, stillBelow: 30 },   // calmHead: what it adds on a calm day (humidity under stillBelow), turning slowly
+    { name: 'Hand pump', head: 16, price: 120, hand: true },   // hand: it needs working each morning (a click, a few seconds, some energy) or it stands still
+    { name: 'Windmill', head: 36, calmHead: 18, price: 400, stillBelow: 30 },   // calmHead: what it adds on a calm day (humidity under stillBelow), turning slowly
     { name: 'Engine', head: 90, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
   ] },
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
@@ -109,7 +109,7 @@ export const CONFIG = {
     nightGrowth: 0.5,        // growth speed from 8pm to 6am, awake or asleep: plants slow down in the dark
   },
 
-  energy: { max: 100, hoe: 2, water: 1, plant: 0.5, harvest: 1, clear: 1, place: 1 },
+  energy: { max: 100, hoe: 2, water: 1, plant: 0.5, harvest: 1, clear: 1, place: 1, pump: 4 },   // pump: working a hand pump for the day
   needs: { hungerHours: 36, thirstHours: 24, starvingEnergyPerHour: 3,     // hours for a full bar to empty; energy lost per hour at 0
     weakBelow: 25, weakSpeed: 0.7,                                          // under this hunger or thirst you walk slower
     tiredBelow: 20, tiredSpeed: 0.6, tiredActionSlow: 1.5,                 // under this energy you drag your feet and every action takes longer

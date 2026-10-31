@@ -459,7 +459,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!t.pipe || t.obj) return fail(t.obj ? 'Something stands there' : 'A pump sits on a pipe');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.obj = { kind: 'pump', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
+    t.obj = { kind: 'pump', level: item.level || 0 }; if (pumpTier(t.obj).hand) t.obj.workedDay = dayOf(state); state.pipeRev = (state.pipeRev || 0) + 1;   // setting a hand pump primes it for the day
     return { ok: true, msg: !pipeLinked(state, x, y) ? 'Dry: this pipe has no line back to the well' : !pipeFed(state, x, y) ? 'Dry: the flow runs out before here. Stand it nearer the well' : '', float: 'Set' };
   }
   if (item.kind === 'generator') {
@@ -691,7 +691,17 @@ export const headAt = (state, x, y) => pressure(state).head.get(y * state.world.
 export const isPump = t => t?.obj?.kind === 'pump';
 export const pumpTier = obj => CONFIG.pump.tiers[obj?.level || 0];
 // turning: fuelled and in wind; whether it is in the flow is pressure()'s business
-export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); if (tier.fuelPerDay && !fuelOf(t.obj)) return false; return true; }
+export function pumpRunning(state, t) { if (!isPump(t)) return false; const tier = pumpTier(t.obj); if (tier.fuelPerDay && !fuelOf(t.obj)) return false; return pumpWorked(state, t.obj); }
+// A hand pump needs a hand: worked once a day (workPump) it runs till the night; the other pumps need no one.
+export const pumpWorked = (state, obj) => !pumpTier(obj).hand || (obj.workedDay || 0) >= dayOf(state);
+export function workPump(state, x, y) {
+  const t = tileAt(state.world, x, y); if (!isPump(t) || !pumpTier(t.obj).hand) return fail('');
+  if (pumpWorked(state, t.obj)) return fail('Worked today: it pumps till you sleep');
+  if (!inReach(state, x, y)) return fail('Too far');
+  if (!spend(state, CONFIG.energy.pump)) return fail('Too tired');
+  t.obj.workedDay = dayOf(state); state.pipeRev = (state.pipeRev || 0) + 1;
+  return { ok: true, msg: pipeFed(state, x, y) ? '' : 'Worked, but the flow does not reach it: it adds nothing here', float: 'Pumping' };
+}
 // A windmill in calm air (humidity under its stillBelow) turns slowly: calmHead instead of head.
 export const pumpCalm = (state, obj) => { const tier = pumpTier(obj); return tier.stillBelow != null && humidityOf(state) < tier.stillBelow; };
 export const pumpHead = (state, obj) => pumpCalm(state, obj) ? pumpTier(obj).calmHead : pumpTier(obj).head;
@@ -974,6 +984,7 @@ export function sleep(state, opts = {}) {
   if (state.breeder.running) { report.breeder = resolveBreed(state); }
   if (composting && cp.ready) report.compost = `${cp.ready.name} ×${cp.readyCount || 1}`;
   else if (heap && !cp.running && !cp.ready) report.lines.push(`The compost bin holds ${heap}; it needs ${CONFIG.fertiliser.compostMinInputs} to start.`);
+  { const n = pumpTiles(state).filter(p => pumpTier(p.t.obj).hand).length; if (n) report.handPumps = n; }   // they stop at midnight: the morning says so
   state.stats.days++;
   state.morning = report;
   return report;
