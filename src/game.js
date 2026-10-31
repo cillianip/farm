@@ -27,7 +27,7 @@ export class Game {
     this.floats = [];
     this.landMode = false;
     this.cam = { x: 0, y: 0 };
-    this.walkT = 0; this.moving = false;
+    this.walkT = 0; this.moving = false; this.prints = []; this.lastFrame = 0; this.leftFoot = false;
     this.lastSave = performance.now();
     this.state = this.boot();
     this.sound = new Sound();
@@ -391,7 +391,13 @@ export class Game {
     if (this.mouse.inside && !this.ui.openPanel && hbSlot >= 0 && s.inventory.slots[hbSlot] && !this.drag?.moved) this.ui.hoverItem(s.inventory.slots[hbSlot], this.mouse.x, this.mouse.y);
     else if (this.mouse.inside && !this.ui.openPanel && hbSlot < 0) this.ui.hover(tileAt(s.world, this.mouse.tx, this.mouse.ty), this.mouse.tx, this.mouse.ty, this.mouse.x, this.mouse.y); else if (!this.ui.panelHover) this.ui.hideHover();
     for (const f of this.floats) f.t += dt; this.floats = this.floats.filter(f => f.t < 2.2);
-    this.sound.step(dt, this.moving && !this.action, S.walkFactor(s)); this.sound.rain(!!s.rainToday && !this.sleeping);
+    { // a footfall when a foot lands in the walk animation (frames 1 and 3): the sound, and a print left behind
+      const frame = this.moving && !this.action ? Math.floor(this.walkT * 7) % 4 : 0;
+      if (frame !== this.lastFrame && (frame === 1 || frame === 3)) this.sound.footfall();
+      this.lastFrame = frame;
+      for (const f of this.prints) f.t += dt; if (this.prints.length && this.prints[0].t > 9) this.prints = this.prints.filter(f => f.t < 9);
+    }
+    this.sound.rain(!!s.rainToday && !this.sleeping);
     if (now - this.lastSave > 30000) this.save();
   }
   movePlayer(dt) {
@@ -404,11 +410,20 @@ export class Game {
     const wf = S.walkFactor(this.state), sp = CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * wf;
     const w = this.state.world, rad = 0.3;
     const free = this.state.market?.at ? ((x, y) => M.walkable(x, y)) : (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
+    const x0 = p.x, y0 = p.y;
     if (free(p.x + dx * sp, p.y)) p.x += dx * sp;
     if (free(p.x, p.y + dy * sp)) p.y += dy * sp;
+    this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
+    if (this.printDist >= 0.55) { this.printDist = 0; const side = p.dir === 'left' || p.dir === 'right'; this.leftFoot = !this.leftFoot; this.prints.push({ x: p.x + (this.leftFoot ? -0.14 : 0.14) * (side ? 0.4 : 1), y: p.y + (side ? (this.leftFoot ? -0.06 : 0.06) : 0), t: 0 }); if (this.prints.length > 64) this.prints.shift(); }
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
   }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
+  // footprints: small dark marks where each foot landed, fading over a few seconds; drawn on the ground under everything
+  pushPrints(ctx, cx, cy, drawables) {
+    if (!this.prints.length) return;
+    const u = CONFIG.scale;
+    drawables.push({ y: -1e9, draw: () => { for (const f of this.prints) { const a = 0.42 * Math.max(0, 1 - f.t / 9); if (a <= 0) continue; ctx.fillStyle = `rgba(40,25,15,${a.toFixed(3)})`; const x = Math.round(f.x * T) - cx, y = Math.round(f.y * T) - cy; ctx.fillRect(x - u, y - 3 * u, 2 * u, 3 * u); ctx.fillRect(x - 1.5 * u, y - 2 * u, 3 * u, u); } } });
+  }
   // the "come and get it" arrow: ripe crops, dried seeds
   // The network view (N): the scene dims and every pipe, line and belt shows its state, with a number on each source
   // (the well's pressure, each generator's power) and a word on everything that does not run and why.
@@ -560,6 +575,7 @@ export class Game {
       drawables.push({ y: Cr.y + 1.01, draw: () => { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round(wx * T) - cx - 10 * u, (Cr.y + 1) * T - cy + 2 * u, 22 * u, 3 * u); ctx.drawImage(cartSprite(rolling ? Math.floor(now / 90) % 2 : 0), Math.round(wx * T) - cx - 14 * u, (Cr.y + 1) * T - cy - 16 * u + (rolling ? (Math.floor(now / 180) % 2) * u : 0), 28 * u, 20 * u); } });
     }
     if (this.splat) { ctx.globalAlpha = Math.min(1, 2.5 - this.splat.t); ctx.drawImage(splatSprite(), this.splat.x * T - cx + T / 4, this.splat.y * T - cy + T / 4, T / 2, T / 2); ctx.globalAlpha = 1; }
+    this.pushPrints(ctx, cx, cy, drawables);
     const { p, px, py } = this.pushPlayer(ctx, s, cx, cy, now, drawables);
     if (this.bird) {
       const f = this.bird.t / CONFIG.bird.flightSeconds, bx = (this.bird.x + 0.5) * T - cx + (f - 0.5) * (this.vw + 200), by = (this.bird.y - 2.5) * T - cy + Math.sin(f * Math.PI * 4) * 6;
@@ -775,6 +791,7 @@ export class Game {
         }
       } });
     }
+    this.pushPrints(ctx, cx, cy, drawables);
     const { p, px, py } = this.pushPlayer(ctx, s, cx, cy, now, drawables);
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();

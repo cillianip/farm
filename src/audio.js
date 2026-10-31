@@ -94,13 +94,13 @@ export class Sound {
     this.v = this.vary(); const t = this.ctx.currentTime, fx = this.FX[name]; if (fx) fx.call(this, t); this.v = 1;
   }
   get FX() { return FX; }
-  // soft footsteps while walking, paced by the caller
-  step(dt, moving, factor = 1) {
-    if (!moving || !this.ctx) { this.stepT = 0.2; return; }
-    this.stepT -= dt; if (this.stepT > 0) return; this.stepT = 0.32 / Math.max(0.5, factor);
-    if (this.playSample('step', 0.5)) return;
-    this.v = this.vary(0.12); const t = this.ctx.currentTime; this.noise(t, 0.08, 0.14, null, { f: 700, to: 300 }); this.osc('sine', 90, t, 0.05, 0.1, null, { to: 60 }); this.v = 1;   // a soft crunch with a little weight under it
+  // one footfall: the game calls it as each foot lands in the walk animation
+  footfall() {
+    if (!this.ctx || this.prefs.muted) return;
+    if (this.playSample('step', 0.8)) return;
+    this.v = this.vary(0.12); const t = this.ctx.currentTime; this.noise(t, 0.09, 0.3, null, { f: 900, to: 350 }); this.osc('sine', 80, t, 0.06, 0.22, null, { to: 55 }); this.v = 1;   // a crunch with weight under it
   }
+  step() { this.footfall(); }
   // the rain bed: a hiss that fades in and out with the weather
   rain(on) {
     if (!this.ctx) return;
