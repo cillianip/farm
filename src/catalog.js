@@ -65,7 +65,7 @@ export function catalog(state) {
   }
   for (const [lv, tier] of CONFIG.pump.tiers.entries()) {
     const owned = pumpCount(state, lv) + pendingCount(state, 'pump' + lv);
-    items.push({ id: 'pump' + lv, group: 'Water', family: 'Pump', tier: tier.name.replace(' pump', ''), name: tier.name, effect: `Adds ${tier.head} tiles of flow from where it stands${tier.hand ? ' · needs working each morning: a click and a few seconds' : tier.stillBelow != null ? ` · only ${tier.calmHead} on a calm day` : tier.fuelPerDay ? ` · burns ${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} of fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
+    items.push({ id: 'pump' + lv, group: 'Water', family: 'Pump', tier: tier.name.replace(' pump', ''), name: tier.name, effect: `Adds ${tier.head} tiles of flow from where it stands${tier.stillBelow != null ? ` · only ${tier.calmHead} on a calm day` : tier.fuelPerDay ? ` · burns ${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} of fuel a night` : ''}`, level: owned ? `${owned} owned` : '', price: tier.price, blocked: null });
   }
   { const PW = CONFIG.power, count = (kind) => { const held = inv => inv.slots.reduce((n, it) => n + (it?.kind === kind ? it.qty : 0), 0); return state.world.tiles.filter(t => t.obj?.kind === kind).length + held(state.inventory) + held(state.chest); };
     const owned = kind => { const n = count(kind) + pendingCount(state, kind); return n ? `${n} owned` : ''; };

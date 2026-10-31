@@ -350,9 +350,11 @@ await test('serialize/deserialize round trip and offline progress', () => {
   const json = serialize(s); const back = deserialize(json);
   assert.deepEqual(back.world.chunks, s.world.chunks); assert.equal(back.species[Object.keys(s.species)[0]].name, Object.values(s.species)[0].name);
   back.savedAt = Date.now() - 120 * 1000;              // 2 real minutes ago = 6 game hours
-  const r = applyOffline(back); assert.ok(Math.abs(r.hours - 6) < 0.01, 'hours ' + r.hours);
-  assert.ok(back.world.tiles[Y * back.world.w + X].crop.growth > 60, 'grew while away');
-  back.savedAt = Date.now() - 1e9; const r2 = applyOffline(back); assert.ok(r2.hours <= CONFIG.time.offlineMaxHours + 0.01);
+  const g0 = back.world.tiles[Y * back.world.w + X].crop.growth;
+  const r = applyOffline(back); assert.equal(r.hours, 0, 'the farm stands still while the game is closed'); assert.equal(back.world.tiles[Y * back.world.w + X].crop.growth, g0, 'nothing grew');
+  const keep = CONFIG.time.offlineMaxHours; CONFIG.time.offlineMaxHours = 24;   // with catch-up switched on it is capped
+  const r1 = applyOffline(back); assert.ok(Math.abs(r1.hours - 6) < 0.01, 'hours ' + r1.hours); assert.ok(back.world.tiles[Y * back.world.w + X].crop.growth > 60, 'grew while away');
+  back.savedAt = Date.now() - 1e9; const r2 = applyOffline(back); assert.ok(r2.hours <= CONFIG.time.offlineMaxHours + 0.01); CONFIG.time.offlineMaxHours = keep;
   assert.throws(() => deserialize('{"nope":1}'));
 });
 
@@ -767,7 +769,7 @@ await test('a sprinkler tops up every bed around it the moment it dries below th
   assert.equal(S.useItem(s, slot, X - 1, Y).msg, 'A plant grows there');
   assert.ok(S.useItem(s, slot, X, Y + 1).ok, 'set'); assert.ok(S.isSprinkler(s.world.tiles[(Y + 1) * s.world.w + X]));
   const tile = (x, y) => s.world.tiles[y * s.world.w + x];
-  { const well = WB.well; for (let y = well.y + 1; y <= Y + 1; y++) tile(well.x, y).pipe = true; for (let x = X; x <= well.x; x++) tile(x, Y + 1).pipe = true; tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0, workedDay: 99 }; s.pipeRev = 1; }   // a pipe line from the well to the sprinkler, with a hand pump at the well: the farm is past the well's own reach
+  { const well = WB.well; for (let y = well.y + 1; y <= Y + 1; y++) tile(well.x, y).pipe = true; for (let x = X; x <= well.x; x++) tile(x, Y + 1).pipe = true; tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0 }; s.pipeRev = 1; }   // a pipe line from the well to the sprinkler, with a hand pump at the well: the farm is past the well's own reach
   assert.ok(S.sprinklerFed(s, X, Y + 1), 'fed');
   tile(X + 1, Y + 1).moisture = 60;                       // already wet: no spray
   const topTo = Math.min(S0.idealMax, S0.idealMin + S0.waterPerPour), perMin = S0.waterPerPour / CONFIG.sprinkler.sprayMinutes;
@@ -811,7 +813,7 @@ await test('pipe: laid from the well a tile at a time; a sprinkler runs only on 
   for (const [x, y] of line) { s.player.x = x - 0.5; s.player.y = y + 0.5; const r = S.useItem(s, pipe(), x, y); assert.ok(r.ok, `${x},${y}: ${r.msg}`); assert.ok(tile(x, y).pipe); assert.ok(/^Laid \(\d+\)$/.test(r.float) || r.float === 'Laid (dry)', r.float); }
   assert.equal(s.inventory.slots.find(i => i?.kind === 'pipe').qty, 3);
   assert.ok(S.pipeLinked(s, E.x, E.y) && !S.pipeFed(s, E.x, E.y), 'the end of the line is linked but past the well\'s own reach');
-  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0, workedDay: 99 }; s.pipeRev++;   // a hand pump at the well head carries it on
+  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0 }; s.pipeRev++;   // a hand pump at the well head carries it on
   assert.ok(S.pipeFed(s, E.x, E.y), 'the end of the line is fed');
   // a loose section away from the line is dry
   s.player.x = 28.5; s.player.y = 23.5; let r = S.useItem(s, pipe(), 28, 24); assert.ok(r.ok && r.float === 'Laid (dry)', JSON.stringify(r)); assert.ok(!S.pipeFed(s, 28, 24));
@@ -943,22 +945,7 @@ await test('the market: an hour down the track, crops on the counter, shoppers b
 });
 
 console.log('pumps');
-await test('a hand pump needs a hand: set it and it runs today; at midnight it stops until you work it (a few seconds, some energy); the morning says so', () => {
-  const s = arm(S.createState(1)); const W2 = s.world, well = WB.well, tile = (x, y) => W2.tiles[y * W2.w + x];
-  for (let y = well.y + 1; y <= well.y + 8; y++) tile(well.x, y).pipe = true; tile(well.x, well.y + 8).obj = { kind: 'sprinkler' }; s.pipeRev = 1;
-  addItem(s.inventory, { kind: 'pump', level: 0, qty: 1 }); const slot = s.inventory.slots.findIndex(i => i?.kind === 'pump');
-  s.player.x = well.x + 0.5; s.player.y = well.y + 2.5; assert.ok(!S.sprinklerFed(s, well.x, well.y + 8), 'the well alone does not reach');
-  assert.ok(S.useItem(s, slot, well.x, well.y + 1).ok); const pump = tile(well.x, well.y + 1);
-  assert.ok(S.pumpWorked(s, pump.obj) && S.pumpRunning(s, pump) && S.sprinklerFed(s, well.x, well.y + 8), 'setting it primes it for the day');
-  assert.equal(S.workPump(s, well.x, well.y + 1).msg, 'Worked today: it pumps till you sleep');
-  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s); assert.equal(rep.handPumps, 1, 'the morning counts the pumps to work');
-  s.humidity = 60; assert.ok(!S.pumpWorked(s, pump.obj) && !S.pumpRunning(s, pump) && !S.sprinklerFed(s, well.x, well.y + 8), 'a new day: unworked, it stands still');
-  s.player.x = well.x + 0.5; s.player.y = well.y + 2.5; const e = s.energy; let r = S.workPump(s, well.x, well.y + 1); assert.ok(r.ok && r.float === 'Pumping', JSON.stringify(r)); assert.equal(s.energy, e - CONFIG.energy.pump);
-  assert.ok(S.pumpRunning(s, pump) && S.sprinklerFed(s, well.x, well.y + 8), 'worked: it runs again');
-  s.player.x = well.x + 6.5; assert.equal(S.workPump(s, well.x, well.y + 1).msg, 'Worked today: it pumps till you sleep');
-  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 1 }; s.pipeRev++; assert.ok(S.pumpWorked(s, tile(well.x, well.y + 1).obj), 'a windmill needs no one');
-});
-await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split gives each branch what it asks for and shares the rest; the windmill turns slowly in calm air; the engine burns a can a night', () => {
+await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split gives each branch what it asks for and shares the rest; the windmill needs no one; the engine burns a can a night', () => {
   const s = arm(S.createState(1)); const W = s.world, well = WB.well; s.money = 100; s.humidity = 50; const H0 = CONFIG.pump.wellHead, T = CONFIG.pump.tiers;
   const tile = (x, y) => W.tiles[y * W.w + x];
   // a trunk from the well down to row Y+1, then west along it: sprinklers at four distances
@@ -1009,8 +996,7 @@ await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks
   // a windmill: still when the air is calm
   s.inventory.slots[slot()] = { kind: 'pump', level: 1, qty: 1 };
   r = S.useItem(s, slot(), well.x, well.y + 2); assert.ok(r.ok, r.msg);
-  s.humidity = T[1].stillBelow - 1; const mill = tile(well.x, well.y + 2); assert.ok(S.pumpRunning(s, mill) && S.pumpCalm(s, mill.obj)); assert.equal(S.pumpHead(s, mill.obj), T[1].calmHead); walk(); assert.equal(S.headAt(s, well.x, well.y + 3), H0 - 1 + T[1].calmHead - 1, 'calm day: it turns slowly');
-  s.humidity = 60; assert.ok(!S.pumpCalm(s, mill.obj)); assert.equal(S.pumpHead(s, mill.obj), T[1].head); walk(); assert.ok(S.sprinklerFed(s, X - 1, row), 'wind: it turns and the whole row runs');
+  s.humidity = 20; const mill = tile(well.x, well.y + 2); assert.ok(S.pumpRunning(s, mill) && !S.pumpCalm(s, mill.obj)); assert.equal(S.pumpHead(s, mill.obj), T[1].head); walk(); assert.ok(S.sprinklerFed(s, X - 1, row), 'calm or windy, it turns and the whole row runs');
   // an engine on loose pipe counts for nothing and burns nothing; in the flow it burns a can a night
   tile(28, 26).pipe = true; tile(28, 26).obj = { kind: 'pump', level: 2, fuel: 2 }; s.pipeRev++;   // a loose section, no line to the well
   assert.ok(!S.pipeLinked(s, 28, 26) && !S.pumpInFlow(s, 28, 26)); walk();
@@ -1051,7 +1037,7 @@ await test('Sprinkler II and III reach 2 and 3 tiles and drink more of the flow:
   s.player.x = X + 0.5; s.player.y = row + 1.5;
   let r = S.useItem(s, slot(), X, row); assert.ok(r.ok && /No pressure: 0 tiles of flow reach here, it drinks 4/.test(r.msg), JSON.stringify(r)); assert.equal(tile(X, row).obj.level, 2);
   assert.equal(S.headAt(s, X, row), 0); assert.ok(!S.sprinklerCovers(s, X + 3, row + 3));
-  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0, workedDay: 99 }; s.pipeRev++;
+  tile(well.x, well.y + 1).obj = { kind: 'pump', level: 0 }; s.pipeRev++;
   assert.ok(S.sprinklerFed(s, X, row)); assert.ok(S.headAt(s, X, row) >= CONFIG.sprinkler.tiers[2].draw);
   tile(X - 1, row).pipe = true; s.pipeRev++; assert.equal(S.headAt(s, X - 1, row), S.headAt(s, X, row) - CONFIG.sprinkler.tiers[2].draw - 1, 'a III drinks 4 of the flow'); tile(X - 1, row).pipe = false; s.pipeRev++;
   assert.ok(S.sprinklerCovers(s, X + 3, row + 3) && !S.sprinklerCovers(s, X + 4, row), 'reach 3');

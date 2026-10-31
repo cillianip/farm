@@ -172,7 +172,7 @@ export class UI {
       html += `<div class="pc-row"><span>Waters</span><span>the ${n} beds around it</span></div><div class="pc-row"><span>Flow</span><span>drinks ${tier.draw} ${tier.draw === 1 ? 'tile' : 'tiles'} of it</span></div><div class="pc-row"><span>Water bill</span><span>${formatMoney(CONFIG.sprinkler.pricePerPour)} a pour</span></div><div class="pc-note">Set it on pipe the flow reaches with at least that much left. While you are awake it tops up any bed around it the moment it dries below the band. The hoe picks it up.</div>`;
     } else if (it.kind === 'pump') {
       const tier = CONFIG.pump.tiers[it.level || 0];
-      html += `<div class="pc-row"><span>Adds</span><span>${tier.head} tiles of flow</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} a night, holds ${CONFIG.fuel.tank}</span></div>` : '') + `<div class="pc-note">Set it on pipe the flow still reaches: from there the flow carries ${tier.head} tiles further. The well alone gives ${CONFIG.pump.wellHead}, a tile costs 1, a split gives each branch what it asks for and shares the rest, and a sprinkler drinks its draw.${tier.hand ? ' It needs your hands: click it each morning and it pumps till you sleep.' : ''}${tier.stillBelow != null ? ` On a calm day it turns slowly and adds ${tier.calmHead}.` : ''}${tier.fuelPerDay ? ' Pour fuel in with cans in hand; empty, it stops.' : ''} The hoe picks it up.</div>`;
+      html += `<div class="pc-row"><span>Adds</span><span>${tier.head} tiles of flow</span></div>` + (tier.fuelPerDay ? `<div class="pc-row"><span>Fuel</span><span>${tier.fuelPerDay === 1 ? 'a can' : tier.fuelPerDay + ' cans'} a night, holds ${CONFIG.fuel.tank}</span></div>` : '') + `<div class="pc-note">Set it on pipe the flow still reaches: from there the flow carries ${tier.head} tiles further. The well alone gives ${CONFIG.pump.wellHead}, a tile costs 1, a split gives each branch what it asks for and shares the rest, and a sprinkler drinks its draw.${tier.stillBelow != null ? ` On a calm day it turns slowly and adds ${tier.calmHead}.` : ''}${tier.fuelPerDay ? ' Pour fuel in with cans in hand; empty, it stops.' : ''} The hoe picks it up.</div>`;
     } else if (it.kind === 'generator') {
       const G = CONFIG.power.generator;
       html += `<div class="pc-row"><span>Makes</span><span>${G.power} power</span></div><div class="pc-row"><span>Fuel</span><span>${G.fuelPerDay === 1 ? 'a can' : G.fuelPerDay + ' cans'} a night while on, holds ${CONFIG.fuel.tank}</span></div><div class="pc-note">Set it on your land, pour fuel in with cans in hand, and lay power line from it. Each machine on the line draws its share; when the line asks for more than the generator makes, the nearest run. Click it to switch it off and on: off, it burns nothing. The hoe picks it up.</div>`;
@@ -574,7 +574,6 @@ export class UI {
           card.appendChild(txt); d.appendChild(card);
         } else d.appendChild(el('div', 'mr-line', esc(describeBreed(s, r))));
       }
-      if (report.handPumps) sec('💧', 'Pumps', `${report.handPumps === 1 ? 'The hand pump wants' : report.handPumps + ' hand pumps want'} working before the sprinklers run: click ${report.handPumps === 1 ? 'it' : 'each'} with empty hands.`);
       if (report.compost) sec('♻', 'Compost', `The heap rotted down overnight: ${esc(report.compost)} waits in the bin.`);
       const ok = el('button', 'primary', 'Good morning'); ok.style.marginTop = '12px'; ok.onclick = () => { this.closePanel(); this.game.afterMorning(); }; body.appendChild(ok);
     });
@@ -681,7 +680,7 @@ export class UI {
       rrow.appendChild(el('span', 'muted', 'Fast helps an old machine'));
       body.appendChild(rrow);
       body.appendChild(el('div', 'pc-sec', 'Save'));
-      body.appendChild(el('div', null, 'The game saves when you sleep and every 30 seconds. Offline time counts (growth, drying) up to one game day.'));
+      body.appendChild(el('div', null, 'The game saves when you sleep and every 30 seconds. The farm stands still while the game is closed or the tab is hidden: nothing grows, dries or withers behind your back.'));
       body.appendChild(el('div', 'pc-sec', 'Keys'));
       body.appendChild(el('div', null, 'WASD or arrows walk · 1–5 pick a pocket · E uses what you stand by · N shows the network view (what is fed, powered and running) · Esc opens this.'));
       const row = el('div'); row.style.margin = '8px 0';

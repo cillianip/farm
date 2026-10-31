@@ -14,7 +14,7 @@ export const CONFIG = {
     dayRealSeconds: 480,     // one full 24h game day in real seconds
     wakeHour: 6,             // the day starts here after sleeping
     passOutHour: 26,         // 2:00 next day → forced sleep
-    offlineMaxHours: 24,     // offline progress is capped at this many game hours
+    offlineMaxHours: 0,      // the farm stands still while the game is closed or the tab is hidden (set hours to let it catch up)
   },
 
   // Soil moisture 0–100 %. Each pour adds waterPerPour; the sun takes evaporationPerHour; a night takes nightDry.
@@ -38,7 +38,7 @@ export const CONFIG = {
   // seeds = fruits per harvest × seedsPerFruit, rolled within ±seedVariance, never below minSeeds. Drying takes dryHours
   // × (0.7 + size × 0.6) × (0.8 + thirst × 0.4): big, juicy fruit dries slowly, small dry grain fast.
   seedRack: { trays: 1, dryHours: 4, seedsPerFruit: 2, minSeeds: 2, seedVariance: 0.35 },
-  actions: { hoeSeconds: 0.9, waterSeconds: 0.7, fillSeconds: 1.0, drinkSeconds: 0.9, eatSeconds: 1.6, plantSeconds: 0.5, pumpSeconds: 2.5 },
+  actions: { hoeSeconds: 0.9, waterSeconds: 0.7, fillSeconds: 1.0, drinkSeconds: 0.9, eatSeconds: 1.6, plantSeconds: 0.5 },
   // Quick hands: seconds per crop into the crate (or onto a tray) at each level. Level 1 is you, untrained.
   hands: { dropSeconds: [0.35, 0.22, 0.12] },
   // Sprinkler I (stage 3, the first automation). Sits on a tile of your land and, while you are awake, gives a pour to
@@ -59,7 +59,7 @@ export const CONFIG = {
   pipe: { packSize: 10, packPrice: 20 },
   // Pumps: flow. (The old model: the well ran `wellFeeds` sprinklers and every pump on fed pipe added
   // its `feeds`. Past the cap the sprinklers furthest down the line (by pipe distance) run dry. The windmill stands
-  // turns slowly when the air is calm (humidity under `stillBelow`: `calmHead` instead of `head`); the engine burns fuel every day it stands on fed pipe.
+  // the engine burns fuel every day it stands on fed pipe. Every pump gives a constant feed: a farm that stops when you are not looking is misery.
   // Power (the start of stage 4). A generator stands on your land and, while switched on and fuelled, burns a can of fuel a night and
   // makes `power` for the line laid from it; each machine on the line draws its own `power`, nearest the generator
   // first by line distance. The line carries power only. A picker on powered line takes `perHour` ripe crops an hour
@@ -77,8 +77,8 @@ export const CONFIG = {
   // `draw` from the flow at its tile and runs only when that much arrives; a running pump standing in the flow adds its
   // `head` tiles from where it stands. Pipe the flow does not reach is dry. The well alone wets the yard, not the farm.
   pump: { wellHead: 6, tiers: [
-    { name: 'Hand pump', head: 16, price: 120, hand: true },   // hand: it needs working each morning (a click, a few seconds, some energy) or it stands still
-    { name: 'Windmill', head: 36, calmHead: 18, price: 400, stillBelow: 30 },   // calmHead: what it adds on a calm day (humidity under stillBelow), turning slowly
+    { name: 'Hand pump', head: 16, price: 200 },   // priced so two of them cost a windmill and give less, on two tiles
+    { name: 'Windmill', head: 36, price: 400 },
     { name: 'Engine', head: 90, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
   ] },
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
@@ -115,7 +115,7 @@ export const CONFIG = {
     nightGrowth: 0.5,        // growth speed from 8pm to 6am, awake or asleep: plants slow down in the dark
   },
 
-  energy: { max: 100, hoe: 2, water: 1, plant: 0.5, harvest: 1, clear: 1, place: 1, pump: 4 },   // pump: working a hand pump for the day
+  energy: { max: 100, hoe: 2, water: 1, plant: 0.5, harvest: 1, clear: 1, place: 1 },
   needs: { hungerHours: 36, thirstHours: 24, starvingEnergyPerHour: 3,     // hours for a full bar to empty; energy lost per hour at 0
     weakBelow: 25, weakSpeed: 0.7,                                          // under this hunger or thirst you walk slower
     tiredBelow: 20, tiredSpeed: 0.6, tiredActionSlow: 1.5,                 // under this energy you drag your feet and every action takes longer
