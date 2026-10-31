@@ -126,7 +126,7 @@ export function roles(sp) {
   if (g.count >= 4) out.push('seed-rich'); else if (g.count >= 3) out.push(`${g.count} fruits`);
   if (g.thirst <= 0.3) out.push('needs little water'); else if (g.thirst >= 0.7) out.push('thirsty');
   if (g.size >= 0.8) out.push('big fruit');
-  if (sp.rarity >= 4) out.push('breeding stock');
+  if (sp.rarity >= 4) out.push('breeding stock: rare genes to cross from');
   if (g.family === 'flower') out.push('flower');
   return out;
 }

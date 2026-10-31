@@ -403,7 +403,7 @@ export function useItem(state, slotIndex, x, y) {
       if (!t.crop.dead && t.crop.growth >= 100) return harvest(state, t, x, y);
       const c = t.crop, wasDead = c.dead;
       const got = wasDead ? { kind: 'withered', qty: 1 } : cropStage(c) === 0 && !c.unknown ? { kind: 'seed', species: c.speciesId, qty: 1 } : { kind: 'pulled', species: c.speciesId, qty: 1, ...(c.unknown ? { unknown: true } : {}) };
-      if (!wasDead && !hasRoom(state.inventory, got)) return fail('No pocket free');   // the plant comes with you; a withered one is lost if there is no room
+      if (!hasRoom(state.inventory, got)) return fail(wasDead ? 'No pocket free for the withered plant' : 'No pocket free');   // the plant comes with you, withered or not
       if (!spend(state, E.clear)) return fail('Too tired');
       t.crop = null; t.fert = null;
       addItem(state.inventory, got);
@@ -691,6 +691,11 @@ export function pressure(state) {
   let pumps = 0, running = 0, fed = 0;
   const order = [...net.set].sort((a, b) => net.dist.get(a) - net.dist.get(b));
   const next = i => { const x = i % w.w, y = (i - x) / w.w, d = net.dist.get(i), out = []; for (const [dx, dy] of N4) { const k = idx(x + dx, y + dy); if (net.dist.get(k) === d + 1) out.push(k); } return out; };
+  // What has to arrive at a tile for everything beyond it to run: its sprinkler's draw, a tile for the step on, and the
+  // needs of every branch it feeds; a pump there pays for part of that, but something must still reach it to turn it.
+  const need = new Map();
+  const needOf = i => { if (need.has(i)) return need.get(i); const t = w.tiles[i], out = next(i); let n = isSprinkler(t) ? sprinklerTier(t.obj).draw : 0; if (out.length) n += 1 + out.reduce((a, k) => a + needOf(k), 0); if (isPump(t) && pumpRunning(state, t)) n = Math.max(1, n - pumpTier(t.obj).head); need.set(i, n); return n; };
+  const give = (k, v) => { if (v > 0) head.set(k, (head.get(k) || 0) + v); };
   const exits = order.filter(i => net.dist.get(i) === 1);
   for (const i of exits) head.set(i, Math.floor(CONFIG.pump.wellHead / exits.length));
   for (const i of order) {
@@ -698,9 +703,14 @@ export function pressure(state) {
     if (hIn > 0) wet.add(i);
     if (isSprinkler(t)) { fed++; const d = sprinklerTier(t.obj).draw; if (hIn >= d) { on.add(i); r -= d; } }
     if (isPump(t)) { pumps++; if (hIn > 0 && pumpRunning(state, t)) { running++; pumpsOn.add(i); r += pumpTier(t.obj).head; } }
-    const out = next(i); if (!out.length || r <= 0) continue;
-    const share = Math.floor((r - 1) / out.length); if (share <= 0) continue;
-    for (const k of out) head.set(k, (head.get(k) || 0) + share);
+    const out = next(i); if (!out.length || r <= 1) continue;
+    if (out.length === 1) { give(out[0], r - 1); continue; }
+    // a split: each branch gets what it asks for, the smallest asker first so a stub never starves a long run; what no
+    // branch asked for is shared evenly, the odd tile going to the branch that asked for most
+    const kids = out.map(k => [k, needOf(k)]).sort((a, b) => a[1] - b[1]); let left = r - 1;
+    const got = kids.map(([, n], j) => { const v = Math.min(n, Math.floor(left / (kids.length - j))); left -= v; return v; });
+    const each = Math.floor(left / kids.length); left -= each * kids.length;
+    kids.forEach(([k], j) => give(k, got[j] + each + (j === kids.length - 1 ? left : 0)));
   }
   net.pressure = { head, on, wet, fed, pumps, running, pumpsOn }; net.pressureH = h;
   return net.pressure;

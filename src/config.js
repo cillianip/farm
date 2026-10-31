@@ -72,7 +72,8 @@ export const CONFIG = {
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
     picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 } },
   // Flow has a range in tiles, like a signal. The well gives `wellHead` tiles of flow to the pipe leaving it; every tile
-  // travelled costs 1; where the pipe splits, each branch gets an equal share of what is left; a sprinkler drinks its
+  // travelled costs 1; where the pipe splits, each branch gets what it asks for (the sprinklers and tiles beyond it) and
+  // what none asked for is shared evenly, so a short stub never starves a long run; a sprinkler drinks its
   // `draw` from the flow at its tile and runs only when that much arrives; a running pump standing in the flow adds its
   // `head` tiles from where it stands. Pipe the flow does not reach is dry. The well alone wets the yard, not the farm.
   pump: { wellHead: 6, tiers: [

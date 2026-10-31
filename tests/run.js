@@ -125,7 +125,11 @@ await test('dry crops lose health and die; withered plants can be cleared', () =
   tickMinutes(s, 60 * 10); assert.ok(t.crop.health < 100 && !t.crop.dead);
   tickMinutes(s, 60 * 60); assert.ok(t.crop.dead, 'dead after long drought');
   assert.equal(S.cropStage(t.crop), 'dead');
-  s.energy = 100; assert.ok(S.useItem(s, 0, X, Y).ok); assert.equal(t.crop, null);
+  s.energy = 100;
+  const empties = s.inventory.slots.map((it, i) => it ? -1 : i).filter(i => i >= 0); for (const i of empties) s.inventory.slots[i] = { kind: 'sprinkler', level: 0, qty: 1 };
+  const r = S.useItem(s, 0, X, Y); assert.ok(!r.ok && /No pocket free/.test(r.msg), 'full pockets: the withered plant is not thrown away: ' + r.msg); assert.ok(t.crop?.dead, 'it stays in the bed');
+  for (const i of empties) s.inventory.slots[i] = null;
+  assert.ok(S.useItem(s, 0, X, Y).ok); assert.equal(t.crop, null);
   assert.ok(s.inventory.slots.some(i => i?.kind === 'withered'));
 });
 await test('ripe crops rot and then die', () => {
@@ -880,7 +884,7 @@ await test('hybrid vigour: a cross between families steps the price up and passe
 });
 
 console.log('pumps');
-await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split shares evenly; the windmill stands still in calm air; the engine burns a can a night', () => {
+await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks its draw, a pump in the flow adds its head from where it stands, a split gives each branch what it asks for and shares the rest; the windmill stands still in calm air; the engine burns a can a night', () => {
   const s = arm(S.createState(1)); const W = s.world, well = WB.well; s.money = 100; s.humidity = 50; const H0 = CONFIG.pump.wellHead, T = CONFIG.pump.tiers;
   const tile = (x, y) => W.tiles[y * W.w + x];
   // a trunk from the well down to row Y+1, then west along it: sprinklers at four distances
@@ -912,11 +916,19 @@ await test('flow: the well gives a few tiles, a tile costs 1, a sprinkler drinks
   assert.equal(S.headAt(s, well.x, well.y + 2), H0 - 1, 'the pump\'s own tile gets what arrives'); assert.equal(S.headAt(s, well.x, well.y + 3), H0 - 1 + T[0].head - 1, 'the next gets that plus the pump\'s head, less the tile');
   assert.ok(spots.every(({ x, y }) => S.sprinklerFed(s, x, y)), 'with the pump every sprinkler runs');
   tickMinutes(s, 0.05); assert.ok(S.moistureOf(tile(X - 1, row + 1)) > 0, 'and the far one pours');
-  // a split shares what is left: a branch north off the row
+  // a split: a dead-end stub north off the row asks for 2 (two tiles on), the west run asks for its three sprinklers and
+  // the tiles between; each gets what it asks for and the rest is shared, nothing dropped
   for (let y = row - 1; y >= row - 3; y--) tile(X + 3, y).pipe = true; s.pipeRev++;
-  const atFork = S.headAt(s, X + 3, row), share = Math.floor((atFork - 1) / 2);
-  assert.ok(atFork > 2); assert.equal(S.headAt(s, X + 2, row), share, 'west branch'); assert.equal(S.headAt(s, X + 3, row - 1), share, 'north branch'); assert.equal(S.headAt(s, X + 3, row - 2), share - 1);
-  for (let y = row - 1; y >= row - 3; y--) tile(X + 3, y).pipe = false; s.pipeRev++; walk();
+  const atFork = S.headAt(s, X + 3, row), west = S.headAt(s, X + 2, row), north = S.headAt(s, X + 3, row - 1), westNeed = 1 + 1 + 1 + 1 + 1 + 1;   // X+2 (1) · X+1 · X (1) · X-1 (1) and the three steps
+  assert.ok(atFork - 1 > westNeed + 2, 'plenty at the fork: ' + atFork);
+  assert.equal(west + north, atFork - 1, 'everything that arrives is handed on'); assert.ok(north >= 2 && west >= westNeed, `west ${west} north ${north}`);
+  assert.equal(north - 2, Math.floor((atFork - 1 - westNeed - 2) / 2), 'the stub gets its 2 and half the surplus'); assert.equal(S.headAt(s, X + 3, row - 2), north - 1);
+  assert.ok([X + 2, X, X - 1].every(x => S.sprinklerFed(s, x, row)), 'the west run still runs');
+  // starve it: with just the well's head at the fork (pump off) the stub would have taken half; now the long run gets what little there is
+  tile(X + 3, row).obj = { kind: 'sprinkler', level: 1 }; s.pipeRev++;   // a Sprinkler II at the fork drinks 2 first
+  const fewer = S.headAt(s, X + 3, row) - 2 - 1; assert.ok(fewer < westNeed + 2, 'now short: ' + fewer);
+  const w2 = S.headAt(s, X + 2, row), n2 = S.headAt(s, X + 3, row - 1); assert.equal(w2 + n2, fewer); assert.equal(n2, Math.min(2, Math.floor(fewer / 2))); assert.equal(w2, fewer - n2);
+  tile(X + 3, row).obj = null; for (let y = row - 1; y >= row - 3; y--) tile(X + 3, y).pipe = false; s.pipeRev++; walk();
   // the hoe takes the pump back with its level, and the flow drops again
   r = S.useItem(s, 0, well.x, well.y + 2); assert.ok(r.ok && r.float === 'Picked up'); assert.ok(tile(well.x, well.y + 2).pipe, 'the pipe stays');
   assert.ok(s.inventory.slots.some(i => i?.kind === 'pump' && i.level === 0)); assert.ok(!S.sprinklerFed(s, X - 1, row)); walk();
