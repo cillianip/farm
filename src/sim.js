@@ -7,6 +7,7 @@ import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName
 import { salePrice, breedCost, seedBookBonus, formatMoney } from './economy.js';
 import { makeCompost } from './fertiliser.js';
 import { deliverOrders, collectParcels } from './catalog.js';
+import * as M from './market.js';
 export { collectParcels };
 
 export const MIN_PER_DAY = 1440;
@@ -34,6 +35,7 @@ export function createState(seed = randomSeed()) {
     can: { water: 0, capacity: CONFIG.can.capacity, level: 0 },
     rack: { hoe: true, can: true },                 // tools still hanging on the rack
     bird: { nextAt: null, pending: null, today: 0, count: 0 },
+    market: M.makeMarket(),
     crate: { items: [], capacity: CONFIG.crate.capacity, lastSale: null, pickups: 0, pendingPickup: null },   // items: {species, q, qty}; pickups 1 = the cart also comes at noon
     seedRack: { trays: [{ item: null, readyAt: null, startedAt: null }] },   // trays: item {species, q, seeds}, readyAt in game minutes
     orders: [], deeds: 0,                         // catalogue orders on tonight's cart; land deeds waiting to be claimed
@@ -79,6 +81,8 @@ export const walkFactor = state => { const N = CONFIG.needs; const weak = (state
 export const actionFactor = state => isTired(state) ? CONFIG.needs.tiredActionSlow : 1;
 // Older saves: the chest tile, and five pockets instead of a hidden 27-slot bag (the overflow goes into the chest).
 export function migrate(state) {
+  M.ensureMarket(state);
+  { const rs = tileAt(state.world, BUILDINGS.roadsign.x, BUILDINGS.roadsign.y); if (rs && rs.t === 'grass') { rs.t = 'roadsign'; rs.tilled = false; rs.crop = null; rs.obj = null; } }   // older saves: the sign to the market
   const ct = tileAt(state.world, BUILDINGS.chest.x, BUILDINGS.chest.y);
   if (ct && ct.t === 'grass') { ct.t = 'chest'; ct.tilled = false; ct.crop = null; }
   const n = CONFIG.inventory.slots;
@@ -144,6 +148,15 @@ export function advance(state, realSeconds) {
   return events;
 }
 
+// The walk to the market and back: an hour of the clock each way, and the farm goes on without you. If the night
+// catches you on the road the forced sleep puts you home.
+export function travel(state, dest) {
+  const chk = M.depart(state, dest); if (!chk.ok) return chk;
+  const events = advance(state, CONFIG.market.travelMinutes / gameMinutesPerRealSecond());
+  if (!events.some(e => e.type === 'sleep')) M.arrive(state, dest);
+  return { ok: true, msg: '', events };
+}
+
 // ---------- growth ----------
 export function speciesOfCrop(state, crop) { return state.species[crop.speciesId]; }
 export function cropStage(crop) {
@@ -195,6 +208,7 @@ export function tick(state, dtMinutes, opts = {}) {
   state.hunger = Math.max(0, (state.hunger ?? 100) - dtH * drain * 100 / N.hungerHours);
   state.thirst = Math.max(0, (state.thirst ?? 100) - dtH * drain * 100 / N.thirstHours);
   if (state.hunger <= 0 || state.thirst <= 0) state.energy = Math.max(0, state.energy - N.starvingEnergyPerHour * dtH);
+  if (state.market?.at) M.marketTick(state, dtMinutes);
   // the midday cart: when the clock crosses the pickup hour it empties the crate and pays on the spot
   if (state.crate.pickups) { const m = CONFIG.crate.middayHour * 60, before = (now - dtMinutes) % MIN_PER_DAY, after = now % MIN_PER_DAY;
     if (before < m && after >= m) { const sale = collectCrate(state); if (sale) { const D = today(state); D.sale += sale.total; D.sold += sale.count; D.pickups = (D.pickups || 0) + 1; state.crate.pendingPickup = sale; } } }
@@ -924,6 +938,7 @@ export function takeHeld(state, x, y) {
 export function sleep(state, opts = {}) {
   const report = { day: dayOf(state) + 1, forced: !!opts.forced, rain: false, breeder: null, compost: null, lines: [] };
   const r = makeRng(state.seed ^ hashString('night' + dayOf(state)));
+  if (state.market?.at) { M.arrive(state, 'farm'); report.lines.push('You walked home from the market in the dark.'); }
   // jump to wakeHour of the next day (or of today if it's already past midnight)
   const fedAtBed = Math.min(state.hunger ?? 100, state.thirst ?? 100) / 100;
   const h = hourOf(state);

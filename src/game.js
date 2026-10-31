@@ -4,13 +4,15 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite } from './render/crops.js';
 import { drawText, textWidth } from './render/font.js';
 import { formatMoney } from './economy.js';
 import { catalogueFlag, markCatalogueSeen } from './catalog.js';
+import * as M from './market.js';
+import { MARKET } from './market.js';
 import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
@@ -125,6 +127,11 @@ export class Game {
   interactKey() {
     if (this.ui.openPanel) return this.ui.closePanel();
     if (this.sleeping || this.action || this.state.carrying) return;
+    if (this.state.market?.at) {   // the stall or a merchant you stand by
+      const L = MARKET.laneY, p = this.state.player; let best = null;
+      for (const st of Object.values(MARKET.stalls)) { const b = { x: st.x, y: L - 1, w: 2, h: 1 }, cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h), d = Math.hypot(p.x - cx, p.y - cy); if (d < 2.4 && (!best || d < best.d)) best = { d, open: () => st.key === 'yours' ? this.ui.openStall() : this.ui.openMerchant(st.key) }; }
+      if (best) best.open(); return;
+    }
     const stations = [['seedrack', { ...S.objectPos(this.state, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => this.state.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
     for (const { x, y, t } of S.chestTiles(this.state)) stations.push(['fchest', { x, y, w: 1, h: 1 }, () => this.ui.openChest(t.obj)]);
     const BP = S.objectPos(this.state, 'bench'); if (BP && this.state.carrying !== 'bench') stations.push(['bench', { ...BP, w: 1, h: 1 }, () => this.ui.openBench()]);
@@ -145,6 +152,7 @@ export class Game {
     }
     const it = this.hotbarItem();
     if (this.hit && this.interact(this.hit)) return;
+    if (s.market?.at) return;
     const b = buildingAt(s.world, tx, ty);
     if (b === 'house') return this.ui.toast('The door is on the porch.');
     if (b) return;
@@ -169,6 +177,7 @@ export class Game {
   hotbarItem() { return this.state.inventory.slots[this.selected]; }
   // Everything clickable that is not a soil tile: a rect to highlight (world px, 16 per tile) and a prompt.
   interactables() {
+    if (this.state.market?.at) return this.marketInteractables();
     const s = this.state, B = BUILDINGS, it = this.hotbarItem(), h = S.hourOf(s), out = [];
     const H = B.house, hb = (H.y + H.h + 1) * 16 - 120;
     out.push({ kind: 'house', near: H, rect: [H.x * 16 + 37, hb + 68, 18, 40], label: h >= 18 || h < CONFIG.time.wakeHour ? 'Sleep' : 'Sleep after 6pm' });
@@ -197,6 +206,7 @@ export class Game {
     if (!this.mouse.inside) return null;
     const mx = (this.mouse.x + this.cam.x) / CONFIG.scale, my = (this.mouse.y + this.cam.y) / CONFIG.scale;
     for (const o of this.interactables()) { const [x, y, w, h] = o.rect; if (mx >= x && mx < x + w && my >= y && my < y + h) return o; }
+    if (this.state.market?.at) return null;
     const t = tileAt(this.state.world, this.mouse.tx, this.mouse.ty);
     if (t?.crop && !t.crop.dead && t.crop.growth >= 100) return { kind: 'harvest', rect: [this.mouse.tx * 16, this.mouse.ty * 16, 16, 16], label: 'Harvest', near: null };
     const it = this.hotbarItem(), p = this.state.player;   // eat: the cursor on your own body while holding produce, and no ripe crop under it
@@ -239,6 +249,10 @@ export class Game {
       case 'machine': { if (it) { this.ui.toast('Empty hands to take the crops'); return true; } const r = S.takeHeld(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('harvest'); this.save(); } return true; }
       case 'generator': { if (it?.kind === 'fuel') { const r = S.useItem(s, this.selected, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('move'); this.save(); } return true; } const r = S.toggleGenerator(s, o.x, o.y); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('move'); this.save(); } return true; }
       case 'sign': { this.openSign(); return true; }
+      case 'roadsign': { this.travelTo('market'); return true; }
+      case 'homesign': { this.travelTo('farm'); return true; }
+      case 'stall': { if (it?.kind === 'crop') { const r = M.stock(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 1, o.y - 0.2, '#f6c453'); this.sound.play('drop'); } } else this.ui.openStall(); return true; }
+      case 'merchant': { this.ui.openMerchant(o.key); return true; }
       case 'handpump': { const t = s.world.tiles[o.y * s.world.w + o.x]; if (S.pumpWorked(s, t.obj)) { this.ui.toast('Worked today: it pumps till you sleep'); return true; } this.startAction('pump', o.x, o.y, CONFIG.actions.pumpSeconds); return true; }
       case 'fchest': { const ch = s.world.tiles[o.y * s.world.w + o.x].obj; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'chest': { if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BUILDINGS.chest.x + 0.5, BUILDINGS.chest.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(); return true; }
@@ -271,6 +285,7 @@ export class Game {
   }
   // what the hover card shows as the tile's title
   tileInfo(x, y) {
+    if (this.state.market?.at) return this.marketInfo(x, y);
     const w = this.state.world, t = tileAt(w, x, y);
     if (!t) return { title: '' };
     if (t.t === 'house') return { title: 'Farmhouse', sub: 'Your home.' };
@@ -329,6 +344,8 @@ export class Game {
     if (!this.sleeping) {
       const events = S.advance(s, dt);
       for (const e of events) if (e.type === 'sleep') { this.save(); this.ui.openMorning(e.report); }
+      for (const ev of (s.market?.events || [])) if (ev.type === 'sale') { this.addFloat(`+${formatMoney(ev.total)}`, ev.x, ev.y - 0.6, '#f6c453'); this.sound.play('coin'); }
+      if (s.market?.events?.length) s.market.events = [];
     }
     this.moving = false;
     if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const h = this.press.hit, r = h.kind === 'fchest' ? S.pickUpChest(s, h.x, h.y) : S.pickUp(s, h.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
@@ -362,8 +379,9 @@ export class Game {
     // the midday cart: rolls up the track, takes the crate, rolls away
     if (s.crate.pendingPickup && !this.cart) { this.cart = { t: 0, sale: s.crate.pendingPickup, paid: false }; s.crate.pendingPickup = null; }
     if (this.cart) { this.cart.t += dt; if (this.cart.t < dt * 1.5) this.sound.play('cart'); if (!this.cart.paid && this.cart.t > 2.0) { this.cart.paid = true; this.sound.play('coin'); this.addFloat(`+${formatMoney(this.cart.sale.total)}`, BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.6, '#f6c453'); this.ui.toast(`The cart took ${this.cart.sale.count} ${this.cart.sale.count === 1 ? 'crop' : 'crops'} for ${formatMoney(this.cart.sale.total)}.`); } if (this.cart.t > 5) this.cart = null; }
-    this.cam.x = Math.max(0, Math.min(s.world.w * T - this.vw, s.player.x * T - this.vw / 2));
-    this.cam.y = Math.max(0, Math.min(s.world.h * T - this.vh, s.player.y * T - this.vh / 2));
+    const ww = s.market?.at ? MARKET.w : s.world.w, wh = s.market?.at ? MARKET.h : s.world.h;   // a small place sits centred
+    this.cam.x = ww * T < this.vw ? -(this.vw - ww * T) / 2 : Math.max(0, Math.min(ww * T - this.vw, s.player.x * T - this.vw / 2));
+    this.cam.y = wh * T < this.vh ? -(this.vh - wh * T) / 2 : Math.max(0, Math.min(wh * T - this.vh, s.player.y * T - this.vh / 2));
     this.mouse.tx = Math.floor((this.mouse.x + this.cam.x) / T); this.mouse.ty = Math.floor((this.mouse.y + this.cam.y) / T);
     this.hit = this.action || this.sleeping || this.ui.openPanel || s.carrying || this.hotbarHover >= 0 ? null : this.hitTest();
     { const hk = this.hit ? this.hit.kind + ':' + this.hit.label : ''; if (hk && hk !== this.lastHitKey) this.sound.play('hover'); this.lastHitKey = hk; }   // a tick as the cursor finds each thing
@@ -385,7 +403,7 @@ export class Game {
     p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
     const wf = S.walkFactor(this.state), sp = CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * wf;
     const w = this.state.world, rad = 0.3;
-    const free = (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
+    const free = this.state.market?.at ? ((x, y) => M.walkable(x, y)) : (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
     if (free(p.x + dx * sp, p.y)) p.x += dx * sp;
     if (free(p.x, p.y + dy * sp)) p.y += dy * sp;
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
@@ -432,6 +450,7 @@ export class Game {
 
   // ---------- render ----------
   render(now) {
+    if (this.state.market?.at) return this.renderMarket(now);
     const ctx = this.ctx, s = this.state, w = s.world;
     const cx = Math.round(this.cam.x), cy = Math.round(this.cam.y);
     ctx.fillStyle = '#2b4a26'; ctx.fillRect(0, 0, this.vw, this.vh);
@@ -502,6 +521,7 @@ export class Game {
     for (const [key, tool] of [['rackHoe', 'hoe'], ['rackCan', 'can']]) { if (s.carrying === key) continue; const R = S.objectPos(s, key); drawables.push({ y: R.y + 1, draw: () => ctx.drawImage(rackSprite(tool, s.rack[tool]), R.x * T - cx, (R.y + 1) * T - cy - 24 * CONFIG.scale, T, 24 * CONFIG.scale) }); }
     const Wl = BUILDINGS.well, Sg = BUILDINGS.sign;
     drawables.push({ y: Sg.y + 1, draw: () => ctx.drawImage(signSprite(this.flag), Sg.x * T - cx - 10 * CONFIG.scale, (Sg.y + 1) * T - cy - 24 * CONFIG.scale + 2 * CONFIG.scale, 36 * CONFIG.scale, 24 * CONFIG.scale) });
+    { const R = BUILDINGS.roadsign, u = CONFIG.scale; drawables.push({ y: R.y + 1, draw: () => ctx.drawImage(roadSignSprite('MARKET'), R.x * T - cx - 10 * u, (R.y + 1) * T - cy - 24 * u, 36 * u, 24 * u) }); }   // the way to the market
     drawables.push({ y: Wl.y + 1, draw: () => ctx.drawImage(wellSprite(this.action?.type === 'fill' || this.action?.type === 'drink' ? Math.floor(now / 200) % 2 : 0), Wl.x * T - cx - 4 * CONFIG.scale, (Wl.y + 1) * T - cy - 32 * CONFIG.scale, 24 * CONFIG.scale, 32 * CONFIG.scale) });
     const SR = S.objectPos(s, 'seedrack'), shownTray = S.activeTray(s), rackState = S.seedRackReady(s) ? 2 : shownTray ? 1 : 0;
     if (s.carrying !== 'seedrack') drawables.push({ y: SR.y + 1, draw: () => {
@@ -540,51 +560,7 @@ export class Game {
       drawables.push({ y: Cr.y + 1.01, draw: () => { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round(wx * T) - cx - 10 * u, (Cr.y + 1) * T - cy + 2 * u, 22 * u, 3 * u); ctx.drawImage(cartSprite(rolling ? Math.floor(now / 90) % 2 : 0), Math.round(wx * T) - cx - 14 * u, (Cr.y + 1) * T - cy - 16 * u + (rolling ? (Math.floor(now / 180) % 2) * u : 0), 28 * u, 20 * u); } });
     }
     if (this.splat) { ctx.globalAlpha = Math.min(1, 2.5 - this.splat.t); ctx.drawImage(splatSprite(), this.splat.x * T - cx + T / 4, this.splat.y * T - cy + T / 4, T / 2, T / 2); ctx.globalAlpha = 1; }
-    // player
-    const p = s.player;
-    const frame = this.moving ? Math.floor(this.walkT * 7) % 4 : 0;
-    const px = Math.round(p.x * T - T / 2) - cx, py = Math.round(p.y * T) - cy - PLAYER_H * CONFIG.scale + 3 * CONFIG.scale;
-    drawables.push({ y: p.y, draw: () => {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(p.x * T) - cx - 10, Math.round(p.y * T) - cy + 6, 20, 5);
-      const heldNow = this.action ? this.actionItem() : this.hotbarItem(), act = this.action?.type;
-      const pose = s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
-      const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
-      if (S.isTired(s) && !s.carrying) {   // worn out: the head sinks a pixel into the shoulders, and a drop of sweat
-        ctx.drawImage(spr, 0, 10, 16, PLAYER_H - 10, px, py + 10 * u0, T, (PLAYER_H - 10) * u0);
-        ctx.drawImage(spr, 0, 0, 16, 10, px, py + u0, T, 10 * u0);
-        if (Math.floor(now / 1200) % 2 === 0) { const sxx = p.dir === 'left' ? px + 3 * u0 : px + 12 * u0, syy = py + 6 * u0 + (Math.floor(now / 300) % 2) * u0; ctx.fillStyle = '#8cc6f0'; ctx.fillRect(sxx, syy, u0, 2 * u0); ctx.fillStyle = '#dff3ff'; ctx.fillRect(sxx, syy, u0, u0); }
-      } else ctx.drawImage(spr, px, py, T, PLAYER_H * CONFIG.scale);
-      const bobPx = playerBob(frame) * CONFIG.scale;   // overlays ride the walk bob
-      if (s.carrying) {   // the object rides above the raised hands
-        const bob = bobPx, key = s.carrying;
-        const img = key === 'chest' ? chestSprite(false, true) : key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
-        const h = img.height * CONFIG.scale;
-        ctx.drawImage(img, px, py - h + 4 * CONFIG.scale + bob, T, h);
-      }
-      const held = heldNow;
-      if (!this.action && !s.carrying && held?.kind === 'tool') ctx.drawImage(heldOverlay(held.tool, p.dir), px, py + bobPx, T, PLAYER_H * CONFIG.scale);
-      else if (!this.action && !s.carrying && held && held.kind !== 'tool' && p.dir !== 'up') {   // in the extended hand
-        const img = itemSprite(held, s.species);
-        if (img) { const u = CONFIG.scale; if (p.dir === 'down') { ctx.drawImage(img, px + 4 * u, py + 12 * u + bobPx, 8 * u, 8 * u); ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 4 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillRect(px + 10 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillStyle = '#d9a784'; ctx.fillRect(px + 4 * u, py + 18 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 18 * u + bobPx, 2 * u, u); } else { const hx = p.dir === 'left' ? px - 4 * u : px + 12 * u; ctx.drawImage(img, hx, py + 9 * u + bobPx, 8 * u, 8 * u); } }
-      }
-      if (act === 'drink' || act === 'eat') {   // sips: little drops / crumbs at the mouth
-        const k = Math.floor(now / 140) % 3, u = CONFIG.scale, mx = px + 7 * u, my = py + 9 * u + bobPx;
-        ctx.fillStyle = act === 'drink' ? '#8cc6f0' : '#f6c453'; ctx.fillRect(mx + (k - 1) * u, my - k * u, u, u); ctx.fillRect(mx + 2 * u - k * u, my - u + (k % 2) * u, u, u);
-        if (act === 'eat') {   // the fruit shrinks bite by bite; the head dips on each bite
-          const img = itemSprite(heldNow, s.species), f = this.action.t / this.action.dur, bites = Math.min(3, Math.floor(f * 4)), keep = 1 - bites * 0.28;
-          if (img && keep > 0.1) { const sw = Math.max(2, Math.round(img.width * keep)), sx0 = Math.round((img.width - sw) / 2); ctx.drawImage(img, sx0, 0, sw, img.height, px + 8 * u - Math.round(3.5 * u * keep), py + 7 * u + bobPx + (Math.floor(f * 8) % 2) * u, Math.round(7 * u * keep), 7 * u); }
-          ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 5 * u, py + 11 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 11 * u + bobPx, 2 * u, u);   // hands under it
-          if (bites > 0) { ctx.fillStyle = '#e9d6a8'; ctx.fillRect(px + 7 * u + (bites % 2) * 2 * u, py + 13 * u + bobPx + Math.round(f * 6) * u, u, u); }
-        }
-      }
-      if (act === 'plant') {   // a seed drops from the hand to the bed
-        const a = this.action, f = a.t / a.dur, u = CONFIG.scale, hx = px + (p.dir === 'left' ? 2 : 13) * u, hy = py + 17 * u, tx = a.x * T - cx + T / 2, ty = a.y * T - cy + T / 2;
-        ctx.fillStyle = '#5e4a2a'; ctx.fillRect(Math.round(hx + (tx - hx) * f), Math.round(hy + (ty - hy) * f - Math.sin(f * Math.PI) * 10), u, u);
-        if (f > 0.7) { ctx.fillStyle = 'rgba(94,74,42,0.6)'; ctx.fillRect(tx - 2 * u, ty - u, u, u); ctx.fillRect(tx + u, ty - 2 * u, u, u); }
-      }
-      { const at = this.action?.type, hoeing = at === 'hoe' || at === 'clear' || at === 'drain';
-        if (hoeing || at === 'water') { const phase = hoeing ? Math.floor(this.action.t / (this.action.dur / 3) * 2) % 2 : Math.floor(now / 120) % 2; ctx.drawImage(toolOverlay(hoeing ? 'hoe' : 'can', p.dir, phase), px, py, T, PLAYER_H * CONFIG.scale); } }
-    } });
+    const { p, px, py } = this.pushPlayer(ctx, s, cx, cy, now, drawables);
     if (this.bird) {
       const f = this.bird.t / CONFIG.bird.flightSeconds, bx = (this.bird.x + 0.5) * T - cx + (f - 0.5) * (this.vw + 200), by = (this.bird.y - 2.5) * T - cy + Math.sin(f * Math.PI * 4) * 6;
       drawables.push({ y: 1e9, draw: () => { ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect((this.bird.x + 0.5) * T - cx + (f - 0.5) * (this.vw + 200) - 12, (this.bird.y + 0.5) * T - cy - 3, 24, 6); ctx.drawImage(birdSprite(Math.floor(now / 110) % 2), bx - 6 * CONFIG.scale, by, 12 * CONFIG.scale, 10 * CONFIG.scale); if (this.bird.dropped && f < 0.75) { const d = (f - 0.5) / 0.25; ctx.drawImage(splatSprite(), (this.bird.x + 0.5) * T - cx - 8, by + d * ((this.bird.y + 0.5) * T - cy - by), 16, 16); } } });
@@ -639,6 +615,59 @@ export class Game {
         ctx.strokeStyle = 'rgba(59,35,20,0.6)'; ctx.lineWidth = 1; ctx.strokeRect(this.mouse.tx * T - cx + 0.5, this.mouse.ty * T - cy + 0.5, T - 1, T - 1);
       }
     }
+    this.renderOverlay(ctx, s, cx, cy, now, p, px, py, w);
+  }
+  // You, pushed into the draw list: the sprite, what rides on the head or hangs from the hand, the action animations.
+  pushPlayer(ctx, s, cx, cy, now, drawables) {
+    // player
+    const p = s.player;
+    const frame = this.moving ? Math.floor(this.walkT * 7) % 4 : 0;
+    const px = Math.round(p.x * T - T / 2) - cx, py = Math.round(p.y * T) - cy - PLAYER_H * CONFIG.scale + 3 * CONFIG.scale;
+    drawables.push({ y: p.y, draw: () => {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(p.x * T) - cx - 10, Math.round(p.y * T) - cy + 6, 20, 5);
+      const heldNow = this.action ? this.actionItem() : this.hotbarItem(), act = this.action?.type;
+      const pose = s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
+      const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
+      if (S.isTired(s) && !s.carrying) {   // worn out: the head sinks a pixel into the shoulders, and a drop of sweat
+        ctx.drawImage(spr, 0, 10, 16, PLAYER_H - 10, px, py + 10 * u0, T, (PLAYER_H - 10) * u0);
+        ctx.drawImage(spr, 0, 0, 16, 10, px, py + u0, T, 10 * u0);
+        if (Math.floor(now / 1200) % 2 === 0) { const sxx = p.dir === 'left' ? px + 3 * u0 : px + 12 * u0, syy = py + 6 * u0 + (Math.floor(now / 300) % 2) * u0; ctx.fillStyle = '#8cc6f0'; ctx.fillRect(sxx, syy, u0, 2 * u0); ctx.fillStyle = '#dff3ff'; ctx.fillRect(sxx, syy, u0, u0); }
+      } else ctx.drawImage(spr, px, py, T, PLAYER_H * CONFIG.scale);
+      const bobPx = playerBob(frame) * CONFIG.scale;   // overlays ride the walk bob
+      if (s.carrying) {   // the object rides above the raised hands
+        const bob = bobPx, key = s.carrying;
+        const img = key === 'chest' ? chestSprite(false, true) : key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
+        const h = img.height * CONFIG.scale;
+        ctx.drawImage(img, px, py - h + 4 * CONFIG.scale + bob, T, h);
+      }
+      const held = heldNow;
+      if (!this.action && !s.carrying && held?.kind === 'tool') ctx.drawImage(heldOverlay(held.tool, p.dir), px, py + bobPx, T, PLAYER_H * CONFIG.scale);
+      else if (!this.action && !s.carrying && held && held.kind !== 'tool' && p.dir !== 'up') {   // in the extended hand
+        const img = itemSprite(held, s.species);
+        if (img) { const u = CONFIG.scale; if (p.dir === 'down') { ctx.drawImage(img, px + 4 * u, py + 12 * u + bobPx, 8 * u, 8 * u); ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 4 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillRect(px + 10 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillStyle = '#d9a784'; ctx.fillRect(px + 4 * u, py + 18 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 18 * u + bobPx, 2 * u, u); } else { const hx = p.dir === 'left' ? px - 4 * u : px + 12 * u; ctx.drawImage(img, hx, py + 9 * u + bobPx, 8 * u, 8 * u); } }
+      }
+      if (act === 'drink' || act === 'eat') {   // sips: little drops / crumbs at the mouth
+        const k = Math.floor(now / 140) % 3, u = CONFIG.scale, mx = px + 7 * u, my = py + 9 * u + bobPx;
+        ctx.fillStyle = act === 'drink' ? '#8cc6f0' : '#f6c453'; ctx.fillRect(mx + (k - 1) * u, my - k * u, u, u); ctx.fillRect(mx + 2 * u - k * u, my - u + (k % 2) * u, u, u);
+        if (act === 'eat') {   // the fruit shrinks bite by bite; the head dips on each bite
+          const img = itemSprite(heldNow, s.species), f = this.action.t / this.action.dur, bites = Math.min(3, Math.floor(f * 4)), keep = 1 - bites * 0.28;
+          if (img && keep > 0.1) { const sw = Math.max(2, Math.round(img.width * keep)), sx0 = Math.round((img.width - sw) / 2); ctx.drawImage(img, sx0, 0, sw, img.height, px + 8 * u - Math.round(3.5 * u * keep), py + 7 * u + bobPx + (Math.floor(f * 8) % 2) * u, Math.round(7 * u * keep), 7 * u); }
+          ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 5 * u, py + 11 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 11 * u + bobPx, 2 * u, u);   // hands under it
+          if (bites > 0) { ctx.fillStyle = '#e9d6a8'; ctx.fillRect(px + 7 * u + (bites % 2) * 2 * u, py + 13 * u + bobPx + Math.round(f * 6) * u, u, u); }
+        }
+      }
+      if (act === 'plant') {   // a seed drops from the hand to the bed
+        const a = this.action, f = a.t / a.dur, u = CONFIG.scale, hx = px + (p.dir === 'left' ? 2 : 13) * u, hy = py + 17 * u, tx = a.x * T - cx + T / 2, ty = a.y * T - cy + T / 2;
+        ctx.fillStyle = '#5e4a2a'; ctx.fillRect(Math.round(hx + (tx - hx) * f), Math.round(hy + (ty - hy) * f - Math.sin(f * Math.PI) * 10), u, u);
+        if (f > 0.7) { ctx.fillStyle = 'rgba(94,74,42,0.6)'; ctx.fillRect(tx - 2 * u, ty - u, u, u); ctx.fillRect(tx + u, ty - 2 * u, u, u); }
+      }
+      { const at = this.action?.type, hoeing = at === 'hoe' || at === 'clear' || at === 'drain';
+        if (hoeing || at === 'water') { const phase = hoeing ? Math.floor(this.action.t / (this.action.dur / 3) * 2) % 2 : Math.floor(now / 120) % 2; ctx.drawImage(toolOverlay(hoeing ? 'hoe' : 'can', p.dir, phase), px, py, T, PLAYER_H * CONFIG.scale); } }
+    } });
+    return { p, px, py };
+  }
+  // Everything over the scene, farm or market: the light, the weather, the floats, the HUD, the cursor and its prompt.
+  renderOverlay(ctx, s, cx, cy, now, p, px, py, w) {
     // night tint
     const h = S.hourOf(s);
     const dark = h >= 18 && h < 22 ? (h - 18) / 4 * 0.55 : h >= 22 || h < 4 ? 0.55 : h < 7 ? (7 - h) / 3 * 0.55 : 0;
@@ -681,5 +710,74 @@ export class Game {
       }
       ctx.drawImage(cursorSprite(this.hit || s.carrying ? 'hand' : 'arrow'), this.mouse.x - (this.hit || s.carrying ? 4 * cs : 0), this.mouse.y, 12 * cs, 14 * cs);
     }
+  }
+  // ---------- the market ----------
+  // An hour's walk each way, behind the fade. The sim moves the clock; if the night catches you on the road you wake at home.
+  travelTo(dest) {
+    if (this.travelling || this.sleeping) return;
+    const s = this.state, chk = M.depart(s, dest); if (!chk.ok) { this.ui.toast(chk.msg); return; }
+    this.travelling = true; this.ui.hideHover(); this.ui.closePanel(); this.action = null; this.press = null;
+    const fade = document.getElementById('fade'); fade.classList.add('on');
+    setTimeout(() => {
+      const r = S.travel(s, dest);
+      fade.classList.remove('on'); this.travelling = false; this.save();
+      for (const e of r.events || []) if (e.type === 'sleep') this.ui.openMorning(e.report);
+      if (r.ok && dest === 'market') this.ui.toast(M.marketOpen(s) ? 'The market. Click your stall with crops in hand to put them on the counter.' : 'The market is shut for the day. Shoppers come between 8 and 6.');
+      if (r.ok && dest === 'farm') this.ui.toast('Home.');
+    }, 650);
+  }
+  marketInteractables() {
+    const s = this.state, it = this.hotbarItem(), out = [], L = MARKET.laneY;
+    for (const st of Object.values(MARKET.stalls)) {
+      const rect = [st.x * 16, (L - 1) * 16 - 12, 32, 28];
+      if (st.key === 'yours') out.push({ kind: 'stall', x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: it?.kind === 'crop' ? 'Put it on the counter  (E: open)' : `Your stall · ${M.counterCount(s)} on the counter  (E: open)` });
+      else out.push({ kind: 'merchant', key: st.key, x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: `${st.name}  (E: open)` });
+    }
+    const H = MARKET.homeSign; out.push({ kind: 'homesign', near: { x: H.x, y: H.y, w: 1, h: 1 }, rect: [H.x * 16 - 10, (H.y + 1) * 16 - 22, 36, 12], label: "Walk home  (an hour)" });
+    return out;
+  }
+  marketInfo(x, y) {
+    const s = this.state, L = MARKET.laneY;
+    for (const st of Object.values(MARKET.stalls)) if (y >= L - 2 && y <= L - 1 && x >= st.x && x < st.x + 2) {
+      if (st.key === 'yours') return { title: 'Your stall', sub: `${M.counterCount(s)} on the counter. Shoppers buy what they like at full price and tip. Sold today: ${s.market.today.sold} for ${formatMoney(s.market.today.money)}.` };
+      return { title: st.name, sub: st.key === 'seeds' ? 'Seeds from elsewhere, three kinds a day, never what the catalogue has.' : 'Fuel, pipe, line and belt in your pocket now, at a markup.' };
+    }
+    if (x === MARKET.homeSign.x && y === MARKET.homeSign.y) return { title: 'To the farm', sub: "An hour's walk back down the track." };
+    if (y >= L && y <= L + 1) return { title: 'The lane', sub: M.marketOpen(s) ? 'Shoppers pass by between 8 and 6.' : 'Quiet: the market is shut.' };
+    return { title: '' };
+  }
+  // The market scene: a lane under the trees, three stalls, the shoppers, you. Same overlay as the farm.
+  renderMarket(now) {
+    const ctx = this.ctx, s = this.state, m = s.market, u = CONFIG.scale, W = MARKET.w, H = MARKET.h, L = MARKET.laneY;
+    const cx = Math.round(this.cam.x), cy = Math.round(this.cam.y);
+    ctx.fillStyle = '#2b4a26'; ctx.fillRect(0, 0, this.vw, this.vh);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const sx = x * T - cx, sy = y * T - cy; if (y === L || y === L + 1) ctx.drawImage(trackTile((x + y) % 3), sx, sy, T, T); else ctx.drawImage(grassTile((x * 7 + y * 13) % 6), sx, sy, T, T); }
+    const drawables = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (y <= 2 || y >= H - 1 || x === 0 || x === W - 1) { const v = (x * 7 + y * 13) % 3; drawables.push({ y: y + 1, draw: () => ctx.drawImage(treeSprite(v), x * T - cx - 2 * u, y * T - cy - T, 20 * u, 32 * u) }); }
+    for (const st of Object.values(MARKET.stalls)) {
+      const v = st.key === 'yours' ? 0 : st.key === 'seeds' ? 1 : 2, sx = st.x * T - cx, sy = (L - 1) * T - cy - 12 * u;
+      drawables.push({ y: L - 0.5, draw: () => {
+        ctx.drawImage(stallSprite(v), sx, sy, 32 * u, 28 * u);
+        if (st.key === 'yours') { let k = 0; for (const it of m.counter.slots) { if (!it || k >= 4) continue; const sp = s.species[it.species]; if (!sp) continue; ctx.drawImage(produceSprite(sp), sx + (3 + k * 7) * u, sy + 15 * u, 7 * u, 7 * u); k++; } }
+      } });
+    }
+    { const Hs = MARKET.homeSign; drawables.push({ y: Hs.y + 1, draw: () => ctx.drawImage(roadSignSprite('FARM'), Hs.x * T - cx - 10 * u, (Hs.y + 1) * T - cy - 24 * u, 36 * u, 24 * u) }); }
+    for (const n of m.npcs) {
+      const frame = n.phase === 'buy' ? 0 : Math.floor((now / 110 + n.id * 3) % 4), nx = Math.round(n.x * T - T / 2) - cx, ny = Math.round(n.y * T) - cy - PLAYER_H * u + 3 * u;
+      drawables.push({ y: n.y, draw: () => {
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(n.x * T) - cx - 10, Math.round(n.y * T) - cy + 6, 20, 5);
+        ctx.drawImage(villagerSprite(n.variant, n.dir, frame), nx, ny, T, PLAYER_H * u);
+        if (n.bubble) {   // what they think: the thing they bought, what they wanted, or nothing
+          const bx = nx + 10 * u, by = ny - 12 * u; ctx.fillStyle = '#3b2314'; ctx.fillRect(bx - u, by - u, 12 * u, 12 * u); ctx.fillStyle = '#f5e6c3'; ctx.fillRect(bx, by, 10 * u, 10 * u); ctx.fillRect(bx + 2 * u, by + 10 * u, 2 * u, u);
+          const b = n.bubble;
+          if (b.kind === 'bought') { const sp = s.species[b.species]; if (sp) ctx.drawImage(produceSprite(sp), bx + u, by + u, 8 * u, 8 * u); if (b.match) { ctx.fillStyle = '#f6c453'; ctx.fillRect(bx + 8 * u, by - u, 2 * u, 2 * u); } }
+          else { ctx.fillStyle = '#8a6a44'; ctx.fillRect(bx + 2 * u, by + 5 * u, u, u); ctx.fillRect(bx + 4.5 * u, by + 5 * u, u, u); ctx.fillRect(bx + 7 * u, by + 5 * u, u, u); }
+        }
+      } });
+    }
+    const { p, px, py } = this.pushPlayer(ctx, s, cx, cy, now, drawables);
+    drawables.sort((a, b) => a.y - b.y);
+    for (const d of drawables) d.draw();
+    this.renderOverlay(ctx, s, cx, cy, now, p, px, py, { w: W, h: H });
   }
 }

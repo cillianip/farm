@@ -19,6 +19,7 @@ export const BUILDINGS = {
   well: { x: 34, y: 16, w: 1, h: 1 },
   sign: { x: 34, y: 26, w: 1, h: 1 },       // delivery signpost
   crate: { x: 34, y: 27, w: 1, h: 1 },      // delivery crate at the end of the track that leaves the clearing
+  roadsign: { x: 39, y: 26, w: 1, h: 1 },   // where the track leaves: the sign to the market
 };
 // Objects you can pick up and put down elsewhere (their live positions are in state.objects).
 export const MOVABLE = ['rackHoe', 'rackCan', 'seedrack', 'bench', 'compost'];   // the bench and the compost bin exist only after they are delivered

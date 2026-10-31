@@ -1,7 +1,7 @@
 // Code-drawn tiles, trees, the house, objects and the player. Everything is cached as a canvas at 1 pixel = 1 unit.
 import { PAL, pixelDrawer, makeCanvas } from './palette.js';
 import { makeRng } from '../rng.js';
-import { drawText } from './font.js';
+import { drawText, textWidth } from './font.js';
 
 const cache = new Map();
 export const PLAYER_H = 22;
@@ -583,8 +583,9 @@ export const playerBob = frame => frame % 2 ? -1 : 0;   // body lifts a pixel mi
 // A short, round farmer (22 px). pose: 'idle' (arms swing), 'carry' (both arms up), 'hold' (one arm out holding
 // something; facing down the arm points at the camera so only the hand shows), 'drink' (hands to the mouth),
 // 'plant' (one arm reaching down to the soil).
-export function playerSprite(dir, frame, pose = 'idle') {
-  return sprite(`player${dir}${frame}${pose}`, 16, PLAYER_H, P => {
+export const playerSprite = (dir, frame, pose = 'idle') => figureSprite(C, 'player', dir, frame, pose);
+export function figureSprite(C, key, dir, frame, pose = 'idle') {
+  return sprite(`${key}${dir}${frame}${pose}`, 16, PLAYER_H, P => {
     const step = frame === 1 ? 1 : frame === 3 ? -1 : 0;      // which leg is forward
     const bob = frame % 2 ? -1 : 0;
     const side = dir === 'left' || dir === 'right';
@@ -634,9 +635,11 @@ export function playerSprite(dir, frame, pose = 'idle') {
       if (dir === 'down') { px(6, 7 + bob, C.eye); px(9, 7 + bob, C.eye); px(7, 9 + bob, C.skinDark); px(8, 9 + bob, C.skinDark); }
       else { px(9, 7 + bob, C.eye); px(10, 6 + bob, C.hair); rect(5, 5 + bob, 1, 3, C.hair); }
     }
-    // straw hat
-    rect(2, 3 + bob, 12, 1, C.hat); rect(3, 4 + bob, 10, 1, C.hatDark);
-    rect(5, 1 + bob, 6, 2, C.hat); rect(4, 2 + bob, 8, 1, C.band); rect(6, 0 + bob, 4, 1, C.hat); px(6, 1 + bob, '#ecc57a');
+    // straw hat, or a bare head of hair
+    if (C.hat) {
+      rect(2, 3 + bob, 12, 1, C.hat); rect(3, 4 + bob, 10, 1, C.hatDark);
+      rect(5, 1 + bob, 6, 2, C.hat); rect(4, 2 + bob, 8, 1, C.band); rect(6, 0 + bob, 4, 1, C.hat); px(6, 1 + bob, '#ecc57a');
+    } else { rect(5, 3 + bob, 6, 1, C.hair); rect(4, 4 + bob, 8, 1, C.hair); px(4, 5 + bob, C.hair); px(11, 5 + bob, C.hair); }
   }, 'rgba(40,25,15,0.95)');
 }
 
@@ -681,3 +684,41 @@ export function coinIcon() {
 export function fertIcon() {
   return sprite('fert', 16, 16, P => { P.rect(3, 5, 10, 9, '#5a4a2a'); P.rect(3, 4, 10, 1, '#7a6a3a'); P.px(5, 7, '#8bc34a'); P.px(9, 9, '#8bc34a'); P.px(7, 11, '#c9b07c'); });
 }
+
+// ---------- the market ----------
+// A market stall (32×28 over a two-tile footprint): two posts, a plank counter along the bottom and a striped awning
+// with a scalloped edge. variant 0 is yours (red), 1 the seed merchant (green), 2 the hardware stall (blue).
+export function stallSprite(variant = 0) {
+  return sprite(`stall${variant}`, 32, 28, P => {
+    const stripe = ['#c8553d', '#5fa14a', '#4f8fcf'][variant], stripeDark = ['#a0412f', '#3f7a1f', '#3f72a8'][variant], cloth = '#f5e6c3', clothDark = '#e0cda2';
+    P.rect(2, 10, 2, 18, PAL.woodDark); P.rect(28, 10, 2, 18, PAL.woodDark); P.px(2, 10, PAL.woodLight); P.px(28, 10, PAL.woodLight);   // posts
+    P.rect(0, 19, 32, 7, PAL.wood); P.rect(0, 19, 32, 1, PAL.woodLight); P.rect(0, 25, 32, 1, PAL.woodDark); P.rect(0, 22, 32, 1, PAL.woodDark);   // the counter
+    P.rect(1, 26, 30, 2, PAL.woodDark); P.rect(3, 27, 26, 1, '#2f1f12');                                                                    // its shadow and feet
+    for (let x = 0; x < 32; x++) { const s = Math.floor(x / 4) % 2; P.rect(x, 2, 1, 8, s ? cloth : stripe); P.px(x, 2, s ? clothDark : stripeDark); P.px(x, 9, s ? clothDark : stripeDark); }   // the awning
+    for (let x = 0; x < 32; x += 4) { P.rect(x + 1, 10, 2, 1, Math.floor(x / 4) % 2 ? cloth : stripe); P.px(x + 1, 11, Math.floor(x / 4) % 2 ? clothDark : stripeDark); P.px(x + 2, 11, Math.floor(x / 4) % 2 ? clothDark : stripeDark); }   // scallops
+    P.rect(0, 1, 32, 1, PAL.woodDark); P.rect(0, 0, 32, 1, PAL.wood);                                                                       // the rail the awning hangs from
+    P.rect(6, 12, 20, 5, PAL.woodLight); P.rect(6, 12, 20, 1, '#c99a66'); P.rect(6, 16, 20, 1, PAL.woodDark);                                 // the name board under the awning
+    if (variant === 0) { P.rect(9, 13, 4, 3, '#e8a23b'); P.rect(14, 13, 4, 3, '#8fd36a'); P.rect(19, 13, 4, 3, '#e86a6a'); }                // yours: three bright squares, produce
+    else if (variant === 1) { for (let i = 0; i < 4; i++) { P.px(10 + i * 4, 14, '#5e4a2a'); P.px(11 + i * 4, 13, '#8fd36a'); } }            // seeds: seeds and sprouts
+    else { P.rect(10, 13, 2, 3, PAL.metal); P.rect(14, 14, 5, 1, PAL.metalDark); P.rect(21, 13, 2, 3, PAL.gold); }                          // hardware: a bolt, a pipe, a can
+  }, 'rgba(40,25,15,0.95)');
+}
+// The signpost at the end of the track, and the one at the market: a board with a word.
+export function roadSignSprite(label = 'MARKET') {
+  return sprite('roadsign' + label, 36, 24, (P, ctx) => {
+    P.rect(17, 11, 2, 13, PAL.woodDark); P.px(17, 13, PAL.wood);
+    P.rect(1, 1, 34, 11, PAL.woodLight); P.rect(1, 1, 34, 1, '#c99a66'); P.rect(1, 11, 34, 1, PAL.woodDark); P.rect(1, 1, 1, 11, PAL.wood); P.rect(34, 1, 1, 11, PAL.woodDark);
+    drawText(ctx, label, Math.round((36 - textWidth(label, 1)) / 2), 4, '#3b2314', 1);
+    P.px(2, 2, PAL.metalDark); P.px(33, 2, PAL.metalDark); P.px(2, 10, PAL.metalDark); P.px(33, 10, PAL.metalDark);
+  });
+}
+// Shoppers: the farmer's build in other clothes. Six looks; two go bare-headed.
+const VILLAGERS = [
+  { shirt: '#5f84bd', shirtDark: '#3f5f94', bib: '#6b4423', bibDark: '#4a2f16', strap: '#8a6a44', hat: '#8a6a44', hatDark: '#6b4e2e', band: '#3b2314' },
+  { shirt: '#8fd36a', shirtDark: '#5fa14a', bib: '#3b2314', bibDark: '#2a1a0c', strap: '#5e4a2a', hat: null, hair: '#2a1f14' },
+  { shirt: '#e86a6a', shirtDark: '#b84848', bib: '#4a6fa5', bibDark: '#365582', strap: '#5f84bd', hat: '#f1f1f1', hatDark: '#cfcfcf', band: '#e86a6a', skin: '#c58c5a', skinDark: '#a06e42', hair: '#2a1f14' },
+  { shirt: '#f6c453', shirtDark: '#d9a84e', bib: '#4a3220', bibDark: '#2f1f12', strap: '#6b4423', hat: null, hair: '#d9a84e', skin: '#f1c7a1' },
+  { shirt: '#c47fe6', shirtDark: '#9a5cc0', bib: '#2a2a2a', bibDark: '#111', strap: '#555', hat: '#4a3220', hatDark: '#2f1f12', band: '#8a6a44', skin: '#8d5a3a', skinDark: '#6e4328', hair: '#1a1008' },
+  { shirt: '#bfe9f7', shirtDark: '#8cc6f0', bib: '#8c5a2b', bibDark: '#6b4423', strap: '#b07a3e', hat: '#5fa14a', hatDark: '#3f7a1f', band: '#f6c453', hair: '#6b4423' },
+];
+export function villagerSprite(variant, dir, frame) { return figureSprite({ ...C, ...VILLAGERS[variant % VILLAGERS.length] }, `villager${variant}`, dir, frame, 'idle'); }

@@ -910,6 +910,38 @@ await test('field chests: bought and carried like the bench, put down on any ope
   assert.ok(s.chest.slots.some(i => i?.kind === 'pump' && i.level === 1), 'it is in the chest'); assert.equal(s.parcels.length, 0);
 });
 
+console.log('market');
+await test('the market: an hour down the track, crops on the counter, shoppers buy at full price and tip, merchants sell on the spot, pack up and walk home; the night sends you home; too late to go', async () => {
+  const M = await import('../src/market.js');
+  const s = arm(S.createState(5)); const C = CONFIG.market; s.money = 50;
+  const carrot = byName(s, 'Carrot'), turnip = byName(s, 'Turnip');
+  addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 20 }); s.inventory.slots[s.inventory.slots.findIndex(i => i?.kind === 'seed')] = { kind: 'crop', species: turnip.id, qty: 20 };
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60;   // 9am
+  const home = { x: s.player.x, y: s.player.y };
+  let r = S.travel(s, 'farm'); assert.ok(!r.ok, 'already home');
+  r = S.travel(s, 'market'); assert.ok(r.ok, r.msg); assert.ok(s.market.at); assert.equal(s.player.x, M.MARKET.start.x);
+  assert.ok(Math.abs(S.hourOf(s) - (9 + C.travelMinutes / 60)) < 0.01, 'an hour passed: ' + S.hourOf(s));
+  assert.ok(M.marketOpen(s)); assert.ok(s.world.tiles[W.BUILDINGS.roadsign.y * s.world.w + W.BUILDINGS.roadsign.x].t === 'roadsign');
+  r = M.stock(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')); assert.ok(r.ok && r.moved === 20, JSON.stringify(r)); assert.equal(M.counterCount(s), 20);
+  assert.equal(M.stock(s, 0).msg, 'Shoppers here want food: only crops sell');
+  r = M.stock(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')); assert.ok(r.ok); assert.equal(M.counterCount(s), 40);
+  const m0 = s.money, e0 = s.stats.earned; let mins = 0;
+  while (s.market.today.sold === 0 && mins < 120) { tickMinutes(s, 1); mins++; }
+  assert.ok(s.market.today.sold > 0, 'someone bought within two hours'); assert.ok(s.money > m0 && s.stats.earned > e0, 'paid at once, and it counts as sales');
+  while (mins < 240) { tickMinutes(s, 1); mins++; }
+  assert.ok(s.market.today.visitors >= 10, 'a steady lane: ' + s.market.today.visitors); assert.equal(40 - M.counterCount(s), s.market.today.sold, 'what went is what sold');
+  const low = Math.min(salePrice(s, { species: carrot.id }), salePrice(s, { species: turnip.id })); assert.ok(s.market.today.money >= low * s.market.today.sold - 0.01, 'never below full price');
+  assert.ok(s.market.today.tips > 0, 'tips on top');
+  const seeds = M.merchantOffers(s, 'seeds'); assert.equal(seeds.length, 3); assert.ok(seeds.every(o => o.species && o.price > 0));
+  const hw = M.merchantOffers(s, 'hardware'); assert.ok(hw.some(o => o.id === 'fuel') && hw.some(o => o.id === 'belt'));
+  s.money = 1000; r = M.buyFromMerchant(s, 'hardware', 'fuel'); assert.ok(r.ok, r.msg); assert.ok(s.inventory.slots.some(i => i?.kind === 'fuel')); assert.equal(s.money, 1000 - hw.find(o => o.id === 'fuel').price);
+  const sd = seeds[0]; r = M.buyFromMerchant(s, 'seeds', sd.id); assert.ok(r.ok, r.msg); assert.ok(s.inventory.slots.some(i => i?.kind === 'seed' && i.species === sd.species.id)); assert.ok(s.discovered.includes(sd.species.id), 'a new species for the book');
+  s.money = 0; assert.equal(M.buyFromMerchant(s, 'seeds', sd.id).msg, 'Not enough money');
+  r = M.packUp(s); assert.ok(r.back > 0 || r.left > 0); r = S.travel(s, 'farm'); assert.ok(r.ok, r.msg); assert.ok(!s.market.at); assert.equal(s.player.x, home.x);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 10 * 60; assert.ok(S.travel(s, 'market').ok); s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s); assert.ok(!s.market.at && rep.lines.some(l => /walked home/.test(l)), 'the night sends you home');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + (C.close - 0.5) * 60; assert.ok(/too late/.test(S.travel(s, 'market').msg));
+});
+
 console.log('pumps');
 await test('a hand pump needs a hand: set it and it runs today; at midnight it stops until you work it (a few seconds, some energy); the morning says so', () => {
   const s = arm(S.createState(1)); const W2 = s.world, well = WB.well, tile = (x, y) => W2.tiles[y * W2.w + x];

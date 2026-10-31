@@ -6,6 +6,8 @@ import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
 import { cropSprite, produceSprite } from './render/crops.js';
 import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
+import * as M from './market.js';
+import { MARKET } from './market.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
 import { growRealMinutes, RARE_TRAITS } from './genetics.js';
 
@@ -602,6 +604,50 @@ export class UI {
       section('Starters and the catalogue', base, '');
       if (wild.length) section('Brought by birds', wild, '');
     }, 'lineage');
+  }
+
+  // Your market stall: the counter on top, your pockets below. Click a pocket stack to put it on the counter, a counter
+  // stack to take it back. The day's takings, and the button that walks you home.
+  openStall() {
+    const s = this.state, g = this.game, m = s.market;
+    this.show('Your stall', body => {
+      const t = m.today;
+      body.appendChild(el('div', 'muted', M.marketOpen(s) ? `Open till ${CONFIG.market.close - 12}pm · ${t.visitors} ${t.visitors === 1 ? 'shopper' : 'shoppers'} so far` : 'Shut for the day: shoppers come between 8 and 6'));
+      body.appendChild(el('div', 'pc-sec', `On the counter · ${M.counterCount(s)}`));
+      const grid = el('div', 'pslots');
+      m.counter.slots.forEach((it, i) => { const sl = this.pslot(it, s.species, { hint: 'empty', hover: true }); if (it) sl.onclick = () => { const r = M.takeBack(s, i); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); }; grid.appendChild(sl); });
+      body.appendChild(grid);
+      body.appendChild(el('div', 'pc-sec', `Pockets · click a crop to put the stack out`));
+      const pk = el('div', 'pslots');
+      s.inventory.slots.forEach((it, i) => { const sl = this.pslot(it, s.species, { hint: `pocket ${i + 1}`, cls: it && it.kind !== 'crop' ? 'locked' : '', hover: true }); if (it?.kind === 'crop') sl.onclick = () => { const r = M.stock(s, i); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); }; pk.appendChild(sl); });
+      body.appendChild(pk);
+      body.appendChild(el('div', 'pc-sec', 'Today'));
+      body.appendChild(el('div', 'pc-row', `<span>Sold</span><span>${t.sold} for <b>${formatMoney(t.money)}</b>${t.tips ? ` <span class="up">(${formatMoney(t.tips)} in tips)</span>` : ''}</span></div>`));
+      body.appendChild(el('div', 'pc-note', 'Shoppers pay full price, no daily order, and tip: more for the kind of food they came for and for starred crops. Roots, gourds, vine fruit, grain, berries and flowers each have their fans, so a mixed counter sells to more of them. Nothing sells while you are away.'));
+      const home = el('button', 'primary', 'Pack up and walk home'); home.style.marginTop = '10px';
+      home.onclick = () => { const r = M.packUp(s); if (r.left) this.toast(`${r.left} stay on the counter for next time: no pocket for them`); g.travelTo('farm'); };
+      body.appendChild(home);
+    }, 'stall');
+  }
+  // Another stall: rows with a price and a Buy button; what you buy goes straight into a pocket.
+  openMerchant(key) {
+    const s = this.state, g = this.game, st = MARKET.stalls[key];
+    this.show(st.name, body => {
+      body.appendChild(el('div', 'muted', key === 'seeds' ? 'Three kinds a day from other valleys: never what the catalogue has this week. New families to cross.' : 'What the catalogue delivers overnight, in your pocket now, for a bit more.'));
+      for (const o of M.merchantOffers(s, key)) {
+        const row = el('div', 'cat-row' + (s.money >= o.price ? ' afford' : ' cant'));
+        const c = document.createElement('canvas'); c.width = 40; c.height = 40; const cx2 = c.getContext('2d'); cx2.imageSmoothingEnabled = false;
+        const src = o.species ? seedIcon(Math.round(o.species.genome.hue1), o.species.genome.sat1, o.species.genome.light1) : o.id === 'fuel' ? fuelIcon() : o.id === 'pipe' ? pipeSprite(10, true) : stationIcon(o.id);
+        if (src) cx2.drawImage(src, 0, 0, 40, 40); row.appendChild(c);
+        const grow = el('div', 'grow'); grow.appendChild(el('div', 'cat-head-line', `<b>${esc(o.name)}</b>`)); row.appendChild(grow);
+        row.appendChild(el('div', 'cat-price', formatMoney(o.price)));
+        const b = el('button', s.money >= o.price ? 'primary' : null, 'Buy'); b.disabled = s.money < o.price;
+        b.onclick = () => { const r = M.buyFromMerchant(s, key, o.id); if (!r.ok) { this.toast(r.msg); return; } g.sound.play('buy'); g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
+        row.appendChild(b);
+        row.appendChild(el('div', 'cat-desc', `<span class="muted">${esc(o.effect)}${o.species ? ' · ' + esc(roles(o.species).map(r => r.replace(/:.*$/, '')).join(' · ')) : ''}</span>`));
+        body.appendChild(row);
+      }
+    }, 'merchant');
   }
 
   openSettings() {
