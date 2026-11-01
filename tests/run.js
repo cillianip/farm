@@ -1196,6 +1196,11 @@ await test('the hoe flattens an empty bed back to grass (and says when fertilise
   assert.equal(items.filter(i => i.family === 'Borrow').length, CONFIG.loan.sizes.length);
 });
 
+await test('the bench does not care which parent sits where: the same pair on the same day gives the same child, only the name order differs', () => {
+  const mk = (a, b) => { const s = S.createState(11); s.money = 1e9; s.breeder.a = { kind: 'seed', species: byName(s, a).id, qty: 1 }; s.breeder.b = { kind: 'seed', species: byName(s, b).id, qty: 1 }; assert.ok(S.startBreed(s).ok); return S.sleep(s).breeder; };
+  const ab = mk('Carrot', 'Turnip'), ba = mk('Turnip', 'Carrot');
+  assert.equal(ab.outcome, ba.outcome); if (ab.species) assert.equal(ab.species, ba.species, 'same child');
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

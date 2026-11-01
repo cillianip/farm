@@ -1115,12 +1115,15 @@ export function setBreederParent(state, which, slotIndex) {
   return { ok: true };
 }
 export function clearBreederParent(state, which) { const cur = state.breeder[which]; if (cur) { addItem(state.inventory, cur); state.breeder[which] = null; } }
+// the same pair rolls the same dice whichever way round they sit on the bench
+const breedSeed = (state, A, B) => hashString(`${[A.id, B.id].sort().join("|")}|${state.seed}|${state.stats.breeds}|${dayOf(state)}`);
+const breedOrder = (A, B) => A.id < B.id ? [A, B] : [B, A];   // and the genomes meet the dice in a fixed order too; only the name keeps the bench order
 // What the bench says before you commit: the instability of this pairing (the roll itself stays hidden).
 export function breedPreview(state) {
   const b = state.breeder; if (!b.a || !b.b) return null;
   const A = state.species[b.a.species], B = state.species[b.b.species];
-  const seed = hashString(`${A.id}|${B.id}|${state.seed}|${state.stats.breeds}|${dayOf(state)}`);
-  const res = cross(A.genome, B.genome, seed);
+  const seed = breedSeed(state, A, B);
+  const [P, Q] = breedOrder(A, B), res = cross(P.genome, Q.genome, seed);
   return { instability: res.instability, crossFamily: res.crossFamily, cost: breedCost(state, A, B), sterile: A.sterile || B.sterile };
 }
 export function startBreed(state, mutationBonus = 1) {
@@ -1131,7 +1134,7 @@ export function startBreed(state, mutationBonus = 1) {
   if (A.sterile || B.sterile) return fail('Sterile plants cannot breed');
   const cost = breedCost(state, A, B);
   if (!pay(state, cost)) return fail(`Needs $${cost}`);
-  const seed = hashString(`${A.id}|${B.id}|${state.seed}|${state.stats.breeds}|${dayOf(state)}`);
+  const seed = breedSeed(state, A, B);
   b.running = { a: A.id, b: B.id, seed, mutationBonus, startedDay: dayOf(state) };
   b.a = null; b.b = null;
   state.stats.breeds++;
@@ -1140,7 +1143,7 @@ export function startBreed(state, mutationBonus = 1) {
 export function resolveBreed(state) {
   const run = state.breeder.running; if (!run) return null;
   const A = state.species[run.a], B = state.species[run.b];
-  const res = cross(A.genome, B.genome, run.seed, { mutationBonus: run.mutationBonus });
+  const [P, Q] = breedOrder(A, B), res = cross(P.genome, Q.genome, run.seed, { mutationBonus: run.mutationBonus });
   const out = { outcome: res.outcome, instability: res.instability, mutations: res.mutations, parents: [A.name, B.name], species: null, seeds: 0, isNew: false };
   const r = makeRng(run.seed ^ 0x9e3779b9);
   if (res.outcome === 'success' || res.outcome === 'sterile') {
