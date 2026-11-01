@@ -188,7 +188,7 @@ export class Game {
     const Cr = B.crate, full = S.crateCount(s) >= s.crate.capacity, parcels = s.parcels?.length || 0;
     out.push({ kind: 'crate', near: Cr, rect: [Cr.x * 16 - 1, (Cr.y + 1) * 16 - 16, 18, 16], label: parcels ? `Collect ${parcels === 1 ? 'the parcel' : parcels + ' parcels'}` : it?.kind === 'crop' || S.SELLABLE.includes(it?.kind) ? (full ? 'Crate is full' : it.kind === 'crop' ? 'Drop in the crate' : `Sell second-hand for ${formatMoney(S.secondHand(it))} each`) : S.crateCount(s) ? (s.crate.pickups && S.hourOf(s) < CONFIG.crate.middayHour ? 'Collected at noon' : 'Collected tonight') : 'Needs a crop' });
     const BP = S.objectPos(s, 'bench');
-    if (BP && s.carrying !== 'bench') out.push({ kind: 'bench', near: { ...BP, w: 1, h: 1 }, rect: [BP.x * 16, (BP.y + 1) * 16 - 26 + 2, 16, 24], label: (s.breeder.result ? 'Take the seeds' : s.breeder.running ? 'Breeding, results in the morning' : s.breeder.a && s.breeder.b ? 'Ready to breed' : 'Breeding bench') + '  (E: open, hold: pick up)' });
+    if (BP && s.carrying !== 'bench') out.push({ kind: 'bench', near: { ...BP, w: 1, h: 1 }, rect: [BP.x * 16, (BP.y + 1) * 16 - 26 + 2, 16, 24], label: ((s.breeder.result || s.breeder.result2) ? 'Take the seeds' : s.breeder.running ? 'Breeding, results in the morning' : s.breeder.a && s.breeder.b ? 'Ready to breed' : 'Breeding bench') + '  (E: open, hold: pick up)' });
     const CP = S.objectPos(s, 'compost');
     if (CP && s.carrying !== 'compost') out.push({ kind: 'compost', near: { ...CP, w: 1, h: 1 }, rect: [CP.x * 16, (CP.y + 1) * 16 - 20 + 1, 16, 19], label: (s.compost.ready ? (it && it.kind !== 'fert' ? 'Compost ready: empty hands to take it' : 'Take the compost') : s.compost.running ? 'Rotting down, ready by morning' : it && S.COMPOSTABLE.includes(it.kind) ? (S.compostCount(s) >= CONFIG.fertiliser.compostMax ? 'The bin is full' : 'Drop it in') : 'Compost bin') + '  (E: open, hold: pick up)' });
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
@@ -239,7 +239,7 @@ export class Game {
         if (it && S.COMPOSTABLE.includes(it.kind)) { const chk = S.canCompost(s); if (!chk.ok) { this.ui.toast(chk.msg); return true; } this.startAction('compost', CP.x, CP.y, S.dropSeconds(s)); return true; }
         this.ui.openCompost(); return true;
       }
-      case 'bench': { if (s.breeder.result) { const r = S.takeBreedResult(s); const BP = S.objectPos(s, 'bench'); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BP.x + 0.5, BP.y - 0.2, '#f6c453'); this.sound.play('seedsBred'); } this.save(); return true; } this.ui.openBench(); return true; }
+      case 'bench': { if ((s.breeder.result || s.breeder.result2)) { const r = S.takeBreedResult(s); const BP = S.objectPos(s, 'bench'); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BP.x + 0.5, BP.y - 0.2, '#f6c453'); this.sound.play('seedsBred'); } this.save(); return true; } this.ui.openBench(); return true; }
       case 'crate': {
         if (s.parcels?.length) { const r = S.collectParcels(s); for (const l of r.lines) this.ui.toast(l); if (r.lines.length) { this.addFloat('Parcels!', BUILDINGS.crate.x + 0.5, BUILDINGS.crate.y - 0.4, '#f6c453'); this.sound.play('parcel'); } if (s.deeds > 0) this.landMode = true; if (r.bench) this.ui.toast('Carry the bench to where you want it and click to put it down'); if (r.compost) this.ui.toast('Carry the bin to where you want it and click to put it down'); if (r.chest) this.ui.toast('Carry the chest to where you want it and click to put it down'); this.save(); return true; }
         if (!it || (it.kind !== 'crop' && !S.SELLABLE.includes(it.kind))) { this.ui.toast(S.crateCount(s) ? 'The cart collects it tonight.' : 'Hold a crop to drop it in, or a machine to sell it second-hand'); return true; }
@@ -252,7 +252,7 @@ export class Game {
       case 'sign': { this.openSign(); return true; }
       case 'roadsign': { this.travelTo('market'); return true; }
       case 'homesign': { this.travelTo('farm'); return true; }
-      case 'stall': { if (it?.kind === 'crop') { const r = M.stock(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 1, o.y - 0.2, '#f6c453'); this.sound.play('drop'); } } else this.ui.openStall(); return true; }
+      case 'stall': { if (it && (it.kind === 'crop' || it.kind === 'product')) { const r = M.stock(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 1, o.y - 0.2, '#f6c453'); this.sound.play('drop'); } } else this.ui.openStall(); return true; }
       case 'merchant': { this.ui.openMerchant(o.key); return true; }
       case 'fchest': { const ch = s.world.tiles[o.y * s.world.w + o.x].obj; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'chest': { if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BUILDINGS.chest.x + 0.5, BUILDINGS.chest.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(); return true; }
@@ -591,7 +591,7 @@ export class Game {
         else ctx.drawImage(produceSprite(sp), x0, ry + 8 * u, wpx * u, 4 * u);
       });
     } });
-    { const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') { const st = s.breeder.running ? 2 : s.breeder.a || s.breeder.b ? 1 : 0; drawables.push({ y: BP.y + 1, draw: () => { ctx.drawImage(benchSprite(st, Math.floor(now / 350) % 2), BP.x * T - cx, (BP.y + 1) * T - cy - 28 * CONFIG.scale, T, 28 * CONFIG.scale); if (s.breeder.result) { const sp = s.species[s.breeder.result.species], u = CONFIG.scale; if (sp) ctx.drawImage(seedIcon(Math.round(sp.genome.hue1), sp.genome.sat1, sp.genome.light1), BP.x * T - cx + 3 * u, (BP.y + 1) * T - cy - 24 * u, 10 * u, 8 * u); } } }); } }
+    { const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') { const st = s.breeder.running ? 2 : s.breeder.a || s.breeder.b ? 1 : 0; drawables.push({ y: BP.y + 1, draw: () => { ctx.drawImage(benchSprite(st, Math.floor(now / 350) % 2), BP.x * T - cx, (BP.y + 1) * T - cy - 28 * CONFIG.scale, T, 28 * CONFIG.scale); if ((s.breeder.result || s.breeder.result2)) { const sp = s.species[(s.breeder.result || s.breeder.result2).species], u = CONFIG.scale; if (sp) ctx.drawImage(seedIcon(Math.round(sp.genome.hue1), sp.genome.sat1, sp.genome.light1), BP.x * T - cx + 3 * u, (BP.y + 1) * T - cy - 24 * u, 10 * u, 8 * u); } } }); } }
     { const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') { const lv = S.compostLevel(s); drawables.push({ y: CP.y + 1, draw: () => ctx.drawImage(compostSprite(lv), CP.x * T - cx, (CP.y + 1) * T - cy - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); } }
     { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
     const Cr = BUILDINGS.crate, crateLevel = S.crateCount(s) >= s.crate.capacity ? 2 : S.crateCount(s) > 0 ? 1 : 0;
@@ -646,7 +646,7 @@ export class Game {
     }
     // seeds ready: the same arrow as a ripe crop, over the rack (and over the bench when bred seeds wait)
     if (!this.ui.openPanel && s.carrying !== 'seedrack' && rackState === 2) this.drawArrow(SR.x * T - cx + T / 2, (SR.y + 1) * T - cy - 28 * CONFIG.scale - 14, now);
-    { const BP = S.objectPos(s, 'bench'); if (!this.ui.openPanel && BP && s.carrying !== 'bench' && s.breeder.result) this.drawArrow(BP.x * T - cx + T / 2, (BP.y + 1) * T - cy - 28 * CONFIG.scale - 14, now); }
+    { const BP = S.objectPos(s, 'bench'); if (!this.ui.openPanel && BP && s.carrying !== 'bench' && (s.breeder.result || s.breeder.result2)) this.drawArrow(BP.x * T - cx + T / 2, (BP.y + 1) * T - cy - 28 * CONFIG.scale - 14, now); }
     { const CP = S.objectPos(s, 'compost'); if (!this.ui.openPanel && CP && s.carrying !== 'compost' && s.compost.ready) this.drawArrow(CP.x * T - cx + T / 2, (CP.y + 1) * T - cy - 20 * CONFIG.scale - 14, now); }
     // drying progress over the seed rack
     if (rackState === 1 && s.carrying !== 'seedrack') { const bx = SR.x * T - cx + 8, by = (SR.y + 1) * T - cy - 28 * CONFIG.scale - 6, bw = T - 16, f = S.trayProgress(s, shownTray); ctx.fillStyle = '#3b2314'; ctx.fillRect(bx - 2, by - 2, bw + 4, 10); ctx.fillStyle = '#f5e6c3'; ctx.fillRect(bx, by, bw, 6); ctx.fillStyle = '#e8a23b'; ctx.fillRect(bx, by, Math.round(bw * Math.max(0, Math.min(1, f))), 6); }
@@ -786,7 +786,7 @@ export class Game {
     const s = this.state, it = this.hotbarItem(), out = [], L = MARKET.laneY;
     for (const st of Object.values(MARKET.stalls)) {
       const rect = [st.x * 16, (L - 1) * 16 - 12, 32, 28];
-      if (st.key === 'yours') out.push({ kind: 'stall', x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: it?.kind === 'crop' ? 'Put it on the counter  (E: open)' : `Your stall · ${M.counterCount(s)} on the counter  (E: open)` });
+      if (st.key === 'yours') out.push({ kind: 'stall', x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: it && (it.kind === 'crop' || it.kind === 'product') ? 'Put it on the counter  (E: open)' : `Your stall · ${M.counterCount(s)} on the counter  (E: open)` });
       else out.push({ kind: 'merchant', key: st.key, x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: `${st.name}  (E: open)` });
     }
     const H = MARKET.homeSign; out.push({ kind: 'homesign', near: { x: H.x, y: H.y, w: 1, h: 1 }, rect: [H.x * 16 - 10, (H.y + 1) * 16 - 22, 36, 12], label: "Walk home  (an hour)" });

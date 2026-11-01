@@ -17,6 +17,7 @@ export const CAN_PRICES = [40, 120];
 export const TRAY_BASE = 25, TRAY_GROWTH = 1.6, TRAY_MAX = 4;
 export const CRATE_BASE = 60, CRATE_GROWTH = 1.5, CRATE_MAX = 3, CRATE_STEP = 12;
 export const BENCH_PRICE = 35;
+export const GLASS_PRICE = 160;   // the bench's second glass: two pairs a night
 export const HOE_PRICES = [30, 90];
 export const PICKUP_PRICE = 150;
 export const HANDS_PRICES = [45, 110];
@@ -90,6 +91,10 @@ export function catalog(state) {
   items.push({ id: 'bench', group: 'Stations', name: 'Breeding bench', effect: 'Cross two species into a new one overnight', level: hasBench ? 'owned' : '', price: BENCH_PRICE, blocked: hasBench ? 'You have one' : null });
   const hasCompost = !!state.hasCompost || pendingCount(state, 'compost') > 0 || state.parcels?.some(p => p.id === 'compost');
   items.push({ id: 'compost', group: 'Stations', name: 'Compost bin', effect: 'Rots withered plants and spare crops into fertiliser overnight', level: hasCompost ? 'owned' : '', price: COMPOST_PRICE, blocked: hasCompost ? 'You have one' : null });
+  { const F = CONFIG.fertiliser, lvl = (state.compost?.level || 0) + pendingCount(state, 'bin'), max = F.compostTiers.length - 1, t = F.compostTiers[Math.min(max, lvl)], nx = F.compostTiers[Math.min(max, lvl + 1)];
+    items.push({ id: 'bin', group: 'Stations', name: 'Bigger bin', effect: lvl < max ? `Holds ${t.max} → ${nx.max} plants, a bag from every ${nx.perBag} instead of ${t.perBag}` : `Holds ${t.max}, a bag from every ${t.perBag}`, level: `${lvl} / ${max}`, price: F.binPrices[lvl] ?? 0, blocked: !state.hasCompost ? 'Needs the compost bin' : lvl >= max ? 'Biggest bin' : null }); }
+  { const glass = (state.breeder?.level || 0) + pendingCount(state, 'glass');
+    items.push({ id: 'glass', group: 'Stations', name: 'Second glass', effect: 'The bench breeds two pairs a night: set the next pair while one is under the glass', level: glass ? 'owned' : '', price: GLASS_PRICE, blocked: !state.hasBench ? 'Needs the bench' : glass ? 'You have it' : null }); }
   for (const it of items) { it.why = null; it.afford = !it.blocked && state.money >= it.price; }   // no "yesterday:" lines: the player knows what they need
   return items;
 }
@@ -178,6 +183,8 @@ export function collectParcels(state) {
     if (o.id === 'chest') { if (state.carrying) { keep.push(o); lines.push('Field chest: put down what you carry first'); continue; } state.carrying = 'chest'; state.carriedChest = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; chest = true; lines.push('Field chest: carry it and put it down'); }
     else
     if (o.id === 'tray') { state.seedRack.trays.push({ item: null, readyAt: null, startedAt: null }); lines.push(`Drying tray fitted: ${state.seedRack.trays.length} trays`); }
+    else if (o.id === 'bin') { state.compost.level = Math.min(CONFIG.fertiliser.compostTiers.length - 1, (state.compost.level || 0) + 1); lines.push(`Bigger bin: holds ${CONFIG.fertiliser.compostTiers[state.compost.level].max}`); }
+    else if (o.id === 'glass') { state.breeder.level = 1; lines.push('Second glass fitted: the bench breeds two pairs a night'); }
     else if (o.id === 'hoe') { state.hoe = state.hoe || { level: 0 }; state.hoe.level = Math.min(CONFIG.hoe.seconds.length - 1, state.hoe.level + 1); lines.push(`Sharper hoe: ${CONFIG.hoe.seconds[state.hoe.level]}s a bed`); }
     else if (o.id === 'can') { state.can.level = Math.min(CAN_LEVELS.length - 1, (state.can.level || 0) + 1); state.can.capacity = CAN_LEVELS[state.can.level]; lines.push(`Bigger can: ${state.can.capacity} pours`); }
     else if (o.id === 'crate') { state.crate.extensions = (state.crate.extensions || 0) + 1; state.crate.capacity += CRATE_STEP; lines.push(`Crate holds ${state.crate.capacity}`); }

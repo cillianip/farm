@@ -1201,6 +1201,23 @@ await test('the bench does not care which parent sits where: the same pair on th
   const ab = mk('Carrot', 'Turnip'), ba = mk('Turnip', 'Carrot');
   assert.equal(ab.outcome, ba.outcome); if (ab.species) assert.equal(ab.species, ba.species, 'same child');
 });
+await test('the bigger bin: holds more and a bag from fewer plants; the second glass: a second pair queued while one is under the glass, both resolve at night, both results wait on the bench', () => {
+  const s = arm(S.createState(2)); s.money = 1e6; const F = CONFIG.fertiliser; const carrot = byName(s, 'Carrot');
+  assert.equal(S.compostCap(s), F.compostTiers[0].max); s.compost.level = 2; assert.equal(S.compostCap(s), F.compostTiers[2].max); assert.equal(S.compostBags(10, s), Math.round(10 / F.compostTiers[2].perBag)); assert.equal(S.compostBags(12), 4, 'the old call still means the first bin');
+  s.hasBench = true; s.hasCompost = true; const { catalogue } = { catalogue: null };
+  const ids = Object.keys(s.species);
+  s.breeder.a = { kind: 'seed', species: ids[0], qty: 1 }; s.breeder.b = { kind: 'seed', species: ids[1], qty: 1 }; assert.ok(S.startBreed(s).ok);
+  assert.equal(S.setBreederParent(s, 'a', 2).msg, 'Breeder is busy', 'one glass: busy');
+  s.breeder.level = 1; assert.ok(S.benchHasRoom(s)); assert.ok(S.setBreederParent(s, 'a', 2).ok, 'two glasses: the next pair goes in'); s.breeder.b = { kind: 'seed', species: ids[2], qty: 1 };
+  assert.ok(/second glass/.test(S.startBreed(s).msg)); assert.ok(s.breeder.running && s.breeder.queue); assert.ok(!S.benchHasRoom(s)); assert.equal(S.startBreed(s).msg, 'Already breeding');
+  const rep = S.sleep(s); assert.ok(rep.breeder && rep.breeder2, 'two results'); assert.ok(!s.breeder.running && !s.breeder.queue);
+  const n = (s.breeder.result ? 1 : 0) + (s.breeder.result2 ? 1 : 0); assert.equal(n, [rep.breeder, rep.breeder2].filter(r => r.seeds).length);
+  for (let k = 0; k < 3; k++) { s.inventory.slots[k] = null; } let took = 0; while (!S.takeBreedResult(s).msg) took++; assert.equal(took, n, 'both taken one after the other');
+  // eating: not when full, and the energy comes from what the food restored
+  addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 5 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
+  s.hunger = 100; s.energy = 10; assert.equal(S.eat(s, ci).msg, 'Not hungry'); assert.equal(s.energy, 10);
+  s.hunger = 96; assert.ok(S.eat(s, ci).ok); assert.equal(s.hunger, 100); assert.ok(s.energy <= 10 + Math.round(4 * CONFIG.needs.eatEnergyPerHunger) + 1, 'only four points of food, so only a little energy: ' + s.energy);
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

@@ -1,7 +1,7 @@
 // DOM UI: HUD, hotbar, hover card, toasts and the panels (catalogue, chest, crate, seed rack, bench, compost, seed book, morning, settings).
 import { CONFIG } from './config.js';
 import * as S from './sim.js';
-import { itemName, itemKey } from './items.js';
+import { itemName, itemKey, isFood } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus, driedFactor, dryHours } from './economy.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
 import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
@@ -235,14 +235,14 @@ export class UI {
       if (cp.running) return `<div class="pc-name">Rotting down</div><div class="pc-row"><span>Will make</span><span>${esc(cp.running.fert.name)} ×${cp.running.count}</span></div>${gradeRow(cp.running.fert)}<div class="pc-note">${esc(fertDescribe(cp.running.fert))}</div><div class="pc-note">Ready by morning.</div>`;
       const n = S.compostCount(s), pv = S.compostPreview(s);
       if (!pv) return `<div class="pc-name">Empty</div><div class="pc-note">Takes spare crops and the plants the hoe pulls up or clears. ${F.compostMinInputs} or more rot down into fertiliser overnight: one bag for every three.</div><div class="pc-note">First win: Speed compost on the bed of your best seller. Rarer crops make Quality, and Quality means stars.</div>`;
-      const short = Math.max(0, F.compostMinInputs - n), bags = S.compostBags(n);
+      const short = Math.max(0, F.compostMinInputs - n), bags = S.compostBags(n, s);
       return `<div class="pc-name">${esc(pv.name)}</div><div class="pc-row"><span>Will give</span><span>${bags} ${bags === 1 ? 'bag' : 'bags'}</span></div>${gradeRow(pv)}<div class="pc-note">${esc(fertDescribe(pv))}</div>` + (short ? `<div class="pc-note">${short} more and it starts at bedtime.</div>` : `<div class="pc-note">The lid shuts when you sleep. Ready by morning.</div>`);
     };
     const produceDetails = it => { const sp = it.kind === 'crop' ? s.species[it.species] : null, c = contributions(sp); return `<div class="pc-name${sp ? ' tier-' + sp.tier : ''}">${esc(sp ? sp.name : itemName(it, s.species))}</div><div class="pc-row"><span>Adds</span><span>${esc(c.join(', ')) || 'bulk'}</span></div><div class="pc-note">Click to drop one in. Shift-click for the stack.</div>`; };
     this.show('Compost bin', body => {
       const info = el('button', 'info-btn', 'i'); info.title = 'How it works'; body.appendChild(info);
       const row = el('div', 'station-row');
-      const left = el('div'); left.appendChild(el('div', 'pc-sec', cp.ready ? 'Ready' : cp.running ? 'Rotting down' : `In the bin · ${S.compostCount(s)} / ${F.compostMax}`));
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', cp.ready ? 'Ready' : cp.running ? 'Rotting down' : `In the bin · ${S.compostCount(s)} / ${S.compostCap(s)}`));
       const heap = el('div', 'pslots');
       if (cp.ready) { const sl = this.pslot({ kind: 'fert', fert: cp.ready, qty: cp.readyCount || 1 }, s.species, { cls: 'ready' }); sl.onclick = () => { const r = S.takeCompost(s); if (r.msg) this.toast(r.msg); if (r.float) { g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); g.sound.play('harvest'); } this.refresh(); }; heap.appendChild(sl); }
       else if (cp.running) heap.appendChild(this.pslot(null, s.species, { hint: 'lid shut', cls: 'locked' }));
@@ -342,7 +342,8 @@ export class UI {
     let details;
     const spDetails = sp => `<div class="pc-name tier-${sp.tier}">${esc(sp.name)}</div><div class="pc-note">${sp.tier} · gen ${sp.genome.gen || 0}</div><div class="pc-row"><span>Harvest</span><span>${sp.genome.count} × ${formatMoney(salePrice(s, { species: sp.id }))}</span></div><div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(sp.genome)} pours/day</span></div><div class="pc-note">${esc(traitList(sp).join(' · '))}</div>${sp.sterile ? '<div class="pc-note">Sterile: cannot breed.</div>' : ''}` + traitRows(sp);
     const verdict = () => {
-      if (b.running) { const A = s.species[b.running.a], B = s.species[b.running.b]; return `<div class="pc-name">${esc(A.name)} × ${esc(B.name)}</div><div class="pc-note">A seedling is under the glass. Sleep to see what it becomes.</div>`; }
+      if (b.running && !S.benchHasRoom(s) && !(b.a && b.b)) { const A = s.species[b.running.a], B = s.species[b.running.b], Q = b.queue && [s.species[b.queue.a], s.species[b.queue.b]]; return `<div class="pc-name">${esc(A.name)} × ${esc(B.name)}</div>` + (Q ? `<div class="pc-name">${esc(Q[0].name)} × ${esc(Q[1].name)}</div><div class="pc-note">Two seedlings under two glasses. Sleep to see what they become.</div>` : `<div class="pc-note">A seedling is under the glass. Sleep to see what it becomes.</div>`); }
+      if (b.running && !b.a && !b.b) { const A = s.species[b.running.a], B = s.species[b.running.b]; return `<div class="pc-name">${esc(A.name)} × ${esc(B.name)}</div><div class="pc-note">Under the first glass. The second is free: pick two more parents below for tonight.</div>`; }
       if (b.result) { const sp = s.species[b.result.species]; return `<div class="pc-name tier-${sp?.tier}">${esc(sp?.name || '?')}</div><div class="pc-row"><span>On the bench</span><span><b>${b.result.seeds} seeds</b></span></div><div class="pc-note">Click the glowing slot to take them.</div>`; }
       if (!b.a && !b.b) return `<div class="muted">Pick two parents below. Seeds or produce both work: one of each is used up.</div>`;
       if (!b.a || !b.b) return `<div class="muted">One more parent.</div>`;
@@ -355,21 +356,23 @@ export class UI {
       const row = el('div', 'station-row');
       const left = el('div'); left.appendChild(el('div', 'pc-sec', 'Parents'));
       const slots = el('div', 'pslots');
-      for (const which of ['a', 'b']) {
-        const it = b.running ? { kind: 'seed', species: b.running[which], qty: 1 } : b[which];
-        const sl = this.pslot(it, s.species, { hint: which === 'a' ? 'parent A' : 'parent B', cls: b.running ? 'locked' : '' });
+      const busy = !!b.running && !S.benchHasRoom(s);
+      for (const run of [b.running, b.queue]) if (run) for (const which of ['a', 'b']) { const sl = this.pslot({ kind: 'seed', species: run[which], qty: 1 }, s.species, { hint: which === 'a' ? 'parent A' : 'parent B', cls: 'locked' }); const sp = s.species[run[which]]; sl.onmouseenter = () => { setDetails(details, spDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, verdict()); }; slots.appendChild(sl); }
+      if (!busy) for (const which of ['a', 'b']) {
+        const it = b[which];
+        const sl = this.pslot(it, s.species, { hint: which === 'a' ? (b.running ? 'next A' : 'parent A') : (b.running ? 'next B' : 'parent B') });
         if (it) { const sp = s.species[it.species]; sl.onmouseenter = () => { setDetails(details, spDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, verdict()); }; }
-        if (!b.running && it) sl.onclick = () => { S.clearBreederParent(s, which); this.refresh(); };
+        if (it) sl.onclick = () => { S.clearBreederParent(s, which); this.refresh(); };
         slots.appendChild(sl);
       }
       left.appendChild(slots);
-      if (b.result) {   // the morning's seeds, waiting to be taken
-        const sp = s.species[b.result.species], rs = this.pslot({ kind: 'seed', species: b.result.species, qty: b.result.seeds }, s.species, { cls: 'ready' });
+      for (const res of [b.result, b.result2]) if (res) {   // the morning's seeds, waiting to be taken
+        const sp = s.species[res.species], rs = this.pslot({ kind: 'seed', species: res.species, qty: res.seeds }, s.species, { cls: 'ready' });
         rs.onclick = () => { const r = S.takeBreedResult(s); if (r.msg) this.toast(r.msg); if (r.float) g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); this.refresh(); };
-        rs.onmouseenter = () => { if (sp) setDetails(details, spDetails(sp) + `<div class="pc-note">${b.result.seeds} seeds. Click to take them.</div>`); }; rs.onmouseleave = () => { setDetails(details, verdict()); };
+        rs.onmouseenter = () => { if (sp) setDetails(details, spDetails(sp) + `<div class="pc-note">${res.seeds} seeds. Click to take them.</div>`); }; rs.onmouseleave = () => { setDetails(details, verdict()); };
         slots.appendChild(rs);
       }
-      const go = el('button', 'primary', b.running ? 'Breeding…' : 'Breed overnight'); go.disabled = !!b.running || !b.a || !b.b; go.style.marginTop = '6px';
+      const go = el('button', 'primary', busy ? 'Breeding…' : b.running ? 'Second glass tonight' : 'Breed overnight'); go.disabled = busy || !b.a || !b.b; go.style.marginTop = '6px';
       go.onclick = () => { const r = S.startBreed(s); this.toast(r.msg); this.refresh(); };
       left.appendChild(go);
       const book = el('button', null, 'Seed book'); book.style.margin = '6px 0 0 6px'; book.onclick = () => this.openLineage(); left.appendChild(book);
@@ -379,9 +382,9 @@ export class UI {
       const grid = el('div', 'pslots'); let any = false;
       s.inventory.slots.forEach((it, i) => {
         if (!it || (it.kind !== 'seed' && it.kind !== 'crop')) return; any = true;
-        const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: b.running || sp.sterile ? 'locked' : '' });
+        const sp = s.species[it.species], sl = this.pslot(it, s.species, { cls: busy || sp.sterile ? 'locked' : '' });
         sl.onmouseenter = () => { setDetails(details, spDetails(sp)); }; sl.onmouseleave = () => { setDetails(details, verdict()); };
-        sl.onclick = () => { if (b.running) return; const which = !b.a ? 'a' : 'b'; const r = S.setBreederParent(s, which, i); if (r.msg) this.toast(r.msg); this.refresh(); };
+        sl.onclick = () => { if (busy) return; const which = !b.a ? 'a' : 'b'; const r = S.setBreederParent(s, which, i); if (r.msg) this.toast(r.msg); this.refresh(); };
         grid.appendChild(sl);
       });
       if (!any) grid.appendChild(el('div', 'muted', 'Nothing to breed with. Seeds or produce go here.'));
@@ -586,8 +589,8 @@ export class UI {
       if (report.picked) cartNodes.push(`The pickers took ${report.picked} ${report.picked === 1 ? 'crop' : 'crops'}.`);
       if (report.delivery?.count) { const list = el('ul', 'mr-list'); for (const p of s.parcels || []) list.appendChild(el('li', null, esc(p.name))); cartNodes.push(`It left ${report.delivery.count === 1 ? 'a parcel' : report.delivery.count + ' parcels'} in the crate. Click the crate to open ${report.delivery.count === 1 ? 'it' : 'them'}.`, list); }
       sec('⛟', 'The cart', ...cartNodes);
-      if (report.breeder) {
-        const r = report.breeder, sp = r.species ? s.species[r.species] : null;
+      for (const r0 of [report.breeder, report.breeder2]) if (r0) {
+        const r = r0, sp = r.species ? s.species[r.species] : null;
         const d = sec('✿', 'The breeder');
         if (sp && (r.outcome === 'success' || r.outcome === 'sterile' || r.outcome === 'revert')) {
           const card = el('div', 'mr-breed');
@@ -652,7 +655,7 @@ export class UI {
       body.appendChild(grid);
       body.appendChild(el('div', 'pc-sec', `Pockets · click a crop to put the stack out`));
       const pk = el('div', 'pslots');
-      s.inventory.slots.forEach((it, i) => { const sl = this.pslot(it, s.species, { hint: `pocket ${i + 1}`, cls: it && it.kind !== 'crop' ? 'locked' : '', hover: true }); if (it?.kind === 'crop') sl.onclick = () => { const r = M.stock(s, i); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); }; pk.appendChild(sl); });
+      s.inventory.slots.forEach((it, i) => { const sl = this.pslot(it, s.species, { hint: `pocket ${i + 1}`, cls: it && !isFood(it) ? 'locked' : '', hover: true }); if (isFood(it)) sl.onclick = () => { const r = M.stock(s, i); if (r.msg) this.toast(r.msg); else g.sound.play('move'); this.refresh(); }; pk.appendChild(sl); });
       body.appendChild(pk);
       body.appendChild(el('div', 'pc-sec', 'Today'));
       body.appendChild(el('div', 'pc-row', `<span>Sold</span><span>${t.sold} for <b>${formatMoney(t.money)}</b>${t.tips ? ` <span class="up">(${formatMoney(t.tips)} in tips)</span>` : ''}</span></div>`));

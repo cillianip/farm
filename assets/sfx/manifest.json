@@ -18,7 +18,7 @@
  }, "harvest": {
   "files": ["kenney/knife_slice.ogg", "kenney/knife_slice_2.ogg"], "gain": 0.5
  }, "pull": {
-  "files": ["kenney/chop.ogg"], "gain": 0.5
+  "files": ["kenney/cloth_3.ogg", "kenney/cloth_4.ogg", "kenney/cloth_1.ogg"], "gain": 0.5
  }, "wither": [], "fertilise": {
   "files": ["kenney/footstep_grass_000.ogg", "kenney/footstep_grass_001.ogg", "kenney/footstep_grass_002.ogg", "kenney/footstep_grass_003.ogg", "kenney/footstep_grass_004.ogg"], "gain": 0.3
  }, "seedback": [], "chest": {

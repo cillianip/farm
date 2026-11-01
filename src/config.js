@@ -83,7 +83,7 @@ export const CONFIG = {
   pump: { wellHead: 6, tiers: [
     { name: 'Hand pump', head: 16, price: 200 },   // priced so two of them cost a windmill and give less, on two tiles
     { name: 'Windmill', head: 36, price: 400 },
-    { name: 'Engine', head: 90, price: 1400, fuelPerDay: 1 },   // fuelPerDay: cans of fuel a night (see `fuel`)
+    { name: 'Engine', head: 180, price: 1200, fuelPerDay: 1 },   // five windmills of head on one tile for three windmills' money; it burns a can a night (see `fuel`)
   ] },
   // Fuel is a thing you carry: the catalogue sells it by the can, you pour cans into a generator or an engine, and each
   // running one burns `fuelPerDay` cans a night. A tank holds `tank` cans. Empty, the machine stops until you fill it.
@@ -184,6 +184,8 @@ export const CONFIG = {
   fertiliser: {
     compostHours: 12,             // when started by hand (tests); sleeping finishes it by morning regardless
     compostMinInputs: 3, compostMax: 12,
+    compostTiers: [{ max: 12, perBag: 3 }, { max: 24, perBag: 2.5 }, { max: 40, perBag: 2 }],   // the bin and its two extensions (Build 68): bigger, and a bag from fewer plants
+    binPrices: [150, 400],
     compostBudgetPerInput: 0.08,  // budget grows with how many and how good the inputs were
     compostBudgetCap: 0.6,
     statCap: 0.8,

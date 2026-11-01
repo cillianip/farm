@@ -319,7 +319,8 @@ export function eat(state, slotIndex) {
   const it = state.inventory.slots[slotIndex];
   if (!it || it.kind !== 'crop') return fail('Only produce can be eaten');
   const sp = state.species[it.species];
-  const gain = CONFIG.needs.eatBase + CONFIG.needs.eatPerSize * (sp?.genome.size ?? 0.4);
+  if (state.hunger >= 97) return fail('Not hungry');
+  const gain = Math.min(100 - state.hunger, CONFIG.needs.eatBase + CONFIG.needs.eatPerSize * (sp?.genome.size ?? 0.4));   // only what you can eat: no feeding past full for the energy
   removeFromSlot(state.inventory, slotIndex, 1);
   state.hunger = Math.min(100, state.hunger + gain);
   const energy = Math.round(gain * CONFIG.needs.eatEnergyPerHunger);
@@ -598,7 +599,7 @@ export function pickUp(state, key) {
   if (state.carrying) return fail('Hands full');
   if (!MOVABLE.includes(key)) return fail('');
   if (key === 'seedrack' && state.seedRack.trays.some(t => t.item)) return fail('Take what is on the trays first');
-  if (key === 'bench' && (state.breeder.running || state.breeder.a || state.breeder.b)) return fail('Empty the bench first');
+  if (key === 'bench' && (state.breeder.running || state.breeder.queue || state.breeder.a || state.breeder.b)) return fail('Empty the bench first');
   if (key === 'compost' && (state.compost.inputs.length || state.compost.running || state.compost.ready)) return fail('Empty the bin first');
   const pos = objectPos(state, key), t = pos && tileAt(state.world, pos.x, pos.y);
   if (t) t.t = 'grass';
@@ -1057,7 +1058,7 @@ export function sleep(state, opts = {}) {
   if (report.picked) report.lines.push(`The pickers took ${report.picked} crops.`);
   if (report.loan) report.lines.push(`The bank added ${formatMoney(report.loan.interest)} interest: ${formatMoney(report.loan.owed)} owed. Pay back at the delivery sign.`);
   // breeder
-  if (state.breeder.running) { report.breeder = resolveBreed(state); }
+  if (state.breeder.running) { report.breeder = resolveBreed(state); if (state.breeder.queue) { state.breeder.running = state.breeder.queue; state.breeder.queue = null; report.breeder2 = resolveBreed(state); } }
   if (composting && cp.ready) report.compost = `${cp.ready.name} ×${cp.readyCount || 1}`;
   else if (heap && !cp.running && !cp.ready) report.lines.push(`The compost bin holds ${heap}; it needs ${CONFIG.fertiliser.compostMinInputs} to start.`);
   state.stats.days++;
@@ -1107,7 +1108,7 @@ export function stash(state, slotIndex, to = state.chest) {
 export function setBreederParent(state, which, slotIndex) {
   const it = state.inventory.slots[slotIndex];
   if (!it || (it.kind !== 'crop' && it.kind !== 'seed')) return fail('Needs a crop or a seed');
-  if (state.breeder.running) return fail('Breeder is busy');
+  if (state.breeder.running && !benchHasRoom(state)) return fail('Breeder is busy');
   const cur = state.breeder[which];
   if (cur) addItem(state.inventory, cur);
   state.breeder[which] = { kind: it.kind, species: it.species, q: it.q || 0, qty: 1 };
@@ -1126,19 +1127,22 @@ export function breedPreview(state) {
   const [P, Q] = breedOrder(A, B), res = cross(P.genome, Q.genome, seed);
   return { instability: res.instability, crossFamily: res.crossFamily, cost: breedCost(state, A, B), sterile: A.sterile || B.sterile };
 }
+export const benchGlasses = state => 1 + Math.min(1, state.breeder.level || 0);   // how many pairs a night
+export const benchHasRoom = state => benchGlasses(state) > 1 && !state.breeder.queue;   // a second glass free while the first is under way
 export function startBreed(state, mutationBonus = 1) {
   const b = state.breeder;
-  if (b.running) return fail('Already breeding');
+  if (b.running && !benchHasRoom(state)) return fail('Already breeding');
   if (!b.a || !b.b) return fail('Needs two parents');
   const A = state.species[b.a.species], B = state.species[b.b.species];
   if (A.sterile || B.sterile) return fail('Sterile plants cannot breed');
   const cost = breedCost(state, A, B);
   if (!pay(state, cost)) return fail(`Needs $${cost}`);
   const seed = breedSeed(state, A, B);
-  b.running = { a: A.id, b: B.id, seed, mutationBonus, startedDay: dayOf(state) };
+  const run = { a: A.id, b: B.id, seed, mutationBonus, startedDay: dayOf(state) };
+  if (b.running) b.queue = run; else b.running = run;
   b.a = null; b.b = null;
   state.stats.breeds++;
-  return { ok: true, msg: 'Breeding… results in the morning' };
+  return { ok: true, msg: b.queue ? 'Under the second glass… results in the morning' : 'Breeding… results in the morning' };
 }
 export function resolveBreed(state) {
   const run = state.breeder.running; if (!run) return null;
@@ -1166,14 +1170,15 @@ export function resolveBreed(state) {
   state.breeder.running = null;
   state.breeder.lastResult = out;
   // the seeds wait on the bench until you go and take them
-  state.breeder.result = out.seeds ? { species: out.species, seeds: out.seeds, outcome: out.outcome } : null;
+  const waiting = out.seeds ? { species: out.species, seeds: out.seeds, outcome: out.outcome } : null;
+  if (waiting) { if (state.breeder.result) state.breeder.result2 = waiting; else state.breeder.result = waiting; }
   return out;
 }
 export function takeBreedResult(state) {
-  const r = state.breeder.result; if (!r) return fail('Nothing on the bench');
+  const b = state.breeder, which = b.result ? 'result' : b.result2 ? 'result2' : null, r = which && b[which]; if (!r) return fail('Nothing on the bench');
   const left = addItem(state.inventory, { kind: 'seed', species: r.species, qty: r.seeds });
   if (left === r.seeds) return fail('Your pockets are full');
-  const got = r.seeds - left; if (left) r.seeds = left; else state.breeder.result = null;
+  const got = r.seeds - left; if (left) r.seeds = left; else { b[which] = null; if (which === 'result' && b.result2) { b.result = b.result2; b.result2 = null; } }
   return { ok: true, msg: '', float: `+${got} ${state.species[r.species]?.name || ''} seeds`, seeds: got };
 }
 
@@ -1182,27 +1187,29 @@ export function takeBreedResult(state) {
 // sleep; by morning the heap is fertiliser, one bag per three plants, its stats drawn from what went in.
 export const COMPOSTABLE = ['crop', 'withered', 'pulled'];
 export const compostCount = state => state.compost.inputs.reduce((s, i) => s + i.qty, 0);
-export const compostBags = n => Math.max(1, Math.round(n / 3));
+export const compostTier = state => CONFIG.fertiliser.compostTiers[Math.min(CONFIG.fertiliser.compostTiers.length - 1, state?.compost?.level || 0)];
+export const compostCap = state => compostTier(state).max;
+export const compostBags = (n, state = null) => Math.max(1, Math.round(n / compostTier(state).perBag));
 export const compostLevel = state => state.compost.ready ? 2 : state.compost.running || state.compost.inputs.length ? 1 : 0;   // for the sprite
 export const compostPreview = state => state.compost.inputs.length ? makeCompost(state.compost.inputs, state.species) : null;
 export function canCompost(state) {
   const cp = state.compost;
   if (cp.ready) return fail('Take the compost out first');
   if (cp.running) return fail('The lid is shut until morning');
-  if (compostCount(state) >= CONFIG.fertiliser.compostMax) return fail('The bin is full');
+  if (compostCount(state) >= compostCap(state)) return fail('The bin is full');
   return { ok: true };
 }
 export function addToCompost(state, slotIndex, n = 1) {
   const it = state.inventory.slots[slotIndex];
   if (!it || !COMPOSTABLE.includes(it.kind)) return fail('Only crops and pulled or withered plants rot down');
   const chk = canCompost(state); if (!chk.ok) return chk;
-  const room = CONFIG.fertiliser.compostMax - compostCount(state);
+  const room = compostCap(state) - compostCount(state);
   const take = removeFromSlot(state.inventory, slotIndex, Math.min(n, room));
   const species = it.kind === 'crop' ? it.species : null, q = it.q || 0;
   const have = state.compost.inputs.find(i => i.species === species && (i.q || 0) === q);
   if (have) have.qty += take.qty; else state.compost.inputs.push({ species, q, qty: take.qty });
   const name = species ? state.species[species]?.name || 'crop' : it.kind === 'pulled' ? 'plant' : 'withered plant';
-  return { ok: true, msg: '', float: `+${take.qty} ${name}`, added: take.qty, full: compostCount(state) >= CONFIG.fertiliser.compostMax };
+  return { ok: true, msg: '', float: `+${take.qty} ${name}`, added: take.qty, full: compostCount(state) >= compostCap(state) };
 }
 // Take one plant back out of the heap (before the lid shuts).
 export function takeFromCompost(state, index) {
@@ -1218,7 +1225,7 @@ export function startCompost(state, readyAt = null) {
   if (cp.running || cp.ready) return fail('The bin is busy');
   if (n < CONFIG.fertiliser.compostMinInputs) return fail(`Needs at least ${CONFIG.fertiliser.compostMinInputs} plants`);
   const fert = makeCompost(cp.inputs, state.species);
-  cp.running = { readyAt: readyAt ?? state.minutes + CONFIG.fertiliser.compostHours * 60, fert, count: compostBags(n) };
+  cp.running = { readyAt: readyAt ?? state.minutes + CONFIG.fertiliser.compostHours * 60, fert, count: compostBags(n, state) };
   cp.inputs = [];
   if (!state.fertBook.some(f => f.id === fert.id)) state.fertBook.push({ ...fert, firstDay: dayOf(state) });
   return { ok: true, msg: `Composting ${n} plants` };
