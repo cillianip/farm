@@ -5,69 +5,75 @@
   "files": ["kenney/footstep_0.ogg", "kenney/footstep_1.ogg", "kenney/footstep_2.ogg", "kenney/footstep_3.ogg", "kenney/footstep_4.ogg"], "gain": 0.5
  }, "stepTrack": {
   "files": ["kenney/footstep_5.ogg", "kenney/footstep_6.ogg", "kenney/footstep_7.ogg", "kenney/footstep_8.ogg", "kenney/footstep_9.ogg"], "gain": 0.5
- }, "tired": [], "heavy": [], "eat": [], "drink": [], "passout": [], "dig": {
-  "files": ["kenney/impact_soft_heavy_000.ogg", "kenney/impact_soft_heavy_001.ogg", "kenney/impact_soft_heavy_002.ogg", "kenney/impact_soft_heavy_003.ogg", "kenney/impact_soft_heavy_004.ogg"], "gain": 0.8
+ }, "eat": [], "drink": [], "passout": {
+  "files": ["kenney/impact_soft_heavy_000.ogg", "kenney/impact_soft_heavy_001.ogg", "kenney/impact_soft_heavy_002.ogg", "kenney/impact_soft_heavy_003.ogg", "kenney/impact_soft_heavy_004.ogg"], "gain": 0.5
+ }, "dig": {
+  "files": ["kenney/impact_soft_heavy_000.ogg", "kenney/impact_soft_heavy_001.ogg", "kenney/impact_soft_heavy_002.ogg", "kenney/impact_soft_heavy_003.ogg", "kenney/impact_soft_heavy_004.ogg"], "gain": 0.6
  }, "flatten": {
-  "files": ["kenney/impact_mining_000.ogg", "kenney/impact_mining_001.ogg", "kenney/impact_mining_002.ogg", "kenney/impact_mining_003.ogg", "kenney/impact_mining_004.ogg"], "gain": 0.6
+  "files": ["kenney/impact_mining_000.ogg", "kenney/impact_mining_001.ogg", "kenney/impact_mining_002.ogg", "kenney/impact_mining_003.ogg", "kenney/impact_mining_004.ogg"], "gain": 0.5
  }, "drain": {
-  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.7
+  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.5
  }, "water": [], "fill": [], "plant": {
-  "files": ["kenney/cloth_1.ogg", "kenney/cloth_2.ogg", "kenney/cloth_3.ogg", "kenney/cloth_4.ogg"], "gain": 0.6
+  "files": ["kenney/cloth_1.ogg", "kenney/cloth_2.ogg", "kenney/cloth_3.ogg", "kenney/cloth_4.ogg"], "gain": 0.5
  }, "harvest": {
-  "files": ["kenney/knife_slice.ogg", "kenney/knife_slice_2.ogg"], "gain": 0.6
+  "files": ["kenney/knife_slice.ogg", "kenney/knife_slice_2.ogg"], "gain": 0.5
  }, "pull": {
-  "files": ["kenney/chop.ogg"], "gain": 0.7
- }, "wither": [], "fertilise": [], "seedback": [], "chest": {
-  "files": ["kenney/creak_1.ogg", "kenney/creak_2.ogg", "kenney/creak_3.ogg"], "gain": 0.6
+  "files": ["kenney/chop.ogg"], "gain": 0.5
+ }, "wither": [], "fertilise": {
+  "files": ["kenney/footstep_grass_000.ogg", "kenney/footstep_grass_001.ogg", "kenney/footstep_grass_002.ogg", "kenney/footstep_grass_003.ogg", "kenney/footstep_grass_004.ogg"], "gain": 0.3
+ }, "seedback": [], "chest": {
+  "files": ["kenney/metal_latch.ogg"], "gain": 0.5
  }, "chestClose": {
-  "files": ["kenney/door_close_1.ogg", "kenney/door_close_2.ogg", "kenney/door_close_3.ogg", "kenney/door_close_4.ogg"], "gain": 0.5
+  "files": ["kenney/book_place_1.ogg", "kenney/book_place_2.ogg", "kenney/book_place_3.ogg"], "gain": 0.5
  }, "move": {
-  "files": ["kenney/handle_small_leather.ogg", "kenney/handle_small_leather_2.ogg"], "gain": 0.6
+  "files": ["kenney/handle_small_leather.ogg", "kenney/handle_small_leather_2.ogg"], "gain": 0.4
  }, "rackPlace": {
-  "files": ["kenney/cloth_1.ogg", "kenney/cloth_2.ogg"], "gain": 0.5
- }, "seeds": [], "seedsBred": [], "glass": {
+  "files": ["kenney/cloth_1.ogg", "kenney/cloth_2.ogg"], "gain": 0.45
+ }, "seeds": {
+  "files": ["kenney/cloth_3.ogg", "kenney/cloth_4.ogg"], "gain": 0.4
+ }, "seedsBred": {
+  "files": ["kenney/cloth_3.ogg", "kenney/cloth_4.ogg"], "gain": 0.4
+ }, "glass": {
   "files": ["kenney/impact_glass_light_000.ogg", "kenney/impact_glass_light_001.ogg", "kenney/impact_glass_light_002.ogg", "kenney/impact_glass_light_003.ogg", "kenney/impact_glass_light_004.ogg"], "gain": 0.5
- }, "brew": [], "drop": {
-  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.6
- }, "scoop": [], "crateFull": {
-  "files": ["kenney/impact_wood_heavy_000.ogg", "kenney/impact_wood_heavy_001.ogg", "kenney/impact_wood_heavy_002.ogg", "kenney/impact_wood_heavy_003.ogg", "kenney/impact_wood_heavy_004.ogg"], "gain": 0.6
+ }, "drop": {
+  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.5
+ }, "scoop": {
+  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.4
+ }, "crateFull": {
+  "files": ["kenney/impact_wood_heavy_000.ogg", "kenney/impact_wood_heavy_001.ogg", "kenney/impact_wood_heavy_002.ogg", "kenney/impact_wood_heavy_003.ogg", "kenney/impact_wood_heavy_004.ogg"], "gain": 0.5
  }, "ui": {
-  "files": ["kenney/click_001.wav", "kenney/click_002.wav", "kenney/click_003.wav", "kenney/click_004.wav", "kenney/click_005.wav"], "gain": 0.5
+  "files": ["kenney/impact_wood_light_000.ogg", "kenney/impact_wood_light_001.ogg", "kenney/impact_wood_light_002.ogg", "kenney/impact_wood_light_003.ogg", "kenney/impact_wood_light_004.ogg"], "gain": 0.3
  }, "buy": {
-  "files": ["kenney/confirmation_001.wav", "kenney/confirmation_002.wav", "kenney/confirmation_003.wav", "kenney/confirmation_004.wav"], "gain": 0.6
+  "files": ["kenney/handle_coins.ogg"], "gain": 0.5
  }, "parcel": {
-  "files": ["kenney/book_flip_1.ogg", "kenney/book_flip_2.ogg", "kenney/book_flip_3.ogg"], "gain": 0.7
+  "files": ["kenney/book_flip_1.ogg", "kenney/book_flip_2.ogg", "kenney/book_flip_3.ogg"], "gain": 0.5
  }, "loan": {
-  "files": ["kenney/handle_coins_2.ogg"], "gain": 0.7
+  "files": ["kenney/handle_coins_2.ogg"], "gain": 0.5
  }, "pipeLay": {
-  "files": ["kenney/impact_metal_light_000.ogg", "kenney/impact_metal_light_001.ogg", "kenney/impact_metal_light_002.ogg", "kenney/impact_metal_light_003.ogg", "kenney/impact_metal_light_004.ogg"], "gain": 0.6
- }, "post": {
-  "files": ["kenney/impact_plank_medium_000.ogg", "kenney/impact_plank_medium_001.ogg", "kenney/impact_plank_medium_002.ogg", "kenney/impact_plank_medium_003.ogg", "kenney/impact_plank_medium_004.ogg"], "gain": 0.6
- }, "beltLay": [], "pickup": {
   "files": ["kenney/impact_metal_light_000.ogg", "kenney/impact_metal_light_001.ogg", "kenney/impact_metal_light_002.ogg", "kenney/impact_metal_light_003.ogg", "kenney/impact_metal_light_004.ogg"], "gain": 0.5
+ }, "post": {
+  "files": ["kenney/impact_plank_medium_000.ogg", "kenney/impact_plank_medium_001.ogg", "kenney/impact_plank_medium_002.ogg", "kenney/impact_plank_medium_003.ogg", "kenney/impact_plank_medium_004.ogg"], "gain": 0.5
+ }, "beltLay": {
+  "files": ["kenney/impact_plank_medium_000.ogg", "kenney/impact_plank_medium_001.ogg", "kenney/impact_plank_medium_002.ogg", "kenney/impact_plank_medium_003.ogg", "kenney/impact_plank_medium_004.ogg"], "gain": 0.5
+ }, "pickup": {
+  "files": ["kenney/impact_metal_light_000.ogg", "kenney/impact_metal_light_001.ogg", "kenney/impact_metal_light_002.ogg", "kenney/impact_metal_light_003.ogg", "kenney/impact_metal_light_004.ogg"], "gain": 0.4
  }, "sprinklerSet": {
-  "files": ["kenney/impact_tin_medium_000.ogg", "kenney/impact_tin_medium_001.ogg", "kenney/impact_tin_medium_002.ogg", "kenney/impact_tin_medium_003.ogg", "kenney/impact_tin_medium_004.ogg"], "gain": 0.6
+  "files": ["kenney/impact_tin_medium_000.ogg", "kenney/impact_tin_medium_001.ogg", "kenney/impact_tin_medium_002.ogg", "kenney/impact_tin_medium_003.ogg", "kenney/impact_tin_medium_004.ogg"], "gain": 0.5
  }, "pumpSet": {
-  "files": ["kenney/impact_metal_medium_000.ogg", "kenney/impact_metal_medium_001.ogg", "kenney/impact_metal_medium_002.ogg", "kenney/impact_metal_medium_003.ogg", "kenney/impact_metal_medium_004.ogg"], "gain": 0.6
+  "files": ["kenney/impact_metal_medium_000.ogg", "kenney/impact_metal_medium_001.ogg", "kenney/impact_metal_medium_002.ogg", "kenney/impact_metal_medium_003.ogg", "kenney/impact_metal_medium_004.ogg"], "gain": 0.5
  }, "switch": {
-  "files": ["kenney/metal_click.ogg"], "gain": 0.6
+  "files": ["kenney/metal_click.ogg"], "gain": 0.5
  }, "fuelPour": [], "snip": {
   "files": ["kenney/knife_slice_2.ogg"], "gain": 0.4
  }, "cascade": [], "stake": {
-  "files": ["kenney/impact_wood_heavy_000.ogg", "kenney/impact_wood_heavy_001.ogg", "kenney/impact_wood_heavy_002.ogg", "kenney/impact_wood_heavy_003.ogg", "kenney/impact_wood_heavy_004.ogg"], "gain": 0.8
- }, "depart": [], "hmYes": [], "hmNo": [], "coin": {
-  "files": ["kenney/handle_coins.ogg"], "gain": 0.6
+  "files": ["kenney/impact_wood_heavy_000.ogg", "kenney/impact_wood_heavy_001.ogg", "kenney/impact_wood_heavy_002.ogg", "kenney/impact_wood_heavy_003.ogg", "kenney/impact_wood_heavy_004.ogg"], "gain": 0.6
+ }, "coin": {
+  "files": ["kenney/handle_coins.ogg"], "gain": 0.45
  }, "coins": {
-  "files": ["kenney/handle_coins_2.ogg"], "gain": 0.6
- }, "cart": [], "cartLeave": [], "morning": [], "sleep": [], "splat": {
-  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.7
+  "files": ["kenney/handle_coins_2.ogg"], "gain": 0.45
+ }, "cart": [], "cartLeave": [], "splat": {
+  "files": ["kenney/impact_soft_medium_000.ogg", "kenney/impact_soft_medium_001.ogg", "kenney/impact_soft_medium_002.ogg", "kenney/impact_soft_medium_003.ogg", "kenney/impact_soft_medium_004.ogg"], "gain": 0.45
  }, "close": {
-  "files": ["kenney/close_001.wav", "kenney/close_002.wav", "kenney/close_003.wav", "kenney/close_004.wav"], "gain": 0.5
- }, "hover": {
-  "files": ["kenney/tick_001.wav", "kenney/tick_002.wav", "kenney/tick_004.wav"], "gain": 0.25
- }, "tap": {
-  "files": ["kenney/select_001.wav", "kenney/select_002.wav", "kenney/select_003.wav", "kenney/select_004.wav", "kenney/select_005.wav", "kenney/select_006.wav", "kenney/select_007.wav", "kenney/select_008.wav"], "gain": 0.4
- }, "no": {
-  "files": ["kenney/error_001.wav", "kenney/error_002.wav", "kenney/error_003.wav", "kenney/error_004.wav"], "gain": 0.5
- }, "sprinkler": [], "windmill": [], "engine": [], "generator": [], "belt": [], "murmur": [], "crickets": []
+  "files": ["kenney/impact_wood_light_000.ogg", "kenney/impact_wood_light_001.ogg", "kenney/impact_wood_light_002.ogg", "kenney/impact_wood_light_003.ogg", "kenney/impact_wood_light_004.ogg"], "gain": 0.2
+ }, "sprinkler": [], "windmill": [], "engine": [], "generator": [], "belt": [], "murmur": []
 }

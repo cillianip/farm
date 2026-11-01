@@ -211,7 +211,7 @@ export class UI {
     $('panel-title').textContent = title; const body = $('panel-body'); body.innerHTML = '';
     if (!this.openPanel) this.game.sound.play(key === 'chest' ? 'chest' : 'ui');
     builder(body); const pn = $('panel'); pn.classList.remove('hidden');
-    body.onmouseover = e => { const t = e.target.closest('.pslot, .cat-row, .lin-row, button'); if (t && t !== this.lastOver && !t.classList.contains('empty')) this.game.sound.play('hover'); this.lastOver = t; }; requestAnimationFrame(() => requestAnimationFrame(() => pn.classList.add('open')));
+    requestAnimationFrame(() => requestAnimationFrame(() => pn.classList.add('open')));
     this.openPanel = { title, builder, key }; this.renderHotbar();
   }
   refresh() { if (this.openPanel) { const b = $('panel-body'); const sc = b.scrollTop; b.innerHTML = ''; this.openPanel.builder(b); b.scrollTop = sc; } this.renderHotbar(); this.updateHud(); }
@@ -468,7 +468,7 @@ export class UI {
     };
     const onMove = e => {
       if (!drag) return;
-      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; drag.live = true; dragged = true; this.hideHover(); this.game.sound.play('tap'); const gh = drag.sl.cloneNode(true); gh.className = 'pslot drag-ghost'; document.body.appendChild(gh); drag.ghost = gh; drag.sl.classList.add('dragging'); }
+      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; drag.live = true; dragged = true; this.hideHover(); const gh = drag.sl.cloneNode(true); gh.className = 'pslot drag-ghost'; document.body.appendChild(gh); drag.ghost = gh; drag.sl.classList.add('dragging'); }
       drag.ghost.style.left = (e.clientX - 28) + 'px'; drag.ghost.style.top = (e.clientY - 28) + 'px';
       const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pslot');
       $('panel-body').querySelectorAll('.pslot.over').forEach(x => x.classList.remove('over'));
@@ -527,7 +527,6 @@ export class UI {
   }
   openMorning(report) {
     const s = this.state;
-    this.game.sound.play('morning');
     this.show(`Day ${report.day}`, body => {
       const sec = (icon, title, ...nodes) => { const d = el('div', 'mr-sec'); d.appendChild(el('div', 'mr-head', `<span class="mr-icon">${icon}</span>${esc(title)}`)); for (const n of nodes) if (n) d.appendChild(typeof n === 'string' ? el('div', 'mr-line', esc(n)) : n); body.appendChild(d); return d; };
       // the night
@@ -666,7 +665,7 @@ export class UI {
       slider('Master', 'master'); slider('Effects', 'sfx'); slider('Music', 'music');
       const mute = el('label', 'set-row'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!P.muted; cb.onchange = () => snd.set('muted', cb.checked);
       mute.appendChild(cb); mute.appendChild(el('span', null, 'Mute everything')); body.appendChild(mute);
-      body.appendChild(el('div', 'pc-note', 'The game makes its own sounds unless a recording is dropped into assets/sfx (see the README there): then the recording plays, pitched a little differently each time. The theme loops while you farm.'));
+      body.appendChild(el('div', 'pc-note', 'Most of what you hear is a recording (marked ●), pitched a little differently each time; the rest is synthesised until a recording is dropped into assets/sfx (see the README there). The interface stays quiet: only your hands make a sound. The theme loops while you farm.'));
       const aud = el('div', 'set-row'); aud.appendChild(el('span', null, 'Audition')); const grid = el('div', 'aud-grid');
       for (const name of Object.keys(g.sound.FX)) { const b = el('button', 'small', name + (g.sound.samples?.[name] ? ' ●' : '')); b.title = g.sound.samples?.[name] ? 'a recording' : 'synthesised'; b.onclick = () => { g.sound.unlock(); g.sound.play(name); }; grid.appendChild(b); }
       for (const name of g.sound.LOOP_NAMES) { const b = el('button', 'small', name + ' ~'); b.title = 'a loop: plays for a moment'; b.onclick = () => g.sound.previewLoop(name); grid.appendChild(b); }

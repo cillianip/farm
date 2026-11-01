@@ -52,3 +52,12 @@ metal and machines (`pipeLay`, `post`, `beltLay`, `pickup`, `sprinklerSet`, `pum
 market (`depart`, `hmYes`, `hmNo`, `coins`); world (`cartLeave`, `splat`); interface (`tap`).
 Loops: `sprinkler`, `windmill`, `engine`, `generator`, `belt`, `murmur`, `crickets`. A recording named for a loop plays
 looped in place of the synthesis (make it seamless: a few seconds, fading ends). Loops are heard by how near you stand.
+
+## Build 66: quiet
+
+The interface no longer makes a sound except a light wooden click when a panel opens or shuts (`ui`, `close`); `hover`,
+`tap` and `no` are gone, as are the voices and jingles (`hmYes`, `hmNo`, `tired`, `heavy`, `morning`, `sleep`, `brew`,
+`depart`) and the `crickets` loop. The `sprinkler` loop is a soft steady hiss. `water` is one pour the length of the can's
+tilt. The chest is `metal_latch` to open and `book_place` to shut. 48 effects and 6 loops remain; 38 have recordings
+(`seeds`, `seedsBred`, `fertilise`, `scoop`, `beltLay`, `passout` joined the list). Gains are lower across the board: keep new
+recordings around −12 dB so nothing jumps out.

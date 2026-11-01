@@ -15,7 +15,7 @@ import * as M from './market.js';
 import { MARKET } from './market.js';
 // What each timed action sounds like, and how often the sound strikes again while the animation runs (seconds of action time).
 const ACTION_SOUND = { hoe: 'dig', drain: 'drain', clear: 'dig', wither: 'wither', pull: 'pull', flatten: 'flatten', fill: 'fill', plant: 'plant', drop: 'drop', dry: 'rackPlace', compost: 'drop', eat: 'eat', drink: 'drink', water: 'water' };
-const ACTION_PERIOD = { hoe: 0.3, drain: 0.3, clear: 0.3, wither: 0.3, pull: 0.35, flatten: 0.35, water: 0.28, eat: 0.42, fill: 0.75 };
+const ACTION_PERIOD = { hoe: 0.3, drain: 0.3, clear: 0.3, wither: 0.3, pull: 0.35, flatten: 0.35, eat: 0.42, fill: 0.75 };
 import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
@@ -75,7 +75,7 @@ export class Game {
     window.addEventListener('keydown', e => {
       const k = e.key.toLowerCase(); this.sound.unlock();
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { e.preventDefault(); this.keys.add(k); }
-      else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) { this.selected = +k - 1; this.sound.play('tap'); }   // number keys pick a hotbar slot
+      else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) { this.selected = +k - 1; }   // number keys pick a hotbar slot
       else if (k === 'e') this.interactKey();
       else if (k === 'n' && !this.ui.openPanel) { this.netView = !this.netView; if (this.netView) this.ui.toast('Network view: what is fed, powered and running. N hides it.'); }
       else if (k === 'escape' && this.ui.openPanel) this.ui.closePanel();
@@ -88,7 +88,7 @@ export class Game {
     c.addEventListener('mouseleave', () => { this.mouse.inside = false; this.ui.hideHover(); });
     c.addEventListener('mousedown', e => { e.preventDefault(); this.sound.unlock(); if (e.button === 0) { this.mouseHeld = true; this.mouseDown(); } });
     window.addEventListener('mouseup', e => { if (e.button === 0) { this.mouseHeld = false; this.lastHoldKey = null; this.holdT = 0; this.mouseUp(); } });
-    c.addEventListener('wheel', e => { e.preventDefault(); this.selected = (this.selected + (e.deltaY > 0 ? 1 : CONFIG.inventory.hotbar - 1)) % CONFIG.inventory.hotbar; this.sound.play('tap'); }, { passive: false });
+    c.addEventListener('wheel', e => { e.preventDefault(); this.selected = (this.selected + (e.deltaY > 0 ? 1 : CONFIG.inventory.hotbar - 1)) % CONFIG.inventory.hotbar; }, { passive: false });
     c.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('beforeunload', () => this.save());
     document.addEventListener('visibilitychange', () => {   // the farm stands still while the tab is hidden; nothing catches up on return
@@ -109,7 +109,7 @@ export class Game {
       const hb = hotbarRects(this.vw, this.vh), to = hb.slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h);
       const inv = this.state.inventory.slots;
       if (d.moved && to >= 0 && to !== d.from) { [inv[d.from], inv[to]] = [inv[to], inv[d.from]]; this.selected = to; this.sound.play('move'); }
-      else { if (this.selected !== d.from) this.sound.play('tap'); this.selected = d.from; }
+      else this.selected = d.from;
       return;
     }
     const p = this.press; this.press = null;
@@ -253,7 +253,7 @@ export class Game {
       case 'fchest': { const ch = s.world.tiles[o.y * s.world.w + o.x].obj; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'chest': { if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, BUILDINGS.chest.x + 0.5, BUILDINGS.chest.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(); return true; }
       case 'eat': { this.startAction('eat', Math.floor(s.player.x), Math.floor(s.player.y), CONFIG.actions.eatSeconds); return true; }
-      case 'harvest': { if (!S.inReach(s, tx, ty)) { this.ui.toast('Too far'); return true; } const r = S.useItem(s, it ? -1 : this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, tx + 0.5, ty, '#ffffff'); this.sound.play('harvest'); } else this.sound.play('no'); return true; }
+      case 'harvest': { if (!S.inReach(s, tx, ty)) { this.ui.toast('Too far'); return true; } const r = S.useItem(s, it ? -1 : this.selected, tx, ty); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, tx + 0.5, ty, '#ffffff'); this.sound.play('harvest'); } return true; }
     }
     return false;
   }
@@ -315,10 +315,10 @@ export class Game {
   afterMorning() { if (this.state.deeds > 0) this.landMode = true; }
   goToSleep() {
     if (this.sleeping) return;
-    this.sleeping = true; this.ui.hideHover(); this.sound.play('sleep');
+    this.sleeping = true; this.ui.hideHover();
     const fade = document.getElementById('fade'); fade.classList.add('on');
     setTimeout(() => {   // dark, a few breaths of zzz, then the morning comes up slowly behind the report
-      const report = S.sleep(this.state); if (report.breeder) this.sound.play('brew');
+      const report = S.sleep(this.state);
       this.save();
       fade.classList.remove('on');
       this.sleeping = false;
@@ -340,7 +340,7 @@ export class Game {
     if (!this.sleeping) {
       const events = S.advance(s, dt);
       for (const e of events) if (e.type === 'sleep') { if (e.forced) this.sound.play('passout'); this.save(); this.ui.openMorning(e.report); }
-      for (const ev of (s.market?.events || [])) { if (ev.type === 'sale') { this.addFloat(`+${formatMoney(ev.total)}`, ev.x, ev.y - 0.6, '#f6c453'); this.sound.play('coin'); this.sound.play('hmYes'); } else if (ev.type === 'pass') this.sound.play('hmNo'); }
+      for (const ev of (s.market?.events || [])) { if (ev.type === 'sale') { this.addFloat(`+${formatMoney(ev.total)}`, ev.x, ev.y - 0.6, '#f6c453'); this.sound.play('coin'); } }
       if (s.market?.events?.length) s.market.events = [];
     }
     this.moving = false;
@@ -358,8 +358,8 @@ export class Game {
     // a label above the head for a moment when what you hold changes
     { const it = this.hotbarItem(), key = it ? `${this.selected}:${it.kind}:${it.species || it.tool || ''}` : ''; if (key !== this.heldKey) { this.heldKey = key; this.heldLabel = it ? { text: itemName(it, s.species) + (it.qty > 1 && it.kind !== 'tool' ? ` ×${it.qty}` : ''), t: 0 } : null; } if (this.heldLabel) { this.heldLabel.t += dt; if (this.heldLabel.t > 1.6) this.heldLabel = null; } }
     { const tired = S.isTired(s), heavy = S.isHeavy(s);   // one word when your state changes, not a nag
-      if (tired && !this.wasTired) { this.ui.toast('Worn out. You drag your feet and everything takes longer. Eat, drink, or sleep.'); this.sound.play('tired'); }
-      if (heavy && !this.wasHeavy) { this.ui.toast('Your pockets are heavy. Put things in the chest by the porch.'); this.sound.play('heavy'); }
+      if (tired && !this.wasTired) { this.ui.toast('Worn out. You drag your feet and everything takes longer. Eat, drink, or sleep.'); }
+      if (heavy && !this.wasHeavy) { this.ui.toast('Your pockets are heavy. Put things in the chest by the porch.'); }
       this.wasTired = tired; this.wasHeavy = heavy; }
     // the money counter rolls towards the real figure instead of jumping
     if (this.shownMoney == null) this.shownMoney = s.money; else { const d = s.money - this.shownMoney; this.shownMoney = Math.abs(d) < 0.01 ? s.money : this.shownMoney + d * Math.min(1, dt * 5); }
@@ -380,9 +380,7 @@ export class Game {
     this.cam.y = wh * T < this.vh ? -(this.vh - wh * T) / 2 : Math.max(0, Math.min(wh * T - this.vh, s.player.y * T - this.vh / 2));
     this.mouse.tx = Math.floor((this.mouse.x + this.cam.x) / T); this.mouse.ty = Math.floor((this.mouse.y + this.cam.y) / T);
     this.hit = this.action || this.sleeping || this.ui.openPanel || s.carrying || this.hotbarHover >= 0 ? null : this.hitTest();
-    { const hk = this.hit ? this.hit.kind + ':' + this.hit.label : ''; if (hk && hk !== this.lastHitKey) this.sound.play('hover'); this.lastHitKey = hk; }   // a tick as the cursor finds each thing
     const hbSlot = this.mouse.inside ? hotbarRects(this.vw, this.vh).slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h) : -1;
-    if (hbSlot !== this.hotbarHover && hbSlot >= 0 && s.inventory.slots[hbSlot]) this.sound.play('hover');
     this.hotbarHover = hbSlot;
     if (this.mouse.inside && !this.ui.openPanel && hbSlot >= 0 && s.inventory.slots[hbSlot] && !this.drag?.moved) this.ui.hoverItem(s.inventory.slots[hbSlot], this.mouse.x, this.mouse.y);
     else if (this.mouse.inside && !this.ui.openPanel && hbSlot < 0) this.ui.hover(tileAt(s.world, this.mouse.tx, this.mouse.ty), this.mouse.tx, this.mouse.ty, this.mouse.x, this.mouse.y); else if (!this.ui.panelHover) this.ui.hideHover();
@@ -436,7 +434,7 @@ export class Game {
     this.loopT = (this.loopT || 0) - dt; if (this.loopT > 0) return; this.loopT = 0.15;
     if (snd.previewUntil > performance.now()) return;
     const s = this.state, p = s.player, near = (pts, R = 7) => { let best = 0; for (const [x, y] of pts) best = Math.max(best, 1 - Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) / R); return Math.max(0, best); };
-    const lv = { sprinkler: 0, windmill: 0, engine: 0, generator: 0, belt: 0, murmur: 0, crickets: 0 };
+    const lv = { sprinkler: 0, windmill: 0, engine: 0, generator: 0, belt: 0, murmur: 0 };
     if (s.market?.at) lv.murmur = M.marketOpen(s) ? 1 : 0.15;
     else {
       const w = s.world, spr = [], wind = [], eng = [], gen = [], belt = [];
@@ -444,8 +442,7 @@ export class Game {
       for (const { x, y, t } of S.pumpTiles(s)) if (S.pumpInFlow(s, x, y)) (t.obj.level === 1 ? wind : t.obj.level === 2 ? eng : []).push([x, y]);
       for (const { x, y } of S.generatorTiles(s)) if (S.generatorLive(s, x, y)) gen.push([x, y]);
       for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && S.beltDir(s, x, y) >= 0) belt.push([x, y]); }
-      lv.sprinkler = near(spr); lv.windmill = near(wind, 9); lv.engine = near(eng, 9); lv.generator = near(gen, 8); lv.belt = near(belt, 6);
-      const h = S.hourOf(s); lv.crickets = (h >= 21 || h < 5) && !s.rainToday ? 0.7 : 0;
+      lv.sprinkler = near(spr, 5); lv.windmill = near(wind, 9); lv.engine = near(eng, 9); lv.generator = near(gen, 8); lv.belt = near(belt, 6);
     }
     if (this.sleeping || this.travelling) for (const k in lv) lv[k] = 0;
     for (const [k, v] of Object.entries(lv)) snd.setLoop(k, v);
@@ -768,7 +765,7 @@ export class Game {
   travelTo(dest) {
     if (this.travelling || this.sleeping) return;
     const s = this.state, chk = M.depart(s, dest); if (!chk.ok) { this.ui.toast(chk.msg); return; }
-    this.travelling = true; this.ui.hideHover(); this.ui.closePanel(); this.action = null; this.press = null; this.sound.play('depart');
+    this.travelling = true; this.ui.hideHover(); this.ui.closePanel(); this.action = null; this.press = null;
     const fade = document.getElementById('fade'); fade.classList.add('on');
     setTimeout(() => {
       const r = S.travel(s, dest);
