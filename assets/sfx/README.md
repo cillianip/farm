@@ -1,5 +1,11 @@
 # Recorded sound effects
 
+**Build 65:** the folder `kenney/` holds 110 recordings from Kenney's Impact Sounds, RPG Audio and Interface Sounds
+packs (kenney.nl, CC0 1.0: free for any use, no credit required, credit given anyway), mapped in `manifest.json` onto
+34 of the game's sounds. A manifest entry is either a list of files or `{ "files": [...], "gain": 0.6 }`; several
+files under one name are picked at random each play. The rest of the sounds are still synthesised until a recording
+is dropped in for them.
+
 The game makes every sound itself unless a recording is listed here. Put `.ogg` (best), `.wav` or `.mp3` files in this
 folder and name them in `manifest.json`; the game loads what it finds on the first click and plays it instead of the
 synthesised version, with the pitch nudged a little each time, the way Minecraft does. A name can list several files

@@ -23,7 +23,7 @@ export class Sound {
   constructor() {
     this.ctx = null;
     this.prefs = Object.assign({ master: 0.8, sfx: 0.8, music: 0.5, muted: false }, load() || {});
-    this.musicOn = false; this.stepT = 0; this.samples = {}; this.v = 1; this.loops = {};
+    this.musicOn = false; this.stepT = 0; this.samples = {}; this.sampleGain = {}; this.v = 1; this.loops = {};
   }
   // ---------- families: helpers the effects share ----------
   ticks(t, n, gapMin, gapMax, f, q, gain, dur) { let at = t; for (let k = 0; k < n; k++) { this.noise(at, dur, gain * (0.7 + Math.random() * 0.5), null, { type: 'bandpass', f: f * (0.8 + Math.random() * 0.4), q }); at += gapMin + Math.random() * (gapMax - gapMin); } }
@@ -49,18 +49,20 @@ export class Sound {
   async loadSamples() {
     let man = null; try { const r = await fetch('assets/sfx/manifest.json'); if (r.ok) man = await r.json(); } catch {}
     if (!man) return;
-    for (const [name, files] of Object.entries(man)) {
+    const cache = new Map();   // a file used under several names decodes once
+    for (const [name, entry] of Object.entries(man)) {
+      const files = Array.isArray(entry) ? entry : entry?.files, gain = Array.isArray(entry) ? 1 : entry?.gain ?? 1;
       if (!Array.isArray(files) || !files.length) continue;
       const bufs = [];
-      for (const f of files) { try { const r = await fetch('assets/sfx/' + f); if (!r.ok) continue; bufs.push(await this.ctx.decodeAudioData(await r.arrayBuffer())); } catch {} }
-      if (bufs.length) this.samples[name] = bufs;
+      for (const f of files) { try { if (!cache.has(f)) { const r = await fetch('assets/sfx/' + f); cache.set(f, r.ok ? await this.ctx.decodeAudioData(await r.arrayBuffer()) : null); } const b = cache.get(f); if (b) bufs.push(b); } catch {} }
+      if (bufs.length) { this.samples[name] = bufs; this.sampleGain[name] = gain; }
     }
   }
   playSample(name, gain = 1) {
     const bufs = this.samples[name]; if (!bufs?.length) return false;
     const c = this.ctx, s = c.createBufferSource(), g = c.createGain();
     s.buffer = bufs[Math.floor(Math.random() * bufs.length)]; s.playbackRate.value = this.vary(0.1);
-    g.gain.value = gain; s.connect(g); g.connect(this.sfxBus); s.start();
+    g.gain.value = gain * (this.sampleGain[name] ?? 1); s.connect(g); g.connect(this.sfxBus); s.start();
     return true;
   }
   // Browsers only let audio start after a gesture: call this from the first click or key.
