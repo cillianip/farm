@@ -8,7 +8,7 @@ import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipe
 import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
 import * as M from './market.js';
 import { MARKET } from './market.js';
-import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD } from './fertiliser.js';
+import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord } from './fertiliser.js';
 import { growRealMinutes, RARE_TRAITS } from './genetics.js';
 
 const $ = id => document.getElementById(id);
@@ -117,7 +117,7 @@ export class UI {
         const f = tile.fert?.stats || {}, fmtMin = v => v < 1 ? 'under a minute' : `~${Math.ceil(v)} min`;
         if (stage < 3) { const base = factor > 0 ? ((100 - c.growth) / 100) * growRealMinutes(g) / factor : null, mins = base == null ? null : base / (1 + (f.speed || 0)); html += `<div class="pc-row"><span>Ripe in</span><span>${mins == null ? 'not growing (dry)' : f.speed && fmtMin(base) !== fmtMin(mins) ? `${fmtMin(base)} → ${fmtMin(mins)}` : fmtMin(mins)}</span></div>`; }
         if (!c.unknown) { const n = g.count + (f.yield || 0) * 3, nStr = Number.isInteger(n) ? `${n}` : n.toFixed(1); html += `<div class="pc-row"><span>Harvest</span><span>${f.yield ? `${g.count}× → ${nStr}×` : `${g.count}×`} · ${formatMoney(salePrice(s, { species: sp.id }))} each</span></div>`; }
-        if (f.quality) html += `<div class="pc-row"><span>Stars</span><span>none → up to ${'★'.repeat(Math.min(3, Math.ceil(f.quality * 4)))}</span></div>`;
+        if (f.quality) html += `<div class="pc-row"><span>Stars</span><span>${starsWord(f.quality)}</span></div><div class="pc-note">Each star adds ${Math.round(CONFIG.fertiliser.qualityStarValue * 100)}% fresh, half that dried. The bag stays while this plant stands: a regrowing crop keeps it for good.</div>`;
         if (!c.unknown) html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>` + traitRows(sp);
       }
     }
@@ -266,7 +266,7 @@ export class UI {
       });
       if (!any) grid.appendChild(el('div', 'muted', 'Nothing in your pockets to rot down. Spare crops, or the plants the hoe pulls up.'));
       body.appendChild(grid);
-      const box = el('div', 'info-box hidden', `What goes in sets what comes out. Fast crops give <b>Speed</b> (plants grow faster), many-fruited give <b>Yield</b> (more per harvest), hardy give <b>Hardiness</b>, low-thirst give <b>Water keep</b> (the bed dries slower), rarer crops give <b>Quality</b> (stars on the harvest, each worth +${Math.round(F.qualityStarValue * 100)}%), bred crops give <b>Mutation</b>. Feeding one kind concentrates the power; mixing spreads it thin. The grade (I to III) is how much power the batch holds: more plants and rarer plants make a richer batch. A bag works into one tilled bed and lasts until that plant is pulled.`);
+      const box = el('div', 'info-box hidden', `What goes in sets what comes out. Fast crops give <b>Speed</b> (plants grow faster), many-fruited give <b>Yield</b> (more per harvest), hardy give <b>Hardiness</b>, low-thirst give <b>Water keep</b> (the bed dries slower), rarer crops give <b>Quality</b> (stars on the harvest, each worth +${Math.round(F.qualityStarValue * 100)}% fresh and half that dried: every 25% of Quality is a sure star, the rest a chance of one more, three at most; only crops above common count, and a bin caps at 60%, so two stars and a chance of a third is the best a bag can do), bred crops give <b>Mutation</b>. Feeding one kind concentrates the power; mixing spreads it thin. The grade (I to III) is how much power the batch holds: more plants and rarer plants make a richer batch. A bag works into one tilled bed and lasts until that plant is pulled.`);
       info.onclick = () => box.classList.toggle('hidden'); body.appendChild(box);
     }, 'compost');
   }

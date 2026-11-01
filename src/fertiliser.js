@@ -45,4 +45,7 @@ export function contributions(sp) {
   if (g.thirst < 0.35) out.push('Water keep'); if (sp.tier !== 'common') out.push('Quality'); if ((g.gen || 0) > 0) out.push('Mutation');
   return out;
 }
-export const fertDescribe = f => Object.entries(f.stats).map(([k, v]) => `${STAT_LABEL[k]} +${Math.round(v * 100)}%`).join(', ') || 'no effect';
+// Quality becomes stars on the harvest: each 0.25 of it is a sure star, the remainder a chance of one more, three at most.
+export const starsFromQuality = q => { const sure = Math.min(3, Math.floor((q || 0) * 4)), chance = sure >= 3 ? 0 : Math.round(((q || 0) * 4 % 1) * 100); return { sure, chance }; };
+export const starsWord = q => { const { sure, chance } = starsFromQuality(q); return sure || chance ? `${'★'.repeat(sure) || 'no star'}${chance ? ` (${chance}% chance of ${sure ? 'one more' : 'one'})` : ''}` : 'no stars'; };
+export const fertDescribe = f => Object.entries(f.stats).map(([k, v]) => k === 'quality' ? `Quality +${Math.round(v * 100)}%: ${starsWord(v)}` : `${STAT_LABEL[k]} +${Math.round(v * 100)}%`).join(', ') || 'no effect';
