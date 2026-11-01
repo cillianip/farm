@@ -33,8 +33,8 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
   else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
-  else if (['generator', 'line', 'belt', 'picker', 'hopper', 'dryer'].includes(item.kind)) src = stationIcon(item.kind);
-  else if (item.kind === 'chest') src = chestSprite(false);
+  else if (['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter'].includes(item.kind)) src = stationIcon(item.kind);
+  else if (item.kind === 'chest') src = chestSprite(false, false, item.level || 0);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
   if (src) ctx.drawImage(src, 0, 0, size, size);
@@ -398,7 +398,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id === 'chest' ? chestSprite(false) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id.startsWith('chest') ? chestSprite(false, false, +item.id.slice(5) || 0) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };

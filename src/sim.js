@@ -361,7 +361,7 @@ export function priceCrate(state, items) {
 }
 export const crateValue = state => priceCrate(state, state.crate.items).total;
 // Second-hand: the cart buys machines, pipe, line and belt back at a share of the list price. Each takes a crate place.
-export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'dryer', 'pipe', 'line', 'belt', 'chest'];
+export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'pipe', 'line', 'belt', 'chest'];
 export function listPrice(it) {
   const C = CONFIG;
   switch (it.kind) {
@@ -371,7 +371,9 @@ export function listPrice(it) {
     case 'picker': return C.power.picker.price;
     case 'hopper': return C.power.hopper.price;
     case 'dryer': return C.power.dryer.price;
-    case 'chest': return C.chest.field.price;
+    case 'chest': return C.chest.field.tiers[Math.min(C.chest.field.tiers.length - 1, it.level || 0)].price;
+    case 'splitter': return C.power.splitter.price;
+    case 'filter': return C.power.filter.price;
     case 'pipe': return C.pipe.packPrice / C.pipe.packSize;
     case 'line': return C.power.line.packPrice / C.power.line.packSize;
     case 'belt': return C.power.belt.packPrice / C.power.belt.packSize;
@@ -439,7 +441,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
+    if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length || t.obj.out?.length || t.obj.doing) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
     // under a bed they stay put: flatten the bed first, then the hoe lifts them
@@ -502,7 +504,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : t?.tilled ? 'Flatten the bed first' : 'Set it on open grass');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.obj = { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) };
+    t.obj = { kind: 'chest', level: item.level || 0, slots: new Array(chestSlots(item.level)).fill(null) }; state.beltRev = (state.beltRev || 0) + 1;
     return { ok: true, msg: '', float: 'Set' };
   }
   if (item.kind === 'line') {   // on open ground, or under a bed
@@ -529,6 +531,15 @@ export function useItem(state, slotIndex, x, y) {
     removeFromSlot(state.inventory, slotIndex, 1);
     t.belt = true; t.load = []; state.beltRev = (state.beltRev || 0) + 1;
     return { ok: true, msg: '', float: beltRunning(state, x, y) ? 'Laid' : 'Laid (still)' };
+  }
+  if (item.kind === 'splitter' || item.kind === 'filter') {
+    if (!t.belt) return fail('It sits on a belt');
+    if (t.obj) return fail('Something stands there');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.obj = item.kind === 'splitter' ? { kind: 'splitter', turn: 0 } : { kind: 'filter', rule: 'dried', swap: false }; state.beltRev = (state.beltRev || 0) + 1;
+    const outs = splitOutputs(state, x, y);
+    return { ok: true, msg: outs.length < 2 ? 'It needs two ways out: belt leading away on two sides' : '', float: 'Set' };
   }
   if (item.kind === 'picker' || item.kind === 'hopper' || item.kind === 'dryer') {
     if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
@@ -611,9 +622,10 @@ export function pickUpChest(state, x, y) {
   if (state.carrying) return fail('Hands full');
   const t = tileAt(state.world, x, y); if (!isChest(t)) return fail('');
   if (!inReach(state, x, y)) return fail('Too far');
-  state.carriedChest = t.obj; t.obj = null; state.carrying = 'chest';
+  state.carriedChest = t.obj; t.obj = null; state.carrying = 'chest'; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '' };
 }
+export const chestSlots = level => CONFIG.chest.field.tiers[Math.min(CONFIG.chest.field.tiers.length - 1, level || 0)].slots;
 export function canPlaceAt(state, x, y) {
   const t = tileAt(state.world, x, y);
   if (!t || t.t !== 'grass' || t.tilled || t.crop || t.obj || t.track || !isCleared(state.world, x, y)) return false;
@@ -623,10 +635,10 @@ export function canPlaceAt(state, x, y) {
 export function placeObject(state, x, y) {
   const key = state.carrying; if (!key) return fail('Nothing to place');
   if (!canPlaceAt(state, x, y)) return fail('Not here');
-  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; state.carriedChest = null; state.carrying = null; return { ok: true, msg: '' }; }
-  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', slots: new Array(CONFIG.chest.field.slots).fill(null) }; state.carriedChest = null; state.carrying = null; return { ok: true, msg: '' }; }
+  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', level: 0, slots: new Array(chestSlots(0)).fill(null) }; state.carriedChest = null; state.carrying = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '' }; }
+  if (key === 'chest') { tileAt(state.world, x, y).obj = state.carriedChest || { kind: 'chest', level: 0, slots: new Array(chestSlots(0)).fill(null) }; state.carriedChest = null; state.carrying = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '' }; }
   tileAt(state.world, x, y).t = key;
-  state.objects[key] = { x, y };
+  state.objects[key] = { x, y }; state.beltRev = (state.beltRev || 0) + 1;
   state.carrying = null;
   return { ok: true, msg: '' };
 }
@@ -864,15 +876,26 @@ const BELTS = new WeakMap();
 export function beltNet(state) {
   const w = state.world, rev = `${state.beltRev || 0}:${state.lineRev || 0}`, hit = BELTS.get(state);
   if (hit && hit.rev === rev && hit.w === w) return hit;
-  const idx = (x, y) => y * w.w + x, net = lineNet(state), dist = new Map();
+  const idx = (x, y) => y * w.w + x, net = lineNet(state), dist = new Map(), sinks = new Map();
+  const seed = (x, y, kind, queue, only = null) => { sinks.set(idx(x, y), kind); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k) && (!only || only.has(k))) { dist.set(k, 1); queue.push(k); } } };
+  const flood = queue => { while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } } };
   // hoppers first, then dryers over whatever belt no hopper reaches: a belt that can reach a hopper always runs to it, so a
   // dryer's feed is a run that ends at the dryer and its tray goes out on a run that leads on to a hopper
-  for (const kind of ['hopper', 'dryer']) {
+  for (const kind of ['hopper', 'dryer']) { const queue = []; for (const { x, y } of machineTiles(state, kind)) if (net.on.has(idx(x, y))) seed(x, y, kind, queue); flood(queue); }
+  // then chests and the compost bin, which have no motor: only belt that a powered hopper or dryer already drives can run on to them
+  { const live = new Set(); const stack = [...dist.keys()]; const comp = new Set(stack);
+    while (stack.length) { const j = stack.pop(); live.add(j); const x = j % w.w, y = (j - x) / w.w; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !comp.has(k)) { comp.add(k); stack.push(k); } } }
+    // a run that ends at one of them flows into it, and that pull runs back as far as the nearest junction (a tile with three
+    // or more belt neighbours) or a splitter, never through one: a plain run keeps going to its hopper, a branch behind a
+    // splitter goes to the chest, and a chest standing beside a run takes nothing from it
+    const beltN = (x, y) => N4.reduce((n, [dx, dy]) => n + (tileAt(w, x + dx, y + dy)?.belt ? 1 : 0), 0);
+    const barrier = (x, y) => { const t = tileAt(w, x, y); return t.obj?.kind === 'splitter' || t.obj?.kind === 'filter' || beltN(x, y) >= 3; };
     const queue = [];
-    for (const { x, y } of machineTiles(state, kind)) { if (!net.on.has(idx(x, y))) continue; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, 1); queue.push(k); } } }
-    while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
-  }
-  const out = { rev, w, dist }; BELTS.set(state, out);
+    const pull = (x, y, kind) => { sinks.set(idx(x, y), kind); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && live.has(k) && beltN(x + dx, y + dy) <= 1 && (!dist.has(k) || dist.get(k) > 1)) { dist.set(k, 1); queue.push(k); } } };   // only a belt that ends at it: a chest beside a run never captures the run
+    for (const { x, y } of chestTiles(state)) pull(x, y, 'chest');
+    { const C = objectPos(state, 'compost'); if (C && tileAt(w, C.x, C.y)?.t === 'compost') pull(C.x, C.y, 'compost'); }
+    while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && live.has(k) && !barrier(x + dx, y + dy) && (!dist.has(k) || dist.get(k) > d + 1)) { dist.set(k, d + 1); queue.push(k); } } } }
+  const out = { rev, w, dist, sinks }; BELTS.set(state, out);
   return out;
 }
 export const beltRunning = (state, x, y) => !!tileAt(state.world, x, y)?.belt && beltNet(state).dist.has(y * state.world.w + x);
@@ -880,7 +903,7 @@ export const beltRunning = (state, x, y) => !!tileAt(state.world, x, y)?.belt &&
 // the powered hopper itself at the end of the run; -1 when it stands still.
 export function beltDir(state, x, y) {
   const w = state.world, net = beltNet(state), d = net.dist.get(y * w.w + x); if (d == null) return -1;
-  if (d === 1) { for (const kind of ['hopper', 'dryer']) for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], t = tileAt(w, x + dx, y + dy), k = (y + dy) * w.w + x + dx; if (t?.obj?.kind === kind && lineNet(state).on.has(k)) return i; } return -1; }
+  if (d === 1) { for (const kind of ['hopper', 'dryer', 'chest', 'compost']) for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (net.sinks.get(k) === kind) return i; } return -1; }
   for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (tileAt(w, x + dx, y + dy)?.belt && net.dist.get(k) === d - 1) return i; }
   return -1;
 }
@@ -892,10 +915,10 @@ export function beltStep(state) {
   const tiles = [...net.dist.entries()].sort((a, b) => a[1] - b[1]);
   for (const [k, d] of tiles) {
     const x = k % w.w, y = (k - x) / w.w, t = w.tiles[k]; if (!t.load?.length) continue;
+    if (t.obj?.kind === 'splitter' || t.obj?.kind === 'filter') { splitStep(state, t, x, y, net); continue; }
     for (const [dx, dy] of N4) {
       const n = tileAt(w, x + dx, y + dy), nk = idx(x + dx, y + dy); if (!n) continue;
-      if (d === 1 && n.obj?.kind === 'hopper' && pw.on.has(nk)) pour(t.load, n.obj.held = n.obj.held || [], CONFIG.power.hopper.holds);
-      else if (d === 1 && n.obj?.kind === 'dryer' && pw.on.has(nk)) pour(t.load, n.obj.held = n.obj.held || [], CONFIG.power.dryer.holds);
+      if (d === 1 && net.sinks.has(nk)) sinkTake(state, n, t.load);
       else if (n.belt && net.dist.get(nk) === d - 1) pour(t.load, n.load = n.load || [], B.holds);
       if (!t.load.length) break;
     }
@@ -911,6 +934,68 @@ export function beltStep(state) {
     const by = N4.map(([dx, dy], i) => ({ t: tileAt(w, x + dx, y + dy), k: idx(x + dx, y + dy), back: (i + 2) % 4, x: x + dx, y: y + dy })).filter(o => o.t?.belt && net.dist.has(o.k) && beltDir(state, o.x, o.y) !== o.back).sort((a, b) => net.dist.get(a.k) - net.dist.get(b.k));
     for (const o of by) { pour(t.obj.out, o.t.load = o.t.load || [], B.holds); if (!t.obj.out.length) break; }
   }
+}
+// What a sink takes off the belt tile before it: a hopper or a dryer as much as it holds, a chest as much as its slots take,
+// the compost bin crops only (dried goods ride past), as much as its cap takes and only while its lid is open.
+function sinkTake(state, n, load) {
+  if (n.obj?.kind === 'hopper') return pour(load, n.obj.held = n.obj.held || [], CONFIG.power.hopper.holds);
+  if (n.obj?.kind === 'dryer') return pour(load, n.obj.held = n.obj.held || [], CONFIG.power.dryer.holds);
+  let moved = 0;
+  if (n.obj?.kind === 'chest') { while (load.length) { const it = load[0], left = addItem(n.obj, pileItem(it)); const got = it.qty - left; if (!got) break; moved += got; it.qty = left; if (!it.qty) load.shift(); } return moved; }
+  if (n.t === 'compost') {
+    const cp = state.compost; if (cp.running || cp.ready) return 0;
+    for (let i = load.length - 1; i >= 0; i--) {
+      const it = load[i]; if (it.product) continue;
+      const room = compostCap(state) - compostCount(state); if (room <= 0) break;
+      const take = Math.min(room, it.qty), have = cp.inputs.find(p => p.species === it.species && (p.q || 0) === (it.q || 0));
+      if (have) have.qty += take; else cp.inputs.push({ species: it.species, q: it.q || 0, qty: take });
+      it.qty -= take; moved += take; if (!it.qty) load.splice(i, 1);
+    }
+  }
+  return moved;
+}
+// Where a splitter or a filter can send things: belt beside it that does not flow into it, and any sink beside it. Sorted
+// nearest-to-a-sink first, then north, east, south, west.
+export function splitOutputs(state, x, y) {
+  const w = state.world, net = beltNet(state), idx = (xx, yy) => yy * w.w + xx, d = net.dist.get(idx(x, y)), out = [];
+  for (let i = 0; i < 4; i++) {
+    const [dx, dy] = N4[i], n = tileAt(w, x + dx, y + dy), nk = idx(x + dx, y + dy); if (!n) continue;
+    if (d === 1 && net.sinks.has(nk)) out.push({ dir: i, tile: n, dist: 0, sink: net.sinks.get(nk) });
+    else if (n.belt && net.dist.has(nk) && beltDir(state, x + dx, y + dy) !== (i + 2) % 4) out.push({ dir: i, tile: n, dist: net.dist.get(nk), sink: null });
+  }
+  return out.sort((a, b) => a.dist - b.dist || a.dir - b.dir);
+}
+const DIR_WORD = ['north', 'east', 'south', 'west'];
+// one crop from a pile entry to an output; true when it went
+function sendOne(state, load, i, o) {
+  const it = load[i], one = [{ ...it, qty: 1 }];
+  if (o.sink) sinkTake(state, o.tile, one); else pour(one, o.tile.load = o.tile.load || [], CONFIG.power.belt.holds);
+  if (one.length) return false;
+  it.qty--; if (!it.qty) load.splice(i, 1); return true;
+}
+function splitStep(state, t, x, y) {
+  const outs = splitOutputs(state, x, y); if (!outs.length) return;
+  const o = t.obj;
+  if (o.kind === 'splitter') {
+    for (let guard = 0; guard < 64 && t.load.length; guard++) {
+      let sent = false;
+      for (let k = 0; k < outs.length && !sent; k++) { const pick = outs[(o.turn + k) % outs.length]; if (sendOne(state, t.load, 0, pick)) { o.turn = (o.turn + k + 1) % outs.length; sent = true; } }
+      if (!sent) break;
+    }
+  } else {
+    const A = outs[o.swap ? Math.min(1, outs.length - 1) : 0], B = outs[o.swap ? 0 : Math.min(1, outs.length - 1)];
+    for (let i = t.load.length - 1; i >= 0; i--) { const match = o.rule === 'dried' ? !!t.load[i].product : false; const to = match ? A : B; for (let guard = 0; guard < 16 && t.load[i] && (!!t.load[i].product) === match; guard++) if (!sendOne(state, t.load, i, to)) break; }
+  }
+}
+export function swapFilter(state, x, y) { const t = tileAt(state.world, x, y); if (t?.obj?.kind !== 'filter') return fail(''); t.obj.swap = !t.obj.swap; return { ok: true, msg: '', float: 'Swapped' }; }
+// the hover card's words for a splitter or a filter
+export function describeSplit(state, x, y) {
+  const t = tileAt(state.world, x, y), o = t?.obj, outs = splitOutputs(state, x, y), word = oo => `${DIR_WORD[oo.dir]}${oo.sink ? ' into the ' + oo.sink : ''}`;
+  if (!o) return { title: '' };
+  if (!beltRunning(state, x, y)) return { title: o.kind === 'splitter' ? 'Splitter' : 'Filter', sub: 'Still: this belt runs to nothing.' };
+  if (o.kind === 'splitter') return { title: 'Splitter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `Sends each crop in turn: ${outs.map(word).join(', ')}.` };
+  const A = outs[o.swap ? Math.min(1, outs.length - 1) : 0], B = outs[o.swap ? 0 : Math.min(1, outs.length - 1)];
+  return { title: 'Filter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `Dried goods go ${word(A)}, everything else ${word(B)}. Click it with empty hands to swap.` };
 }
 // Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
 // in its reach into its basket and drops the basket on the belt beside it. Returns crops picked.

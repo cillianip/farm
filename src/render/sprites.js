@@ -1,5 +1,6 @@
 // Code-drawn tiles, trees, the house, objects and the player. Everything is cached as a canvas at 1 pixel = 1 unit.
 import { PAL, pixelDrawer, makeCanvas } from './palette.js';
+const PAL0 = PAL;   // the chest tiers recolour a copy
 import { makeRng } from '../rng.js';
 import { drawText, textWidth } from './font.js';
 
@@ -117,9 +118,10 @@ export function soilEdge(side, variant, level = 0) {
 }
 // The storage chest (18×16): a wooden box with iron bands and a clasp. open: the lid lifted.
 // The chest by the porch fills its 18-wide sprite; a field chest (`narrow`) is a pixel in on each side, so two side by side stay two.
-export function chestSprite(open = false, narrow = false) {
-  return sprite(`chest${open ? 'o' : 'c'}${narrow ? 'n' : ''}`, 18, 16, P => {
+export function chestSprite(open = false, narrow = false, level = 0) {
+  return sprite(`chest${open ? 'o' : 'c'}${narrow ? 'n' : ''}${level || ''}`, 18, 16, P => {
     const L = narrow ? 2 : 1, R = narrow ? 15 : 16, W = R - L + 1, bL = narrow ? 5 : 4, bR = narrow ? 12 : 13;
+    const PAL = level === 2 ? { ...PAL0, metalDark: '#b57a1f', metal: PAL0.gold, wood: '#6b4423', woodDark: '#4a2f16', woodLight: '#8c5a2b' } : level === 1 ? { ...PAL0, metalDark: PAL0.metalDark, metal: PAL0.metalLight, wood: '#7a4e25', woodDark: '#5a381a', woodLight: '#9c6a36' } : PAL0;   // bigger chests: darker wood, brighter bands, gold on the biggest
     P.rect(L, 7, W, 8, PAL.wood); P.rect(L, 14, W, 1, PAL.woodDark); P.rect(L, 7, 1, 8, PAL.woodDark); P.rect(R, 7, 1, 8, PAL.woodDark);   // body
     P.rect(L + 1, 11, W - 2, 1, PAL.woodDark); P.rect(L + 1, 8, W - 2, 1, PAL.woodLight);                                                 // boards
     P.rect(bL, 7, 1, 8, PAL.metalDark); P.rect(bR, 7, 1, 8, PAL.metalDark); P.px(bL, 9, PAL.metal); P.px(bR, 13, PAL.metal);          // iron bands
@@ -497,10 +499,23 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.
+// A splitter (16×16) over a belt: a steel plate with arrows out both ways. A filter: the plate with a brown dot (dried) and a green one.
+export function splitterSprite() {
+  return sprite('splitter', 16, 16, P => {
+    P.rect(3, 3, 10, 10, PAL.metalDark); P.rect(4, 4, 8, 8, PAL.metal); P.rect(4, 4, 8, 1, PAL.metalLight);
+    P.px(6, 7, PAL.outline); P.px(5, 8, PAL.outline); P.px(6, 9, PAL.outline); P.px(9, 7, PAL.outline); P.px(10, 8, PAL.outline); P.px(9, 9, PAL.outline);   // < >
+  });
+}
+export function filterSprite(swap = false) {
+  return sprite(`filter${swap ? 's' : ''}`, 16, 16, P => {
+    P.rect(3, 3, 10, 10, PAL.metalDark); P.rect(4, 4, 8, 8, PAL.metal); P.rect(4, 4, 8, 1, PAL.metalLight);
+    P.rect(swap ? 9 : 5, 7, 2, 2, '#8a5a2b'); P.rect(swap ? 5 : 9, 7, 2, 2, '#5fa14a');
+  });
+}
 export function beltSprite(mask = 0, dir = -1, frame = 0) {
   return sprite(`belt${mask}:${dir}:${frame}`, 16, 16, P => {
     const frameC = '#3a3a44', band = '#55566a', tread = '#6c6e84', chev = '#b9bdd0';

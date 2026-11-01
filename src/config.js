@@ -74,7 +74,10 @@ export const CONFIG = {
     // The dryer (Build 67): the first thing that turns a crop into a product. On powered line like a picker; belt run to it feeds
     // it (its motor drives that belt, like a hopper's) and it sets what it has dried on any running belt beside it that leads away.
     // It dries `batch` of one kind at a time, taking baseHours + skinHours × the skin gene; `holds` wait in the hopper on top, `output` on the tray.
-    dryer: { price: 320, holds: 8, output: 12, batch: 4, power: 1, baseHours: 3, skinHours: 5 } },
+    dryer: { price: 320, holds: 8, output: 12, batch: 4, power: 1, baseHours: 3, skinHours: 5 },
+    // Build 71: a splitter sits on a belt tile and sends each crop that arrives down a different way in turn; a filter sends dried
+    // goods one way and everything else the other (click it to swap the sides). Neither needs power: the belt carries them.
+    splitter: { price: 60 }, filter: { price: 90 } },
   // Flow has a range in tiles, like a signal. The well gives `wellHead` tiles of flow to the pipe leaving it; every tile
   // travelled costs 1; where the pipe splits, each branch gets what it asks for (the sprinklers and tiles beyond it) and
   // what none asked for is shared evenly, so a short stub never starves a long run; a sprinkler drinks its
@@ -134,7 +137,7 @@ export const CONFIG = {
   player: { speed: 5.5, reach: 1.7, carrySpeed: 0.55, pickUpSeconds: 0.5,     // tiles per second, tiles; carrying slows you; hold LMB this long to lift
     heavyAt: 60, heavySpeed: 0.75 },                                           // this many crops in your pockets and you walk slower
   inventory: { slots: 5, hotbar: 5, stack: 99 },   // what you carry IS the hotbar: five pockets. Everything else lives in the chest.
-  chest: { slots: 24, field: { price: 80, slots: 16 } },   // the chest by the porch, and the field chests the catalogue sells: set anywhere on your land
+  chest: { slots: 24, field: { price: 80, slots: 16, tiers: [{ name: 'Field chest', slots: 16, price: 80 }, { name: 'Large chest', slots: 32, price: 220 }, { name: 'Great chest', slots: 56, price: 500 }] } },   // field chests come in three sizes (Build 71); a belt can end at any of them   // the chest by the porch, and the field chests the catalogue sells: set anywhere on your land
 
   economy: {
     startMoney: 15,

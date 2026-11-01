@@ -1233,6 +1233,55 @@ await test('the square: shoppers come in at the gate, walk the round, buy as the
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 4 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop'); assert.ok(ci >= 0); assert.ok(S.stash(s, ci, st).ok); assert.ok(st.slots.some(Boolean));
   assert.ok(S.travel(s, 'farm').ok); s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; assert.ok(S.travel(s, 'market').ok); assert.ok(s.market.store.slots.some(Boolean), 'stock waits in the tent chest');
 });
+await test('belts end at chests and the compost bin, but only when a powered hopper or dryer drives the run; three chest sizes; crops glide (the rules do not care)', () => {
+  const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt, carrot = byName(s, 'Carrot');
+  const y0 = Y + 4; for (let x = X; x <= X + 6; x++) tile(x, y0).line = true;
+  tile(X + 1, y0 + 1).obj = { kind: 'generator', fuel: 9 }; tile(X + 6, y0).obj = { kind: 'hopper', held: [] }; s.lineRev = 1;
+  for (let x = X; x <= X + 5; x++) { tile(x, y0).belt = true; tile(x, y0).load = []; } s.beltRev = 1;
+  // a chest beside the run, with a stub of belt into it
+  tile(X + 2, y0 - 1).belt = true; tile(X + 2, y0 - 1).load = []; tile(X + 2, y0 - 2).obj = { kind: 'chest', level: 1, slots: new Array(S.chestSlots(1)).fill(null) }; s.beltRev++;
+  assert.equal(S.chestSlots(0), 16); assert.equal(S.chestSlots(1), 32); assert.equal(S.chestSlots(2), 56);
+  assert.ok(S.beltRunning(s, X + 2, y0 - 1), 'the stub runs: its run is driven by the hopper'); assert.equal(S.beltDir(s, X + 2, y0 - 1), 0, 'north into the chest');
+  assert.equal(S.beltDir(s, X + 2, y0), 1, 'the main run still goes east to the hopper, the chest does not pull it');
+  tile(X + 2, y0 - 1).load = [{ species: carrot.id, q: 0, qty: 3 }]; s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0;
+  for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(tile(X + 2, y0 - 1).load.length, 0); assert.equal(tile(X + 2, y0 - 2).obj.slots.find(Boolean)?.qty, 3, 'into the chest');
+  // a lone belt into a chest with no hopper anywhere stands still
+  tile(X, y0 + 3).belt = true; tile(X, y0 + 3).load = [{ species: carrot.id, q: 0, qty: 1 }]; tile(X, y0 + 2).obj = { kind: 'chest', level: 0, slots: new Array(16).fill(null) }; s.beltRev++;
+  assert.ok(!S.beltRunning(s, X, y0 + 3), 'no motor on that run'); for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1); assert.equal(tile(X, y0 + 3).load.length, 1);
+  // the compost bin: a stub from the live run, crops in, dried goods ride on
+  s.hasCompost = true; s.carrying = 'compost'; s.player.x = X + 4.5; s.player.y = y0 - 0.5; const pr = S.placeObject(s, X + 4, y0 - 2); assert.ok(pr.ok, pr.msg); s.carrying = null;
+  tile(X + 4, y0 - 1).belt = true; tile(X + 4, y0 - 1).load = [{ species: carrot.id, q: 0, qty: 2 }, { species: carrot.id, q: 0, qty: 1, product: 'dried' }]; s.beltRev++;
+  assert.equal(S.beltDir(s, X + 4, y0 - 1), 0, 'north into the bin');
+  for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(S.compostCount(s), 2, 'the carrots rotted in'); assert.ok(tile(X + 4, y0 - 1).load.some(l => l.product), 'the dried one stays on the belt');
+  const C2 = CONFIG.chest.field.tiers; assert.equal(S.listPrice({ kind: 'chest', level: 2 }), C2[2].price);
+});
+await test('splitter and filter: each crop in turn down two ways; dried goods one way and the rest the other, swapped by a click; the hoe lifts them', () => {
+  const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt, carrot = byName(s, 'Carrot');
+  const y0 = Y + 4;   // feed from the west into a splitter at X+2; one way on east to a hopper, one way north to a chest... both via belt
+  for (let x = X; x <= X + 5; x++) tile(x, y0).line = true; tile(X + 1, y0 + 1).obj = { kind: 'generator', fuel: 9 }; tile(X + 5, y0).obj = { kind: 'hopper', held: [] }; s.lineRev = 1;
+  for (let x = X; x <= X + 4; x++) { tile(x, y0).belt = true; tile(x, y0).load = []; }
+  for (let y = y0 - 1; y >= y0 - 2; y--) { tile(X + 2, y).belt = true; tile(X + 2, y).load = []; } tile(X + 2, y0 - 3).obj = { kind: 'chest', level: 0, slots: new Array(16).fill(null) }; s.beltRev = 1;
+  s.player.x = X + 2.5; s.player.y = y0 + 1.5; addItem(s.inventory, { kind: 'splitter', qty: 1 }); const si = s.inventory.slots.findIndex(i => i?.kind === 'splitter');
+  assert.ok(!S.useItem(s, si, X + 2, y0 + 1).ok, 'only on a belt'); const pr = S.useItem(s, si, X + 2, y0); assert.ok(pr.ok, pr.msg); assert.equal(tile(X + 2, y0).obj.kind, 'splitter');
+  const outs = S.splitOutputs(s, X + 2, y0); assert.equal(outs.length, 2, JSON.stringify(outs.map(o => [o.dir, o.dist]))); assert.ok(outs.some(o => o.dir === 1) && outs.some(o => o.dir === 0), 'east and north, not back west');
+  tile(X + 1, y0).load = [{ species: carrot.id, q: 0, qty: 4 }]; s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0;
+  for (let i = 0; i < B.stepMinutes * 2; i++) tickMinutes(s, 1);
+  const east = S.heldCount(tile(X + 3, y0).load), north = S.heldCount(tile(X + 2, y0 - 1).load);
+  assert.equal(east + north, 4, 'all four went on'); assert.equal(east, 2); assert.equal(north, 2, 'two each way');
+  // the filter: dried goods north to the chest, fresh east to the hopper; swapped, the other way round
+  tile(X + 3, y0).load = []; tile(X + 2, y0 - 1).load = []; tile(X + 2, y0).obj = { kind: 'filter', rule: 'dried', swap: false }; s.beltRev++;
+  const d = S.describeSplit(s, X + 2, y0); assert.ok(/Dried goods go (north|east)/.test(d.sub), d.sub);
+  tile(X + 1, y0).load = [{ species: carrot.id, q: 0, qty: 2 }, { species: carrot.id, q: 0, qty: 2, product: 'dried' }];
+  for (let i = 0; i < B.stepMinutes * 2; i++) tickMinutes(s, 1);
+  const A = S.splitOutputs(s, X + 2, y0)[0], driedTile = A.dir === 0 ? tile(X + 2, y0 - 1) : tile(X + 3, y0), freshTile = A.dir === 0 ? tile(X + 3, y0) : tile(X + 2, y0 - 1);
+  assert.ok(driedTile.load.every(l => l.product) && S.heldCount(driedTile.load) === 2, 'dried one way: ' + JSON.stringify(driedTile.load)); assert.ok(freshTile.load.every(l => !l.product) && S.heldCount(freshTile.load) === 2, 'fresh the other');
+  assert.ok(S.swapFilter(s, X + 2, y0).ok); driedTile.load = []; freshTile.load = [];
+  tile(X + 1, y0).load = [{ species: carrot.id, q: 0, qty: 1, product: 'dried' }]; for (let i = 0; i < B.stepMinutes * 2; i++) tickMinutes(s, 1);
+  assert.equal(S.heldCount(freshTile.load), 1, 'swapped: the dried one took the other way');
+  assert.equal(S.useItem(s, 0, X + 2, y0).float, 'Picked up', 'the hoe lifts the filter'); assert.ok(tile(X + 2, y0).belt && !tile(X + 2, y0).obj); assert.ok(s.inventory.slots.some(i => i?.kind === 'filter'));
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');
