@@ -20,7 +20,12 @@ export const BUILDINGS = {
   sign: { x: 34, y: 26, w: 1, h: 1 },       // delivery signpost
   crate: { x: 34, y: 27, w: 1, h: 1 },      // delivery crate at the end of the track that leaves the clearing
   roadsign: { x: 39, y: 26, w: 1, h: 1 },   // where the track leaves: the sign to the market
+  board: { x: 31, y: 24, w: 1, h: 1 },      // the loading bay's board: what waits for the truck tonight
 };
+// The loading bay (Build 73): the gravel beside the start of the track. Delivery crates standing in it are what the truck
+// takes; a crate anywhere else is just a box. The porch crate counts wherever it is.
+export const BAY = { x0: 30, y0: 25, x1: 33, y1: 28 };
+export const inBay = (x, y) => x >= BAY.x0 && x <= BAY.x1 && y >= BAY.y0 && y <= BAY.y1;
 // Objects you can pick up and put down elsewhere (their live positions are in state.objects).
 export const MOVABLE = ['rackHoe', 'rackCan', 'seedrack', 'bench', 'compost'];   // the bench and the compost bin exist only after they are delivered
 // The yard: a cleared rectangle holding the house, racks and well (the farm chunks clear their own tiles).

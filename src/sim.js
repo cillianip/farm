@@ -1,7 +1,7 @@
 // The rules of the game: time, growth, actions, the crate and the cart, sleep, breeding, compost. Pure JS, testable in Node.
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
-import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared } from './world.js';
+import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay } from './world.js';
 import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
@@ -84,6 +84,7 @@ export const actionFactor = state => isTired(state) ? CONFIG.needs.tiredActionSl
 export function migrate(state) {
   M.ensureMarket(state);
   { const rs = tileAt(state.world, BUILDINGS.roadsign.x, BUILDINGS.roadsign.y); if (rs && rs.t === 'grass') { rs.t = 'roadsign'; rs.tilled = false; rs.crop = null; rs.obj = null; } }   // older saves: the sign to the market
+  { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; } }   // and the loading bay's board (Build 73)
   const ct = tileAt(state.world, BUILDINGS.chest.x, BUILDINGS.chest.y);
   if (ct && ct.t === 'grass') { ct.t = 'chest'; ct.tilled = false; ct.crop = null; }
   const n = CONFIG.inventory.slots;
@@ -399,10 +400,13 @@ export function putInCrate(state, slotIndex, n = Infinity) {
   return { ok: true, msg: '', float: `+${take} ${name}`, count: take, full };
 }
 export const isDcrate = t => t?.obj?.kind === 'dcrate';
+export const bayCrates = state => dcrateTiles(state).filter(({ x, y }) => inBay(x, y));
 export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
 export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0);
 // everything waiting for the pickup, the porch crate first then each delivery crate (one buyer's order across all of them)
-export const allCrateItems = state => [...state.crate.items, ...dcrateTiles(state).flatMap(({ t }) => t.obj.items || [])];
+export const allCrateItems = state => [...state.crate.items, ...bayCrates(state).flatMap(({ t }) => t.obj.items || [])];
+// the board by the bay: what is waiting, what it fetches tonight, and what sits in crates outside the bay
+export function bayBoard(state) { const P = priceCrate(state, allCrateItems(state)); const outside = dcrateTiles(state).filter(({ x, y }) => !inBay(x, y)).reduce((n, { t }) => n + dcrateCount(t.obj), 0); return { count: P.count, total: P.total, lines: P.lines, crates: bayCrates(state).length, outside }; }
 // A crop in hand into a delivery crate: crops and dried goods only, as much as fits.
 export function putInDcrate(state, slotIndex, x, y, n = Infinity) {
   const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isDcrate(t) || !it) return fail('');
@@ -419,7 +423,7 @@ export function collectCrate(state) {
   const items = allCrateItems(state); if (!items.length) return null;
   const { lines, total, count } = priceCrate(state, items);
   state.money += total; state.lifetime += total; state.stats.sold += count; state.stats.earned += total;
-  state.crate.items = []; for (const { t } of dcrateTiles(state)) t.obj.items = [];
+  state.crate.items = []; for (const { t } of bayCrates(state)) t.obj.items = [];
   const sale = { count, total, lines };
   state.crate.lastSale = sale;
   return sale;
@@ -554,7 +558,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
-    return { ok: true, msg: 'The truck empties it at night; a hopper beside it tips in, and belt can end at it', float: 'Set' };
+    return { ok: true, msg: inBay(x, y) ? 'In the bay: the truck empties it at night. A hopper beside it tips in, and belt can end at it' : 'Outside the loading bay: the truck will not take it here. It still fills, as a box', float: 'Set' };
   }
   if (item.kind === 'splitter' || item.kind === 'filter') {
     if (!t.belt) return fail('It sits on a belt');

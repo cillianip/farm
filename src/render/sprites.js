@@ -179,6 +179,22 @@ export function cartSprite(frame = 0) {
       P.px(wx - 2 + o, 13, PAL.woodDark); P.px(wx + 2 - o, 17, PAL.woodDark); P.px(wx + 2 - o, 13, PAL.woodDark); P.px(wx - 2 + o, 17, PAL.woodDark); P.px(wx, 12, PAL.metalDark); P.px(wx, 18, PAL.metalDark); P.px(wx - 3, 15, PAL.metalDark); P.px(wx + 3, 15, PAL.metalDark); }
   }, 'rgba(40,25,15,0.9)');
 }
+// The loading bay's gravel (16×16): packed grey-brown with a painted edge on the sides given by mask (1 N, 2 E, 4 S, 8 W).
+export function bayTile(mask = 0, variant = 0) {
+  return sprite(`bay${mask}:${variant}`, 16, 16, P => {
+    P.rect(0, 0, 16, 16, '#a39a86'); const r = makeRng(1700 + variant);
+    for (let i = 0; i < 18; i++) P.px(r.int(0, 15), r.int(0, 15), r.chance(0.5) ? '#8f8674' : '#b5ac98');
+    const paint = '#e8d28a'; if (mask & 1) P.rect(0, 0, 16, 1, paint); if (mask & 4) P.rect(0, 15, 16, 1, paint); if (mask & 8) P.rect(0, 0, 1, 16, paint); if (mask & 2) P.rect(15, 0, 1, 16, paint);
+  });
+}
+// The bay's board (36×24): a blank board on a post; the game writes tonight's figures on it.
+export function boardSprite() {
+  return sprite('bayboard', 36, 24, P => {
+    P.rect(17, 12, 2, 12, PAL.woodDark); P.px(17, 14, PAL.wood);
+    P.rect(1, 0, 34, 13, PAL.woodDark); P.rect(2, 1, 32, 11, '#2f3a2a'); P.rect(2, 1, 32, 1, '#4a5a44');   // a chalkboard in a frame
+    P.px(2, 1, PAL.metalDark); P.px(33, 1, PAL.metalDark); P.px(2, 11, PAL.metalDark); P.px(33, 11, PAL.metalDark);
+  }, 'rgba(40,25,15,0.9)');
+}
 // The truck (28×20): a cab, a flatbed with slatted sides, two wheels; frames roll the wheels.
 export function truckSprite(frame = 0) {
   return sprite(`truck${frame}`, 28, 20, P => {

@@ -1283,25 +1283,27 @@ await test('splitter and filter: each crop in turn down two ways; dried goods on
   assert.equal(S.useItem(s, 0, X + 2, y0).float, 'Picked up', 'the hoe lifts the filter'); assert.ok(tile(X + 2, y0).belt && !tile(X + 2, y0).obj); assert.ok(s.inventory.slots.some(i => i?.kind === 'filter'));
 });
 await test('the truck: sold once the crate is fully extended; delivery crates set on open grass take crops by hand, from a hopper beside them and from a belt that ends at them; the night empties them all as one order', async () => {
-  const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], T2 = CONFIG.truck, carrot = byName(s, 'Carrot');
+  const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const Wd = s.world, tile = (x, y) => Wd.tiles[y * Wd.w + x], T2 = CONFIG.truck, carrot = byName(s, 'Carrot');
   s.money = 5000; assert.equal(catalog(s).find(i => i.id === 'truck').blocked, 'Extend the crate fully first'); assert.equal(catalog(s).find(i => i.id === 'dcrate').blocked, 'Needs the truck');
   s.crate.extensions = 3; assert.ok(!catalog(s).find(i => i.id === 'truck').blocked); assert.ok(placeOrder(s, 'truck').ok); S.sleep(s); S.collectParcels(s); assert.ok(s.truck, 'the truck came');
   assert.ok(!catalog(s).find(i => i.id === 'dcrate').blocked); assert.ok(placeOrder(s, 'dcrate').ok); S.sleep(s); S.collectParcels(s); const di = s.inventory.slots.findIndex(i => i?.kind === 'dcrate'); assert.ok(di >= 0 || s.chest.slots.some(i => i?.kind === 'dcrate'), 'a crate to set');
   if (di < 0) { addItem(s.inventory, { kind: 'dcrate', qty: 1 }); }
-  const y0 = Y + 4; s.player.x = X + 2.5; s.player.y = y0 + 1.5; const pr = S.useItem(s, s.inventory.slots.findIndex(i => i?.kind === 'dcrate'), X + 2, y0); assert.ok(pr.ok, pr.msg); assert.ok(S.isDcrate(tile(X + 2, y0)));
+  const Bay = W.BAY, X = Bay.x0 - 2, y0 = Bay.y0 + 1;   // the crate stands in the bay at (X+2, y0); the hopper and the line run east of it inside the bay
+  s.player.x = X + 2.5; s.player.y = y0 + 1.5; const pr = S.useItem(s, s.inventory.slots.findIndex(i => i?.kind === 'dcrate'), X + 2, y0); assert.ok(pr.ok, pr.msg); assert.ok(S.isDcrate(tile(X + 2, y0))); assert.ok(/In the bay/.test(pr.msg), pr.msg);
+  addItem(s.inventory, { kind: 'dcrate', qty: 1 }); const outside = S.useItem(s, s.inventory.slots.findIndex(i => i?.kind === 'dcrate'), X + 1, y0 + 1); assert.ok(outside.ok && /Outside/.test(outside.msg), outside.msg); tile(X + 1, y0 + 1).obj.items = [{ species: carrot.id, q: 0, qty: 4 }];
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 5 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
   let r = S.putInDcrate(s, ci, X + 2, y0, 2); assert.ok(r.ok && r.count === 2, JSON.stringify(r)); assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 2);
   // a hopper beside it tips in at the pickup; a belt that ends at it flows in
-  for (let x = X + 3; x <= X + 6; x++) tile(x, y0).line = true; tile(X + 3, y0).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(X + 4, y0 + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
+  for (let x = X + 3; x <= X + 4; x++) tile(x, y0).line = true; tile(X + 4, y0 - 1).line = true; tile(X + 3, y0).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(X + 5, y0 - 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
   tile(X + 2, y0 - 1).belt = true; tile(X + 2, y0 - 1).load = [{ species: carrot.id, q: 0, qty: 1, product: 'dried' }]; tile(X + 3, y0 - 1).belt = true; tile(X + 3, y0 - 1).load = []; s.beltRev = (s.beltRev || 0) + 1;
   assert.ok(S.hopperByCrate(X + 3, y0, s), 'the hopper stands by a delivery crate');
   assert.equal(S.beltDir(s, X + 2, y0 - 1), 2, 'the belt that ends at the crate flows south into it: ' + S.beltDir(s, X + 2, y0 - 1));
   s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0; for (let i = 0; i < CONFIG.power.belt.stepMinutes; i++) tickMinutes(s, 1);
   assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 3, 'the dried carrot came off the belt');
   s.crate.items = [{ species: carrot.id, q: 0, qty: 2 }];
-  const all = S.allCrateItems(s); assert.equal(all.reduce((n, i) => n + i.qty, 0), 5);
+  const all = S.allCrateItems(s); assert.equal(all.reduce((n, i) => n + i.qty, 0), 5, 'the crate outside the bay is not counted'); const bb = S.bayBoard(s); assert.equal(bb.outside, 4); assert.equal(bb.crates, 1);
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
-  assert.ok(rep.sale && rep.sale.count === 8, 'porch crate 2 + delivery crate 2 + dried 1 + hopper 3 = 8: ' + JSON.stringify(rep.sale)); assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 0); assert.equal(tile(X + 3, y0).obj.held.length, 0);
+  assert.ok(rep.sale && rep.sale.count === 8, 'porch crate 2 + delivery crate 2 + dried 1 + hopper 3 = 8: ' + JSON.stringify(rep.sale)); assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 0); assert.equal(tile(X + 3, y0).obj.held.length, 0); assert.equal(S.dcrateCount(tile(X + 1, y0 + 1).obj), 4, 'the crate outside the bay keeps its crops');
   assert.equal(rep.sale.lines.find(l => !l.product).qty, 7, 'one order for fresh carrots across both crates'); 
   s.player.x = X + 2.5; s.player.y = y0 + 1.5; s.inventory.slots[4] = null;   // the night took you home; a pocket free
   const lift = S.useItem(s, 0, X + 2, y0); assert.equal(lift.float, 'Picked up', 'the hoe lifts an empty delivery crate: ' + lift.msg);
