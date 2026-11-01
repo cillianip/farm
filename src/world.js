@@ -26,6 +26,7 @@ export const BUILDINGS = {
 // takes; a crate anywhere else is just a box. The porch crate counts wherever it is.
 export const BAY = { x0: 30, y0: 25, x1: 33, y1: 28 };
 export const inBay = (x, y) => x >= BAY.x0 && x <= BAY.x1 && y >= BAY.y0 && y <= BAY.y1;
+export const CRATE_STACK = { x: BAY.x0, y: BAY.y0 };   // the corner of the bay where the empty crates are stacked
 // Objects you can pick up and put down elsewhere (their live positions are in state.objects).
 export const MOVABLE = ['rackHoe', 'rackCan', 'seedrack', 'bench', 'compost'];   // the bench and the compost bin exist only after they are delivered
 // The yard: a cleared rectangle holding the house, racks and well (the farm chunks clear their own tiles).
