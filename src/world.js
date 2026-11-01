@@ -28,7 +28,9 @@ export const BAY_LEVELS = [{ x0: 32, x1: 33, y0: 25, y1: 28 }, { x0: 31, x1: 33,
 export const bayRect = level => BAY_LEVELS[Math.max(0, Math.min(BAY_LEVELS.length - 1, level || 0))];
 export const BAY = BAY_LEVELS[BAY_LEVELS.length - 1];
 export const inBay = (x, y, level = BAY_LEVELS.length - 1) => { const b = bayRect(level); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; };
-export const baySpots = (world, level) => { const b = bayRect(level); let n = 0; for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) if (!world.tiles[y * world.w + x].track) n++; return n; };
+export const TRUCK_SPOT = { x: 32, y: 25, w: 2, h: 2 };   // where the truck stands in the bay, beside the track
+export const isTruckTile = (x, y) => x >= TRUCK_SPOT.x && x < TRUCK_SPOT.x + TRUCK_SPOT.w && y >= TRUCK_SPOT.y && y < TRUCK_SPOT.y + TRUCK_SPOT.h;
+export const baySpots = (world, level) => { const b = bayRect(level); let n = 0; for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) if (!world.tiles[y * world.w + x].track && !isTruckTile(x, y)) n++; return n; };
 // Objects you can pick up and put down elsewhere (their live positions are in state.objects).
 export const MOVABLE = ['rackHoe', 'rackCan', 'seedrack', 'bench', 'compost'];   // the bench and the compost bin exist only after they are delivered
 // The yard: a cleared rectangle holding the house, racks and well (the farm chunks clear their own tiles).

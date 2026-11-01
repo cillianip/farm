@@ -1,10 +1,10 @@
 // Browser glue: input, camera, the render loop and the world drawing. Rules live in sim.js.
 import { CONFIG } from './config.js';
 import * as S from './sim.js';
-import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay } from './world.js';
+import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -100,7 +100,7 @@ export class Game {
     const hb = hotbarRects(this.vw, this.vh), slot = hb.slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h);
     if (slot >= 0) { this.drag = { from: slot, x0: this.mouse.x, y0: this.mouse.y, moved: false }; return; }
     if (this.state.carrying) return this.placeCarried();
-    if (this.hit && (MOVABLE.includes(this.hit.kind) || this.hit.kind === 'fchest') && !this.action && !this.ui.openPanel) { this.press = { t: 0, hit: this.hit }; return; }
+    if (this.hit && (MOVABLE.includes(this.hit.kind) || this.hit.kind === 'fchest' || this.hit.kind === 'dcrate') && !this.action && !this.ui.openPanel) { this.press = { t: 0, hit: this.hit }; return; }
     this.click();
   }
   mouseUp() {
@@ -117,6 +117,7 @@ export class Game {
   }
   placeCarried() {
     const s = this.state, { tx, ty } = this.mouse;
+    if (s.carrying === 'dcrate' && s.truck && isTruckTile(tx, ty)) { const r = S.loadTruck(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, TRUCK_SPOT.x + 1, TRUCK_SPOT.y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return; }
     const r = S.placeObject(s, tx, ty); if (!r.ok) this.ui.toast(r.msg === 'Not here' ? 'Put it on open grass within reach' : r.msg);
   }
   // E: open the UI of the station you are standing by (the seed rack for now), or close an open panel.
@@ -130,7 +131,7 @@ export class Game {
       near({ ...MARKET.store, w: 1, h: 1 }, () => this.ui.openChest(this.state.market.store));
       if (best) best.open(); return;
     }
-    const stations = [['seedrack', { ...S.objectPos(this.state, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => this.state.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['board', BUILDINGS.board, () => this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
+    const stations = [['seedrack', { ...S.objectPos(this.state, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => this.state.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['board', BUILDINGS.board, () => this.ui.openCrate()], ['truck', TRUCK_SPOT, () => this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
     for (const { x, y, t } of S.chestTiles(this.state)) stations.push(['fchest', { x, y, w: 1, h: 1 }, () => this.ui.openChest(t.obj)]);
     const BP = S.objectPos(this.state, 'bench'); if (BP && this.state.carrying !== 'bench') stations.push(['bench', { ...BP, w: 1, h: 1 }, () => this.ui.openBench()]);
     const CP = S.objectPos(this.state, 'compost'); if (CP && this.state.carrying !== 'compost') stations.push(['compost', { ...CP, w: 1, h: 1 }, () => this.ui.openCompost()]);
@@ -197,7 +198,8 @@ export class Game {
     for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Field chest') + '  (E: open, hold: pick up)' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.obj?.kind === 'filter') out.push({ kind: 'filter', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it && (it.kind === 'crop' || it.kind === 'seed') ? `Set the filter to ${s.species[it.species]?.name || 'this'}` : it?.kind === 'product' ? 'Set the filter to dried goods' : it ? 'Filter' : 'Swap the filter\'s sides' }); } }
-    for (const { x, y, t } of S.dcrateTiles(s)) { const n = S.dcrateCount(t.obj), fullD = n >= CONFIG.truck.crateHolds; out.push({ kind: 'dcrate', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 2, (y + 1) * 16 - 16, 20, 16], label: it && (it.kind === 'crop' || it.kind === 'product') ? (fullD ? 'Crate is full' : 'Drop in the crate') : `Delivery crate · ${n} / ${CONFIG.truck.crateHolds}` }); }
+    for (const { x, y, t } of S.dcrateTiles(s)) { const n = S.dcrateCount(t.obj), fullD = n >= CONFIG.truck.crateHolds; out.push({ kind: 'dcrate', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 2, (y + 1) * 16 - 16, 20, 16], label: (it && (it.kind === 'crop' || it.kind === 'product') ? (fullD ? 'Crate is full' : 'Drop in the crate') : `Delivery crate · ${n} / ${CONFIG.truck.crateHolds}`) + '  (hold: lift)' }); }
+    if (s.truck) { const Ts = TRUCK_SPOT, tier = S.truckTier(s); out.push({ kind: 'truck', near: Ts, rect: [Ts.x * 16, Ts.y * 16 - 8, 32, 40], label: `${tier.name} · ${s.truck.bed?.length || 0} / ${tier.slots} crates loaded  (E: open)` }); }
     for (const { x, y, t } of S.machineTiles(s, 'dryer')) { const n = S.heldCount(t.obj.out); out.push({ kind: 'dryer', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: (it?.kind === 'crop' ? 'Load the dryer' : it?.kind === 'product' ? 'Already dried' : n ? `Take ${n} dried` : 'Dryer') + '  (E: open)' }); }
     for (const { x, y, t } of S.machineTiles(s)) if (t.obj.kind !== 'dryer' && t.obj.held?.length) { const n = S.heldCount(t.obj.held); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); }
     { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && t.load?.length && !t.obj) { const n = S.heldCount(t.load); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); } } }
@@ -261,6 +263,7 @@ export class Game {
       case 'roadsign': { this.travelTo('market'); return true; }
       case 'homesign': { this.travelTo('farm'); return true; }
       case 'board': { this.ui.openCrate(); return true; }
+      case 'truck': { this.ui.openCrate(); return true; }
       case 'bayspot': { const r = S.setCrate(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y, '#ffffff'); this.sound.play('stake'); this.save(); } return true; }
       case 'mstore': { const ch = s.market.store; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.near.x + 0.5, o.near.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'fountain': { if (it) { this.ui.toast('Empty hands to drink'); return true; } this.startAction('drink', MARKET.fountain.x, MARKET.fountain.y, CONFIG.actions.drinkSeconds); return true; }
@@ -309,15 +312,16 @@ export class Game {
     if (t.t === 'chest') return { title: 'Chest', sub: 'Your pockets empty into here. Click with something in hand to put it away, E to open.' };
     if (t.obj?.kind === 'chest') return { title: 'Field chest', sub: `${t.obj.slots.filter(Boolean).length} / ${t.obj.slots.length} slots. Click with something in hand to put it away, E to open. Hold on it to lift it, contents and all.` };
     if (t.t === 'sign') return { title: 'Delivery sign', sub: 'Crops left in the crate are collected at night.' };
-    if (t.t === 'board') { const bb = S.bayBoard(this.state); return { title: 'Loading bay', sub: `${bb.count} waiting for the ${this.state.truck ? 'truck' : 'cart'} tonight, ${formatMoney(bb.total)}: the porch crate and ${bb.crates} of ${bb.spots} crate spots in the bay.${bb.outside ? ` ${bb.outside} sit in crates outside the bay, which it will not take.` : ''} E opens the list.` }; }
-    if (this.state.truck && S.inBayOf(this.state, x, y) && t.t === 'grass' && !t.tilled && !t.obj) return { title: 'Loading bay', sub: 'Gravel by the track. Empty hands set a crate here; the truck takes it away full at night and leaves an empty in its place.' };
+    if (t.t === 'board') { const bb = S.bayBoard(this.state); return { title: 'Loading bay', sub: `${bb.count} going tonight, ${formatMoney(bb.total)}: the porch crate and ${bb.loaded} of ${bb.slots} crates on the truck.${bb.waiting ? ` ${bb.waiting} crops still wait in crates on the gravel: carry them to the truck.` : ''} E opens the list.` }; }
+    if (t.t === 'truck') { const tier = S.truckTier(this.state), n = this.state.truck?.bed?.length || 0; return { title: tier.name, sub: `${n} / ${tier.slots} crates on the bed. Carry a full crate to it and click to load. It leaves at night with what is loaded, and the porch crate, and is back by morning with empties.` }; }
+    if (this.state.truck && S.inBayOf(this.state, x, y) && t.t === 'grass' && !t.tilled && !t.obj) return { title: 'Loading bay', sub: 'Gravel by the track. The haulier leaves empty crates here each morning; empty hands set one too. Fill them, then hold on one to lift it and carry it to the truck.' };
     if (t.t === 'roadsign') return { title: 'To the market', sub: 'Click the sign to set off: an hour down the track. Open 8 to 6; shoppers buy at your stall, merchants sell seeds and hardware.' };
     if (t.t === 'seedrack') return { title: 'Seed rack', sub: S.activeTray(this.state) ? `${this.state.seedRack.trays.length} ${this.state.seedRack.trays.length === 1 ? 'tray' : 'trays'}` : 'Lay a crop on a tray. It dries into seeds.' };
     if (t.t === 'crate') return { title: 'Delivery crate', sub: 'Drop crops in. The cart collects them at night and pays in the morning.' };
     if (t.obj?.kind === 'sprinkler') return { title: S.sprinklerTier(t.obj).name, sub: S.sprinklerFed(this.state, x, y) ? `Running: ${S.headAt(this.state, x, y)} tiles of flow reach it and it drinks ${S.sprinklerTier(t.obj).draw}. Wets the beds around it a little at a time while you are awake. The hoe picks it up.` : S.pipeLinked(this.state, x, y) ? `No pressure: ${S.headAt(this.state, x, y)} of the flow reaches here, it drinks ${S.sprinklerTier(t.obj).draw}. A pump nearer the well adds more.` : 'Dry. It needs pipe under it with a line back to the well.' };
     if (t.obj?.kind === 'pump') { const tier = S.pumpTier(t.obj), P = S.pressure(this.state), f = S.fuelOf(t.obj); return { title: tier.name, sub: !S.pipeLinked(this.state, x, y) ? 'Dry: this pipe has no line back to the well.' : !S.pipeFed(this.state, x, y) ? 'Dry: the flow runs out before here. Stand it nearer the well.' : tier.fuelPerDay && !f ? 'Out of fuel: pour a can in.' : !S.pumpRunning(this.state, t) ? 'Still.' : `Running: ${S.headAt(this.state, x, y)} tiles of flow arrive, it adds ${S.pumpHead(this.state, t.obj)} from here.${S.pumpCalm(this.state, t.obj) ? ` A calm day: it turns slowly, ${tier.calmHead} of its ${tier.head}.` : ''}${tier.fuelPerDay ? ` Fuel for ${f} ${f === 1 ? 'night' : 'nights'}.` : ''}` }; }
     if (t.obj?.kind === 'generator') { const G = CONFIG.power.generator, net = S.lineNet(this.state), c = [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dy]) => net.comp.get((y + dy) * w.w + x + dx)).find(v => v != null); const f = S.fuelOf(t.obj), fuel = `Fuel for ${f} ${f === 1 ? 'night' : 'nights'}.`; return { title: 'Generator', sub: t.obj.off ? `Switched off: no power, no fuel burned. ${fuel} Click to switch it on.` : !f ? 'Out of fuel: pour a can in with fuel in hand.' : S.generatorLive(this.state, x, y) ? `Running: makes ${G.power} power, the line draws ${c != null ? net.used[c] : 0} of ${c != null ? net.cap[c] : G.power}. ${fuel} Click to switch it off.` : `Idle: no line beside it, and still burning a can a night. ${fuel} Click to switch it off.` }; }
-    if (t.obj?.kind === 'dcrate') { const n = S.dcrateCount(t.obj); return { title: 'Delivery crate', sub: S.inBayOf(this.state, x, y) ? `${n} / ${CONFIG.truck.crateHolds} inside. The truck takes it away full at night with the porch crate, one buyer's order across all of them, and leaves an empty. A hopper beside it tips in; belt can end at it. The hoe lifts it when it is empty.` : `${n} / ${CONFIG.truck.crateHolds} inside. Outside the loading bay: the truck will not take it here. The hoe lifts it when it is empty.` }; }
+    if (t.obj?.kind === 'dcrate') { const n = S.dcrateCount(t.obj); return { title: 'Delivery crate', sub: `${n} / ${CONFIG.truck.crateHolds} inside. A hopper beside it tips in; belt can end at it; crops in hand drop in. Hold on it to lift it, and click the truck to load it.${n ? '' : ' Empty: set it where a line ends.'}` }; }
     if (t.obj?.kind === 'dryer') { const o = t.obj, n = S.heldCount(o.held), d = S.heldCount(o.out), sp = o.doing && this.state.species[o.doing.species]; return { title: 'Dryer', sub: (S.machinePowered(this.state, x, y) ? (o.doing ? `Drying ${o.doing.qty} ${sp?.name || ''}: ${Math.round(S.dryerProgress(this.state, o) * 100)}%.` : 'Running, nothing in it.') : S.linePowered(this.state, x, y) ? 'No power: the generator runs all it can.' : 'Dead: no generator on this line.') + (n ? ` ${n} waiting on top.` : '') + (d ? ` ${d} dried on the tray: empty hands take them.` : '') + ' Crops in hand load it; E opens it.' }; }
     if (t.obj?.kind === 'picker' || t.obj?.kind === 'hopper') { const n = S.heldCount(t.obj.held), name = t.obj.kind === 'picker' ? 'Picker' : 'Hopper', what = t.obj.kind === 'picker' ? 'takes a ripe crop an hour from the beds around it and hands it down the line' : S.hopperByCrate(x, y, this.state) ? 'the pickers fill it and it tips into the crate when the cart comes' : 'the pickers fill it; it is a store, away from the crate'; return { title: name, sub: (S.machinePowered(this.state, x, y) ? `Running: ${what}.` : S.linePowered(this.state, x, y) ? 'No power: the generator runs all it can.' : 'Dead: no generator on this line.') + (n ? ` Holding ${n}: empty hands take them.` : '') }; }
     if (t.belt && (t.obj?.kind === 'splitter' || t.obj?.kind === 'filter')) return S.describeSplit(this.state, x, y);
@@ -366,7 +370,7 @@ export class Game {
       if (s.market?.events?.length) s.market.events = [];
     }
     this.moving = false;
-    if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const h = this.press.hit, r = h.kind === 'fchest' ? S.pickUpChest(s, h.x, h.y) : S.pickUp(s, h.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
+    if (this.press) { this.press.t += dt; if (this.press.t >= CONFIG.player.pickUpSeconds) { const h = this.press.hit, r = h.kind === 'fchest' ? S.pickUpChest(s, h.x, h.y) : h.kind === 'dcrate' ? S.pickUpCrate(s, h.x, h.y) : S.pickUp(s, h.kind); if (r.msg) this.ui.toast(r.msg); this.press = null; } }
     if (this.ui.openPanel?.tick) { this.panelT = (this.panelT || 0) + dt; if (this.panelT > 0.5) { this.panelT = 0; this.ui.openPanel.tick(); } }
     if (this.action) { const a = this.action; a.t += dt; if (a.period && a.t >= a.nextSound && a.nextSound < a.dur - 0.08) { a.nextSound += a.period; this.sound.play(ACTION_SOUND[a.type]); } if (a.t >= a.dur) this.finishAction(); }
     else if (!this.ui.openPanel && !this.sleeping) this.movePlayer(dt);
@@ -536,7 +540,7 @@ export class Game {
       const tree = isTree(w, x, y);
       if (tree) v = (x * 7 + y * 13) % 3;   // no flowers under the forest
       if (t.track) ctx.drawImage(trackTile(x % 3), sx, sy, T, T);
-      else if (s.truck && S.inBayOf(s, x, y) && t.t === 'grass' && !t.tilled) ctx.drawImage(bayTile((S.inBayOf(s, x, y - 1) ? 0 : 1) | (S.inBayOf(s, x + 1, y) && !tileAt(w, x + 1, y)?.track ? 0 : 2) | (S.inBayOf(s, x, y + 1) ? 0 : 4) | (S.inBayOf(s, x - 1, y) ? 0 : 8), (x * 7 + y * 3) % 5), sx, sy, T, T);
+      else if (s.truck && (S.inBayOf(s, x, y) || t.t === 'truck') && (t.t === 'grass' || t.t === 'truck') && !t.tilled) ctx.drawImage(bayTile((S.inBayOf(s, x, y - 1) ? 0 : 1) | (S.inBayOf(s, x + 1, y) && !tileAt(w, x + 1, y)?.track ? 0 : 2) | (S.inBayOf(s, x, y + 1) ? 0 : 4) | (S.inBayOf(s, x - 1, y) ? 0 : 8), (x * 7 + y * 3) % 5), sx, sy, T, T);
       else if (t.t === 'grass' && t.tilled) ctx.drawImage(soilTile(['dry', 'moist', 'wet', 'soggy'].indexOf(S.moistureState(t)), v & 3), sx, sy, T, T);
       else {
         ctx.drawImage(grassTile(v), sx, sy, T, T);
@@ -598,6 +602,11 @@ export class Game {
     for (const [key, tool] of [['rackHoe', 'hoe'], ['rackCan', 'can']]) { if (s.carrying === key) continue; const R = S.objectPos(s, key); drawables.push({ y: R.y + 1, draw: () => ctx.drawImage(rackSprite(tool, s.rack[tool]), R.x * T - cx, (R.y + 1) * T - cy - 24 * CONFIG.scale, T, 24 * CONFIG.scale) }); }
     const Wl = BUILDINGS.well, Sg = BUILDINGS.sign;
     drawables.push({ y: Sg.y + 1, draw: () => ctx.drawImage(signSprite(this.flag), Sg.x * T - cx - 10 * CONFIG.scale, (Sg.y + 1) * T - cy - 24 * CONFIG.scale + 2 * CONFIG.scale, 36 * CONFIG.scale, 24 * CONFIG.scale) });
+    if (s.truck) { const Ts = TRUCK_SPOT, u = CONFIG.scale, bed = s.truck.bed || [], slots = S.truckSlots(s); drawables.push({ y: Ts.y + Ts.h, draw: () => {
+      ctx.drawImage(parkedTruckSprite(), Ts.x * T - cx, Ts.y * T - cy, 32 * u, 32 * u);
+      const cols = slots <= 4 ? 2 : slots <= 8 ? 4 : 6, rows = Math.ceil(slots / cols);   // crates on the bed, small, in rows
+      for (let i = 0; i < bed.length; i++) { const r = Math.floor(i / cols), c = i % cols, cw = 18 / cols, chh = 8 / rows; ctx.drawImage(crateSprite(1, true), Ts.x * T - cx + (2 + c * cw) * u, Ts.y * T - cy + (13 + r * chh - 2) * u, Math.round(cw * u), Math.round((chh + 1) * u)); }
+    } }); }
     if (s.truck) { const Bd = BUILDINGS.board, u = CONFIG.scale, bb = S.bayBoard(s); drawables.push({ y: Bd.y + 1, draw: () => {   // the bay's board: tonight's count and money in chalk
       const bx = Bd.x * T - cx - 10 * u, by = (Bd.y + 1) * T - cy - 24 * u + 2 * u; ctx.drawImage(boardSprite(), bx, by, 36 * u, 24 * u);
       const l1 = `${bb.count} TONIGHT`, l2 = formatMoney(bb.total); const cs = Math.max(1, Math.round(u / 2)); drawText(ctx, l1, bx + (36 * u - textWidth(l1, cs)) / 2, by + 2 * u, '#f5efd8', cs); drawText(ctx, l2, bx + (36 * u - textWidth(l2, cs)) / 2, by + 7 * u, '#f6c453', cs);
@@ -711,7 +720,7 @@ export class Game {
       const bobPx = playerBob(frame) * CONFIG.scale;   // overlays ride the walk bob
       if (s.carrying) {   // the object rides above the raised hands
         const bob = bobPx, key = s.carrying;
-        const img = key === 'chest' ? chestSprite(false, true, s.carriedChest?.level || 0) : key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
+        const img = key === 'dcrate' ? crateSprite(S.dcrateCount(s.carriedCrate || {}) ? 1 : 0, true) : key === 'chest' ? chestSprite(false, true, s.carriedChest?.level || 0) : key === 'bench' ? benchSprite(0) : key === 'compost' ? compostSprite(0) : key === 'seedrack' ? seedRackSprite(S.seedRackReady(s) ? 2 : 0) : rackSprite(key === 'rackHoe' ? 'hoe' : 'can', s.rack[key === 'rackHoe' ? 'hoe' : 'can']);
         const h = img.height * CONFIG.scale;
         ctx.drawImage(img, px, py - h + 4 * CONFIG.scale + bob, T, h);
       }

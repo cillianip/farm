@@ -112,7 +112,10 @@ export const CONFIG = {
   demand: { full: 8, steps: [0.6, 0.4] },
   // The truck (Build 72): once the crate is fully extended the catalogue sells a truck that replaces the cart and empties every
   // delivery crate on the farm along with the one by the porch; delivery crates are set where the belts end.
-  truck: { price: 900, crateHolds: 36, bayPrices: [600, 1200] },   // crates are the haulier's and free; what you pay for is the truck and the gravel
+  // The truck (Build 76) stands in the bay by day with crate slots on its bed; that is the night's capacity. The haulier's
+  // crates are free: each morning the truck leaves as many empties on the gravel as it has slots. Belts and hoppers fill them;
+  // a full crate is lifted and carried to the truck by hand (the forklift comes later). Bigger trucks replace the small one.
+  truck: { crateHolds: 12, emptiesOut: 4, tiers: [{ name: 'Small truck', slots: 4, price: 900 }, { name: 'Medium truck', slots: 8, price: 1500 }, { name: 'Large truck', slots: 12, price: 2800 }] },
   // What drying does to a price: a dried crop is worth its fresh price × (base + sugar × the sugar gene), so a bland crop loses
   // by drying and a sweet one doubles; stars count for half as much once it is dried (the product is the thing, not the fruit).
   // Dried goods are their own line at the cart's buyer (their own `demand.full`) and the market's shoppers ask for them by name.

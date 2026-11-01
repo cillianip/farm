@@ -195,6 +195,17 @@ export function boardSprite() {
     P.px(2, 1, PAL.metalDark); P.px(33, 1, PAL.metalDark); P.px(2, 11, PAL.metalDark); P.px(33, 11, PAL.metalDark);
   }, 'rgba(40,25,15,0.9)');
 }
+// The truck parked in the bay (32×32, two tiles wide, facing the track): cab on the right, a flatbed with low slatted sides on
+// the left; the game sets the loaded crates on the bed.
+export function parkedTruckSprite() {
+  return sprite('parkedTruck', 32, 32, P => {
+    P.rect(1, 12, 20, 10, PAL.woodDark); P.rect(2, 13, 18, 8, PAL.wood); for (let x = 4; x < 20; x += 4) P.rect(x, 13, 1, 8, PAL.woodDark); P.rect(2, 13, 18, 1, PAL.woodLight);   // the bed and its slats
+    P.rect(21, 7, 10, 15, '#4f8fcf'); P.rect(21, 7, 10, 1, '#7fb4e6'); P.rect(22, 9, 8, 5, PAL.window); P.rect(22, 9, 8, 1, '#dff3ff'); P.rect(21, 21, 10, 1, '#3f72a8'); P.rect(29, 16, 2, 2, PAL.gold);   // the cab, windscreen, a lamp
+    P.rect(0, 22, 32, 3, PAL.metalDark); P.rect(0, 24, 32, 1, '#2a2a2a');                                                                                                           // the chassis
+    for (const wx of [6, 25]) { P.disc(wx, 27, 4, '#2a2a2a'); P.disc(wx, 27, 3, '#444'); P.disc(wx, 27, 1, PAL.metalLight); }                                                        // wheels
+    P.rect(1, 29, 30, 2, 'rgba(30,20,10,0.25)');
+  }, 'rgba(40,25,15,0.9)');
+}
 // The truck (28×20): a cab, a flatbed with slatted sides, two wheels; frames roll the wheels.
 export function truckSprite(frame = 0) {
   return sprite(`truck${frame}`, 28, 20, P => {
@@ -525,7 +536,7 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' || kind === 'truck1' || kind === 'truck2' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.
