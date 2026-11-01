@@ -83,7 +83,7 @@ export function drawHud(ctx, state, vw, vh, selected = 0, extra = {}) {
   lines.push(['Sold last night', y ? formatMoney(y.sale) : 'nothing yet', COL.text]);
   lines.push(['In the ground', rate > 0 ? `${formatMoney(rate)} at harvest` : 'nothing', rate > 0 ? '#3f7a1f' : COL.text]);
   if (state.loan) lines.push(['Owed the bank', `${formatMoney(state.loan.owed)}, +${Math.round(CONFIG.loan.nightly * 100)}% a night`, '#a0462f']);
-  { const dc = S.bayCrates(state), extra = dc.reduce((n, { t }) => n + S.dcrateCount(t.obj), 0); lines.push(['Crate', `${S.crateCount(state)} / ${state.crate.capacity}${dc.length ? ` +${extra} in the bay` : ''}${state.crate.pickups ? ', noon & night' : ' a night'}`, S.crateCount(state) >= state.crate.capacity ? '#a0462f' : COL.text]); }
+  { const dc = S.bayCrates(state), extra = dc.reduce((n, { t }) => n + S.dcrateCount(t.obj), 0); lines.push(['Crate', `${S.crateCount(state)} / ${state.crate.capacity}${dc.length ? ` +${extra} in the bay` : ''} a night`, S.crateCount(state) >= state.crate.capacity ? '#a0462f' : COL.text]); }
   if (state.market?.at) lines.push(['At the stall', `${state.market.today.sold} sold, ${formatMoney(state.market.today.money)}`, '#3f7a1f']);
   ctx.font = `20px ${FONT}`; const mw = ctx.measureText(money).width;
   ctx.font = `9px ${FONT}`; const lw = Math.max(...lines.map(([k, v]) => ctx.measureText(`${k}    ${v}`).width));

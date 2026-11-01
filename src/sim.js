@@ -1,7 +1,7 @@
 // The rules of the game: time, growth, actions, the crate and the cart, sleep, breeding, compost. Pure JS, testable in Node.
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
-import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, CRATE_STACK } from './world.js';
+import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, baySpots, BAY } from './world.js';
 import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
@@ -37,7 +37,7 @@ export function createState(seed = randomSeed()) {
     rack: { hoe: true, can: true },                 // tools still hanging on the rack
     bird: { nextAt: null, pending: null, today: 0, count: 0 },
     market: M.makeMarket(),
-    bay: { stack: 0, away: 0 },   // empty delivery crates on the stack, and crates out with the truck that come back tomorrow night
+    bay: { level: 0 },   // how far the loading bay's gravel reaches (its extensions)
     crate: { items: [], capacity: CONFIG.crate.capacity, lastSale: null, pickups: 0, pendingPickup: null },   // items: {species, q, qty}; pickups 1 = the cart also comes at noon
     seedRack: { trays: [{ item: null, readyAt: null, startedAt: null }] },   // trays: item {species, q, seeds}, readyAt in game minutes
     orders: [], deeds: 0,                         // catalogue orders on tonight's cart; land deeds waiting to be claimed
@@ -86,9 +86,9 @@ export function migrate(state) {
   M.ensureMarket(state);
   { const rs = tileAt(state.world, BUILDINGS.roadsign.x, BUILDINGS.roadsign.y); if (rs && rs.t === 'grass') { rs.t = 'roadsign'; rs.tilled = false; rs.crop = null; rs.obj = null; } }   // older saves: the sign to the market
   { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; } }   // and the loading bay's board (Build 73)
-  { const st = tileAt(state.world, CRATE_STACK.x, CRATE_STACK.y); if (st && st.t === 'grass') { st.t = 'cstack'; st.tilled = false; st.crop = null; st.obj = null; } }   // the crate stack's corner of the bay (Build 74)
-  if (!state.bay) state.bay = { stack: 0, away: 0 };
-  for (const inv of [state.inventory, state.chest]) inv.slots.forEach((it, i) => { if (it?.kind === 'dcrate') { state.bay.stack += it.qty; inv.slots[i] = null; } });   // crates bought as items (Build 72) go on the stack
+  { const st = tileAt(state.world, BAY.x0, BAY.y0); if (st && st.t === 'cstack') st.t = 'grass'; }   // the crate stack of Build 74 is gone
+  if (!state.bay || state.bay.level === undefined) state.bay = { level: 0 };
+  for (const inv of [state.inventory, state.chest]) inv.slots.forEach((it, i) => { if (it?.kind === 'dcrate') inv.slots[i] = null; });   // crates are free now (Build 75): bought ones are just gone
   const ct = tileAt(state.world, BUILDINGS.chest.x, BUILDINGS.chest.y);
   if (ct && ct.t === 'grass') { ct.t = 'chest'; ct.tilled = false; ct.crop = null; }
   const n = CONFIG.inventory.slots;
@@ -225,9 +225,6 @@ export function tick(state, dtMinutes, opts = {}) {
   state.thirst = Math.max(0, (state.thirst ?? 100) - dtH * drain * 100 / N.thirstHours);
   if (state.hunger <= 0 || state.thirst <= 0) state.energy = Math.max(0, state.energy - N.starvingEnergyPerHour * dtH);
   if (state.market?.at) M.marketTick(state, dtMinutes);
-  // the midday cart: when the clock crosses the pickup hour it empties the crate and pays on the spot
-  if (state.crate.pickups) { const m = CONFIG.crate.middayHour * 60, before = (now - dtMinutes) % MIN_PER_DAY, after = now % MIN_PER_DAY;
-    if (before < m && after >= m) { const sale = collectCrate(state); if (sale) { const D = today(state); D.sale += sale.total; D.sold += sale.count; D.pickups = (D.pickups || 0) + 1; state.crate.pendingPickup = sale; } } }
   for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) {
     const t = w.tiles[y * w.w + x];
     const c = t.crop; if (!c || c.dead) continue;
@@ -404,16 +401,18 @@ export function putInCrate(state, slotIndex, n = Infinity) {
   return { ok: true, msg: '', float: `+${take} ${name}`, count: take, full };
 }
 export const isDcrate = t => t?.obj?.kind === 'dcrate';
-export const bayCrates = state => dcrateTiles(state).filter(({ x, y }) => inBay(x, y));
-// Empty hands on the bay's gravel: a crate from the stack goes there.
-export function setCrateFromStack(state, x, y) {
+export const bayLevel = state => state.bay?.level || 0;
+export const inBayOf = (state, x, y) => inBay(x, y, bayLevel(state));
+export const baySpotCount = state => baySpots(state.world, bayLevel(state));
+export const bayCrates = state => dcrateTiles(state).filter(({ x, y }) => inBayOf(state, x, y));
+// Empty hands on the bay's gravel: a crate goes there. The haulier's crates are free and there is no end of them.
+export function setCrate(state, x, y) {
   const t = tileAt(state.world, x, y); if (!t) return fail('');
-  if (!inBay(x, y)) return fail('Crates go on the gravel of the loading bay');
-  if (t.t !== 'grass' || t.track || t.tilled || t.obj) return fail(t.obj ? 'Something stands there' : 'Not here');
   if (!state.truck) return fail('The truck has to come first');
-  if (!(state.bay?.stack > 0)) return fail('No empty crates on the stack: the catalogue sells them, and the truck brings yours back');
+  if (!inBayOf(state, x, y)) return fail('Crates go on the gravel of the loading bay');
+  if (t.t !== 'grass' || t.track || t.tilled || t.obj) return fail(t.obj ? 'Something stands there' : 'Not here');
   if (!inReach(state, x, y)) return fail('Too far');
-  state.bay.stack--; t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
+  t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '', float: 'Set' };
 }
 export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
@@ -421,7 +420,7 @@ export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0)
 // everything waiting for the pickup, the porch crate first then each delivery crate (one buyer's order across all of them)
 export const allCrateItems = state => [...state.crate.items, ...bayCrates(state).flatMap(({ t }) => t.obj.items || [])];
 // the board by the bay: what is waiting, what it fetches tonight, and what sits in crates outside the bay
-export function bayBoard(state) { const P = priceCrate(state, allCrateItems(state)); const outside = dcrateTiles(state).filter(({ x, y }) => !inBay(x, y)).reduce((n, { t }) => n + dcrateCount(t.obj), 0); return { count: P.count, total: P.total, lines: P.lines, crates: bayCrates(state).length, outside, stack: state.bay?.stack || 0, away: state.bay?.away || 0 }; }
+export function bayBoard(state) { const P = priceCrate(state, allCrateItems(state)); const outside = dcrateTiles(state).filter(({ x, y }) => !inBayOf(state, x, y)).reduce((n, { t }) => n + dcrateCount(t.obj), 0); return { count: P.count, total: P.total, lines: P.lines, crates: bayCrates(state).length, spots: baySpotCount(state), outside }; }
 // A crop in hand into a delivery crate: crops and dried goods only, as much as fits.
 export function putInDcrate(state, slotIndex, x, y, n = Infinity) {
   const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isDcrate(t) || !it) return fail('');
@@ -445,15 +444,13 @@ export function collectCrate(state, night = false) {
     state.crate.items = []; sale = { count, total, lines, crates: null };
   }
   let crates = null;
-  if (night && state.truck) {   // crates go, crates come back, whether or not anything sold tonight
-    const bay = state.bay || (state.bay = { stack: 0, away: 0 }), full = bayCrates(state).filter(({ t }) => dcrateCount(t.obj) > 0);
-    const back = bay.away; bay.stack += back; bay.away = full.length; let refilled = 0;
-    for (const { t } of full) { t.obj = null; if (bay.stack > 0) { bay.stack--; t.obj = { kind: 'dcrate', items: [] }; refilled++; } }
-    if (full.length) state.beltRev = (state.beltRev || 0) + 1;
-    crates = { shipped: full.length, back, refilled, stack: bay.stack };
+  if (night && state.truck) {   // the full crates go away on the truck; the haulier leaves an empty on every spot by morning
+    const full = bayCrates(state).filter(({ t }) => dcrateCount(t.obj) > 0);
+    for (const { t } of full) t.obj = { kind: 'dcrate', items: [] };
+    crates = { shipped: full.length };
   } else for (const { t } of bayCrates(state)) t.obj.items = [];
-  if (sale) { sale.crates = crates; state.crate.lastSale = sale; return sale; }
-  return crates && (crates.shipped || crates.back) ? { count: 0, total: 0, lines: [], crates } : null;
+  if (sale) { sale.crates = crates; state.crate.lastSale = sale; }
+  return sale;
 }
 
 export function inReach(state, x, y) { return dist(state.player.x, state.player.y, x + 0.5, y + 0.5) <= CONFIG.player.reach; }
@@ -488,7 +485,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj?.kind === 'dcrate') { if (t.obj.items?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); t.obj = null; state.bay = state.bay || { stack: 0, away: 0 }; state.bay.stack++; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Back on the stack' }; }
+    if (t.obj?.kind === 'dcrate') { if (t.obj.items?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); t.obj = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Lifted' }; }
     if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length || t.obj.out?.length || t.obj.doing || t.obj.items?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
@@ -580,13 +577,13 @@ export function useItem(state, slotIndex, x, y) {
     t.belt = true; t.load = []; state.beltRev = (state.beltRev || 0) + 1;
     return { ok: true, msg: '', float: beltRunning(state, x, y) ? 'Laid' : 'Laid (still)' };
   }
-  if (item.kind === 'dcrate') {
-    if (!state.truck) return fail('The truck has to come first');
+  if (item.kind === 'dcrate') {   // an older save's crate in a pocket: it goes on the gravel like a free one
+    if (!state.truck) return fail('The truck has to come first'); if (!inBayOf(state, x, y)) return fail('Crates go on the gravel of the loading bay');
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : t?.tilled ? 'Flatten the bed first' : 'Set it on open grass');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
-    return { ok: true, msg: inBay(x, y) ? 'In the bay: the truck empties it at night. A hopper beside it tips in, and belt can end at it' : 'Outside the loading bay: the truck will not take it here. It still fills, as a box', float: 'Set' };
+    return { ok: true, msg: '', float: 'Set' };
   }
   if (item.kind === 'splitter' || item.kind === 'filter') {
     if (!t.belt) return fail('It sits on a belt');
@@ -1199,7 +1196,7 @@ export function sleep(state, opts = {}) {
   report.delivery = deliverOrders(state);
   for (const l of report.delivery.lines) report.lines.push(l);
   if (report.sale?.count) report.lines.push(`The ${state.truck ? 'truck' : 'cart'} took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the ${state.truck ? 'crates' : 'crate'}: +${formatMoney(report.sale.total)}.`);
-  if (report.sale?.crates?.shipped || report.sale?.crates?.back) { const c = report.sale.crates; report.lines.push(`The truck took ${c.shipped} ${c.shipped === 1 ? 'crate' : 'crates'}${c.back ? ` and brought ${c.back} back empty` : ''}${c.shipped > c.refilled ? `; ${c.shipped - c.refilled} ${c.shipped - c.refilled === 1 ? 'spot stands' : 'spots stand'} empty until more come back` : ''}.`); }
+  if (report.sale?.crates?.shipped) { const c = report.sale.crates; report.lines.push(`The truck took ${c.shipped} ${c.shipped === 1 ? 'crate' : 'crates'} away and left empties.`); }
   if (report.rain) report.lines.push('It rained overnight: every field is watered.');
   if (report.water) report.lines.push(`Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.`);
   if (report.fuel?.cans) report.lines.push(`Fuel: ${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned.`);
