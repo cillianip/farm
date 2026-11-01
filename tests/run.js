@@ -925,7 +925,7 @@ await test('the market: an hour down the track, crops on the counter, shoppers b
   assert.ok(Math.abs(S.hourOf(s) - (9 + C.travelMinutes / 60)) < 0.01, 'an hour passed: ' + S.hourOf(s));
   assert.ok(M.marketOpen(s)); assert.ok(s.world.tiles[W.BUILDINGS.roadsign.y * s.world.w + W.BUILDINGS.roadsign.x].t === 'roadsign');
   r = M.stock(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')); assert.ok(r.ok && r.moved === 20, JSON.stringify(r)); assert.equal(M.counterCount(s), 20);
-  assert.equal(M.stock(s, 0).msg, 'Shoppers here want food: only crops sell');
+  assert.equal(M.stock(s, 0).msg, 'Shoppers here want food: crops and dried goods sell');
   r = M.stock(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')); assert.ok(r.ok); assert.equal(M.counterCount(s), 40);
   const m0 = s.money, e0 = s.stats.earned; let mins = 0;
   while (s.market.today.sold === 0 && mins < 120) { tickMinutes(s, 1); mins++; }
@@ -1194,6 +1194,98 @@ await test('the hoe flattens an empty bed back to grass (and says when fertilise
   assert.deepEqual(items.filter(i => i.family === 'Sprinkler').map(i => i.tier), ['I', 'II', 'III']);
   assert.deepEqual(items.filter(i => i.family === 'Pump').map(i => i.tier), CONFIG.pump.tiers.map(t => t.name.replace(' pump', '')));   // the chip says Hand, the row says Hand pump
   assert.equal(items.filter(i => i.family === 'Borrow').length, CONFIG.loan.sizes.length);
+});
+
+console.log('dryer');
+await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
+  const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');
+  assert.equal(pk.genome.sugar, 0.6); assert.equal(pk.genome.skin, 0.8); assert.equal(po.genome.sugar, 0.15);
+  const idA = G.genomeId(pk.genome), idB = G.genomeId({ ...pk.genome, sugar: 0.1, skin: 0.1 }); assert.equal(idA, idB, 'the id ignores them');
+  const res = G.cross(pk.genome, po.genome, 5); assert.ok(res.child.sugar >= 0 && res.child.sugar <= 1 && res.child.skin >= 0 && res.child.skin <= 1);
+  const w = G.wildSpecies(makeRng(4), 'strawberry'); assert.ok(Math.abs(w.genome.sugar - 0.8) < 0.3);
+  // an older save: a species without the genes gets its base's, a bred one the middle of its parents'
+  const old = JSON.parse(serialize(s)); for (const sp of Object.values(old.species)) { delete sp.genome.sugar; delete sp.genome.skin; }
+  const child = { ...JSON.parse(JSON.stringify(pk)), id: 'sp_child', name: 'Child', parents: [pk.id, po.id], base: null }; delete child.genome.sugar; old.species[child.id] = child;
+  const m = deserialize(JSON.stringify(old)); S.migrate(m);
+  assert.equal(byName(m, 'Pumpkin').genome.sugar, 0.6); assert.equal(byName(m, 'Pumpkin').genome.skin, 0.8); assert.equal(r2(m.species.sp_child.genome.sugar), r2((0.6 + 0.15) / 2));
+});
+await test('dried goods: a product item with its own key and name; the price is fresh × (base + sugar × gene), stars worth half; bland loses, sweet doubles', async () => {
+  const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato'), sb = G.wildSpecies(makeRng(1), 'strawberry'); s.species[sb.id] = sb;
+  const fresh = { kind: 'crop', species: pk.id, q: 0, qty: 1 }, dried = { kind: 'product', product: 'dried', species: pk.id, q: 0, qty: 1 };
+  assert.notEqual(itemKey(fresh), itemKey(dried)); assert.equal(itemKey(dried), itemKey({ ...dried, qty: 5 }));
+  const { itemName } = await import('../src/items.js'); assert.equal(itemName(dried, s.species), 'Dried Pumpkin'); assert.equal(itemName({ ...dried, q: 2 }, s.species), 'Dried Pumpkin ★★');
+  const D = CONFIG.dried; assert.ok(Math.abs(salePrice(s, dried) - salePrice(s, fresh) * (D.base + D.sugar * 0.6)) < 1e-9);
+  assert.ok(salePrice(s, { ...dried, species: po.id }) < salePrice(s, { ...fresh, species: po.id }), 'a potato is worth less dried');
+  const sbF = salePrice(s, { ...fresh, species: sb.id }), sbD = salePrice(s, { ...dried, species: sb.id }); assert.ok(sbD > sbF * 1.6, 'a strawberry roughly doubles');
+  const starF = salePrice(s, { ...fresh, q: 2 }) / salePrice(s, fresh), starD = salePrice(s, { ...dried, q: 2 }) / salePrice(s, dried);
+  assert.ok(Math.abs((starD - 1) - (starF - 1) * D.starValue) < 1e-9, 'stars count for half once dried');
+});
+await test('the dryer: set on powered line; loaded by hand a batch at a time; takes base + skin hours; the tray fills; empty hands take dried goods; it runs through the night; unpowered it waits; the cart prices dried goods as their own line', () => {
+  const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], D = CONFIG.power.dryer;
+  const carrot = byName(s, 'Carrot'), pumpkin = byName(s, 'Pumpkin');
+  for (let x = X; x <= X + 2; x++) tile(x, Y + 4).line = true; tile(X + 1, Y + 5).obj = { kind: 'generator', fuel: 5 }; s.lineRev = 1;
+  s.player.x = X + 0.5; s.player.y = Y + 3.5;
+  addItem(s.inventory, { kind: 'dryer', qty: 1 }); const di = s.inventory.slots.findIndex(i => i?.kind === 'dryer');
+  assert.ok(!S.useItem(s, di, X, Y + 3).ok, 'not off the line'); assert.ok(S.useItem(s, di, X, Y + 4).ok, 'set on the line'); assert.ok(S.isDryer(tile(X, Y + 4)) && S.machinePowered(s, X, Y + 4));
+  addItem(s.inventory, { kind: 'crop', species: carrot.id, q: 0, qty: 10 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0;
+  const r = S.loadDryer(s, ci, X, Y + 4); assert.ok(r.ok && r.count === D.holds, 'as much as the hopper on top takes: ' + JSON.stringify(r)); assert.equal(s.inventory.slots[ci].qty, 10 - D.holds);
+  tickMinutes(s, 1); const o = tile(X, Y + 4).obj; assert.ok(o.doing && o.doing.qty === D.batch && o.doing.species === carrot.id, 'a batch started'); assert.equal(S.heldCount(o.held), D.holds - D.batch);
+  const hours = CONFIG.power.dryer.baseHours + CONFIG.power.dryer.skinHours * carrot.genome.skin; assert.equal(o.doing.done - o.doing.from, Math.round(hours * 60));
+  tickMinutes(s, Math.round(hours * 60) - 10); assert.equal(S.heldCount(o.out), 0, 'not yet'); assert.ok(S.dryerProgress(s, o) > 0.9);
+  tickMinutes(s, 20); assert.equal(S.heldCount(o.out), D.batch, 'the first batch is on the tray'); assert.ok(o.out[0].product === 'dried'); assert.ok(o.doing && o.doing.from === o.doing.done - Math.round(hours * 60), 'the next started when the last finished');
+  s.inventory.slots[3] = null;   // a pocket free
+  assert.ok(!S.takeHeld(s, X, Y + 4).msg, 'empty hands take the tray'); const got = s.inventory.slots.find(i => i?.kind === 'product'); assert.ok(got && got.qty === D.batch && got.species === carrot.id && got.product === 'dried'); assert.equal(S.heldCount(o.out), 0);
+  assert.equal(S.takeHeld(s, X, Y + 4).msg, 'Nothing dried yet');
+  assert.equal(S.loadDryer(s, s.inventory.slots.indexOf(got), X, Y + 4).msg, 'Already dried');
+  // the night finishes what was drying and starts the rest, dated honestly
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; o.held = [{ species: pumpkin.id, q: 1, qty: 2 }]; o.doing = { species: carrot.id, q: 0, qty: 4, from: s.minutes - 60, done: s.minutes + 60 };
+  const rep = S.sleep(s); assert.ok(rep.dried >= 4, 'the night dried the batch: ' + rep.dried); assert.equal(S.heldCount(o.out), 6, 'carrots then the pumpkins'); assert.ok(!o.doing); assert.ok(o.out.some(p => p.species === pumpkin.id && p.q === 1 && p.product === 'dried'));
+  // unpowered: it waits
+  tile(X + 1, Y + 5).obj.fuel = 0; s.lineRev++; o.held = [{ species: carrot.id, q: 0, qty: 4 }]; tickMinutes(s, 600); assert.ok(!o.doing && S.heldCount(o.held) === 4, 'no power, nothing dries');
+  tile(X + 1, Y + 5).obj.fuel = 3; s.lineRev++;
+  // the crate: dried goods are their own line with their own buyer's limit
+  s.crate.items = []; s.crate.capacity = 60; const full = CONFIG.demand.full;
+  for (let i = 0; i < full; i++) { s.crate.items.push({ species: carrot.id, q: 0, qty: 1 }); }
+  const P1 = S.priceCrate(s, s.crate.items); assert.equal(P1.lines.length, 1); assert.equal(P1.lines[0].cut, 0);
+  s.crate.items.push({ species: carrot.id, q: 0, qty: full, product: 'dried' });
+  const P2 = S.priceCrate(s, s.crate.items); assert.equal(P2.lines.length, 2, 'fresh and dried are two lines'); assert.ok(P2.lines.every(l => l.cut === 0), 'each has its own full-price allowance'); assert.equal(P2.lines[1].name, 'Dried Carrot');
+  assert.ok(Math.abs(P2.lines[1].total - salePrice(s, { kind: 'product', product: 'dried', species: carrot.id }) * full) < 0.011);
+  const pi = s.inventory.slots.findIndex(i => i?.kind === 'product'); if (pi >= 0) { s.player.x = WB.crate.x - 0.5; s.player.y = WB.crate.y + 1.5; assert.ok(S.putInCrate(s, pi, 1).ok, 'dried goods go in the crate'); }
+});
+await test('belt in, belt out: a picker feeds the dryer down a belt it drives; the dryer sets its tray on the belt leading away, never back up its feed; the hopper tips dried goods into the crate; dried goods already on the feed pass straight through', () => {
+  const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt, D = CONFIG.power.dryer;
+  const carrot = byName(s, 'Carrot');
+  const hy = Cr.y - 1, hx = Cr.x - 1, dx = X + 3;   // picker at X, belt X+1..X+2, dryer at X+3, belt X+4..hx-1, hopper at hx
+  for (let x = X; x <= hx; x++) tile(x, hy).line = true;
+  tile(X, hy).obj = { kind: 'picker', held: [] }; tile(dx, hy).obj = { kind: 'dryer', held: [], out: [], doing: null }; tile(hx, hy).obj = { kind: 'hopper', held: [] }; s.lineRev = 1;
+  for (let x = X + 1; x < hx; x++) if (x !== dx) { tile(x, hy).belt = true; tile(x, hy).load = []; } s.beltRev = 1;
+  tile(X + 1, hy + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev++;
+  assert.ok(S.machinePowered(s, dx, hy) && S.machinePowered(s, hx, hy) && S.machinePowered(s, X, hy));
+  assert.ok(S.beltRunning(s, X + 1, hy) && S.beltRunning(s, X + 2, hy), 'the dryer drives the belt that reaches it'); assert.equal(S.beltDir(s, X + 2, hy), 1, 'east into the dryer'); assert.equal(S.beltNet(s).dist.get(hy * W.w + X + 2), 1);
+  assert.equal(S.beltDir(s, dx + 1, hy), 1, 'the far belt runs east to the hopper');
+  tile(X + 1, hy).load = [{ species: carrot.id, q: 0, qty: 3 }, { species: carrot.id, q: 0, qty: 1, product: 'dried' }];
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0;
+  for (let i = 0; i < B.stepMinutes * 2; i++) tickMinutes(s, 1);
+  const o = tile(dx, hy).obj; assert.ok(o.doing && o.doing.qty === 3, 'the carrots went in and a batch started: ' + JSON.stringify(o));
+  assert.equal(S.heldCount(o.out), 1, 'the dried one passed straight through to the tray');
+  for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(S.heldCount(o.out), 0, 'the tray went onto the belt leading away'); assert.equal(S.heldCount(tile(dx + 1, hy).load), 1); assert.equal(S.heldCount(tile(dx - 1, hy).load), 0, 'never back up the feed');
+  const hours = D.baseHours + D.skinHours * carrot.genome.skin; tickMinutes(s, Math.round(hours * 60) + 1);
+  for (let i = 0; i < B.stepMinutes * (hx - dx + 1); i++) tickMinutes(s, 1);
+  const hop = tile(hx, hy).obj.held; assert.ok(hop.some(h => h.product === 'dried' && h.qty >= 1), 'dried goods reached the hopper: ' + JSON.stringify(hop)); assert.equal(S.heldCount(hop), 4);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
+  assert.ok(rep.sale && rep.sale.lines.some(l => l.product === 'dried' && l.qty === 4), 'the cart bought the dried carrots: ' + JSON.stringify(rep.sale));
+});
+await test('the market: dried goods go on the counter, a shopper who wants something dried takes them and tips for the match', async () => {
+  const M = await import('../src/market.js');
+  const s = arm(S.createState(1)); const carrot = byName(s, 'Carrot');
+  addItem(s.inventory, { kind: 'product', product: 'dried', species: carrot.id, q: 0, qty: 3 }); const pi = s.inventory.slots.findIndex(i => i?.kind === 'product');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 7 * 60; assert.ok(M.depart(s, 'market').ok); M.arrive(s, 'market');
+  assert.ok(M.stock(s, pi).ok, 'dried goods sell at the stall'); assert.equal(s.market.counter.slots.filter(Boolean)[0].kind, 'product');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; const m = s.market; m.npcs.push({ id: 991, x: 2, y: 6.5, dir: 'right', want: 'dried', phase: 'in', t: 0, variant: 0, qty: 1, bubble: null });
+  const money = s.money; let ev = null; for (let i = 0; i < 20 && !ev; i++) { M.marketTick(s, 1); ev = m.events.find(e => e.type === 'sale'); } assert.ok(ev, 'a sale: ' + JSON.stringify(m.events)); assert.ok(ev.tip > 0 && s.money > money); assert.equal(M.familyWord('dried'), 'something dried');
+  const n = m.npcs.find(x => x.id === 991); assert.ok(n.bubble && n.bubble.product === 'dried' && n.bubble.match, JSON.stringify(n.bubble));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

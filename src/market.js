@@ -3,7 +3,7 @@
 // on the spot. Pure rules; sim.js ticks it and game.js draws it. Nothing here touches the farm's tiles.
 import { CONFIG } from './config.js';
 import { makeRng, hashString } from './rng.js';
-import { addItem, removeFromSlot, hasRoom, makeInventory, itemKey } from './items.js';
+import { addItem, removeFromSlot, hasRoom, makeInventory, itemKey, isFood } from './items.js';
 import { salePrice } from './economy.js';
 import { WILD_BASES, WILD_NAMES } from './genetics.js';
 import { seedOffers, seedSpecies } from './catalog.js';
@@ -53,7 +53,7 @@ export function arrive(state, dest) {
 export function stock(state, slotIndex) {
   const m = ensureMarket(state), it = state.inventory.slots[slotIndex];
   if (!it) return fail('');
-  if (it.kind !== 'crop') return fail('Shoppers here want food: only crops sell');
+  if (!isFood(it)) return fail('Shoppers here want food: crops and dried goods sell');
   const left = addItem(m.counter, { ...it }); const moved = it.qty - left;
   if (!moved) return fail('The counter is full');
   removeFromSlot(state.inventory, slotIndex, moved);
@@ -79,7 +79,7 @@ export function marketTick(state, dtMinutes) {
     if (m.nextAt == null) { const r = makeRng(state.seed ^ hashString('shopper' + m.count)); m.nextAt = now + r.range(C.arrivalMinutes[0], C.arrivalMinutes[1]); }
     if (now >= m.nextAt) {
       const r = makeRng(state.seed ^ hashString('shopper' + m.count)), f = stallFront('yours');
-      const want = r.chance(C.wantChance) ? r.pick(FAMILIES) : null;
+      const want = r.chance(C.wantChance) ? (r.chance(CONFIG.dried.wantChance) ? 'dried' : r.pick(FAMILIES)) : null;
       m.npcs.push({ id: m.count, x: -1, y: f.y, dir: 'right', want, phase: 'in', t: 0, variant: r.int(0, 5), qty: r.chance(C.twoChance) ? 2 : 1, bubble: null });
       m.count++; m.today.visitors++; m.nextAt = now + r.range(C.arrivalMinutes[0], C.arrivalMinutes[1]);
     }
@@ -98,7 +98,7 @@ function buy(state, n) {
   const m = state.market, C = CONFIG.market, r = makeRng(state.seed ^ hashString('buy' + n.id));
   const stacks = m.counter.slots.map((it, i) => ({ it, i })).filter(s => s.it);
   if (!stacks.length) { n.bubble = { kind: 'none' }; m.events.push({ type: 'pass', x: n.x, y: n.y }); return; }
-  const matches = stacks.filter(s => n.want && state.species[s.it.species]?.genome.family === n.want);
+  const matches = stacks.filter(s => n.want && (n.want === 'dried' ? s.it.kind === 'product' : state.species[s.it.species]?.genome.family === n.want));
   let pick = null, match = false;
   if (matches.length) { pick = r.pick(matches); match = true; }
   else if (!n.want || r.chance(C.buyAnyChance)) pick = r.pick(stacks);
@@ -110,7 +110,7 @@ function buy(state, n) {
   state.stats.earned = Math.round(((state.stats.earned || 0) + total) * 100) / 100; state.stats.sold = (state.stats.sold || 0) + qty;
   m.today.sold += qty; m.today.money = Math.round((m.today.money + total) * 100) / 100; m.today.tips = Math.round((m.today.tips + tip) * 100) / 100;
   m.lifetime.sold += qty; m.lifetime.money = Math.round((m.lifetime.money + total) * 100) / 100;
-  n.bubble = { kind: 'bought', species: it.species, qty, match };
+  n.bubble = { kind: 'bought', species: it.species, qty, match, product: it.product || null };
   m.events.push({ type: 'sale', total, tip, qty, species: it.species, x: n.x, y: n.y });
 }
 
@@ -147,4 +147,4 @@ export function packUp(state) {
   m.counter.slots.forEach((it, i) => { if (!it) return; const left = addItem(state.inventory, { ...it }); const moved = it.qty - left; if (moved) { removeFromSlot(m.counter, i, moved); back += moved; } });
   return { ok: true, msg: '', back, left: counterCount(state) };
 }
-export const familyWord = f => ({ root: 'roots', gourd: 'gourds', vine: 'vine fruit', grain: 'grain', bush: 'berries', flower: 'flowers' }[f] || f);
+export const familyWord = f => ({ root: 'roots', gourd: 'gourds', vine: 'vine fruit', grain: 'grain', bush: 'berries', flower: 'flowers', dried: 'something dried' }[f] || f);

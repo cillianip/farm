@@ -497,7 +497,7 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.
@@ -569,6 +569,21 @@ export function hopperSprite(full = false) {
     P.rect(6, 13, 4, 3, PAL.metalDark); P.rect(7, 13, 2, 2, PAL.metal);                                // the spout
     P.rect(2, 10, 1, 8, PAL.metalDark); P.rect(13, 10, 1, 8, PAL.metalDark);                           // legs
     if (full) { P.px(5, 4, '#e86a6a'); P.px(7, 4, '#f6c453'); P.px(9, 4, '#8fd36a'); P.px(11, 4, '#e8a23b'); }
+  });
+}
+// The dryer (16×20): a slatted wooden cabinet on legs with a tin roof and a stack; frames flicker the heat at the stack while
+// it runs; `full` shows dried pieces on the tray at its foot.
+export function dryerSprite(frame = 0, full = false) {
+  return sprite(`dryer${frame}${full ? 'f' : ''}`, 16, 20, P => {
+    P.rect(2, 18, 12, 2, 'rgba(30,20,10,0.28)');
+    P.rect(2, 6, 12, 10, PAL.woodDark); P.rect(3, 7, 10, 8, PAL.wood);                                // the cabinet
+    for (let y = 8; y < 15; y += 2) P.rect(4, y, 8, 1, PAL.woodDark);                                 // slats
+    P.rect(1, 5, 14, 1, PAL.metalDark); P.rect(2, 4, 12, 1, PAL.metal); P.px(2, 4, PAL.metalLight);   // the tin roof
+    P.rect(11, 1, 2, 3, PAL.metalDark); P.px(11, 1, PAL.metal);                                       // the stack
+    P.rect(3, 16, 1, 2, PAL.woodDark); P.rect(12, 16, 1, 2, PAL.woodDark);                            // legs
+    P.rect(5, 16, 6, 1, PAL.woodLight);                                                               // the tray
+    if (frame) { const y = frame === 1 ? 0 : 1; P.px(12, y, 'rgba(255,200,120,0.55)'); P.px(11, 0, 'rgba(255,170,90,0.35)'); P.px(7, 9, '#e8a23b'); P.px(8, 11, '#d98a2b'); }   // heat at the stack, a glow between the slats
+    if (full) { P.px(6, 15, '#8a5a2b'); P.px(8, 15, '#a0642c'); P.px(10, 15, '#7a4a22'); }
   });
 }
 export function witheredSprite() {

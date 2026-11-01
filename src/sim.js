@@ -2,9 +2,9 @@
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
 import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared } from './world.js';
-import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName } from './items.js';
-import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES } from './genetics.js';
-import { salePrice, breedCost, seedBookBonus, formatMoney } from './economy.js';
+import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood } from './items.js';
+import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
+import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
 import { makeCompost } from './fertiliser.js';
 import { deliverOrders, collectParcels } from './catalog.js';
 import * as M from './market.js';
@@ -93,6 +93,13 @@ export function migrate(state) {
   if (!state.water) state.water = { pours: 0 };
   if (!state.pipesGifted && sprinklerTiles(state).length) { addItem(state.chest, { kind: 'pipe', qty: 2 * CONFIG.pipe.packSize }); state.pipesGifted = true; }   // sprinklers set before pipes existed: the plumber left two packs in the chest
   for (const sp of Object.values(state.species)) if (sp.genome && sp.genome.vigor === undefined) sp.genome.vigor = 0;   // the vigour gene arrived in Build 37
+  for (const sp of Object.values(state.species)) {   // sugar and skin arrived in Build 67: a known base gets its own, a bred species the middle of its parents'
+    const g = sp.genome; if (!g || g.sugar !== undefined) continue;
+    const key = sp.base || Object.keys(WILD_NAMES).find(k => WILD_NAMES[k] === sp.name.replace(/^Wild /, '')), base = key && WILD_BASES[key];
+    const par = (sp.parents || []).map(id => state.species[id]?.genome).filter(p => p && p.sugar !== undefined);
+    g.sugar = base ? base.sugar : par.length ? par.reduce((a, p) => a + p.sugar, 0) / par.length : 0.4;
+    g.skin = base ? base.skin : par.length ? par.reduce((a, p) => a + p.skin, 0) / par.length : 0.5;
+  }
   for (const t of state.world.tiles) if (burnsFuel(t.obj) && t.obj.fuel === undefined) t.obj.fuel = 3;   // fuel became a thing you pour in Build 43
   for (const sp of Object.values(state.species)) { const base = sp.wild && sp.base && WILD_BASES[sp.base]; if (!base) continue; for (const k of ['archetype', 'pattern', 'top', 'leafShape']) if (base[k] !== undefined) sp.genome[k] = base[k]; }
   for (const key of MOVABLE) {   // a station left on the old one-tile walkway now stands in the trees: move it to the nearest clear tile
@@ -107,13 +114,14 @@ export function migrate(state) {
   return state;
 }
 // Species bred before the parent-blend names (Crimson Radish and friends) take their new name, parents before children.
+const ROMAN = [null, null, 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 export function renameBred(state) {
   const bred = Object.values(state.species).filter(sp => sp.parents && !sp.blended).sort((a, b) => (a.genome.gen || 0) - (b.genome.gen || 0) || (a.discoveredDay || 0) - (b.discoveredDay || 0));
   for (const sp of bred) {
     const [A, B] = sp.parents.map(id => state.species[id]); if (!A || !B) { sp.blended = true; continue; }
     let name = blendName(A.name, B.name); if (sp.sterile) name += ' (sterile)';
     const taken = new Set(Object.values(state.species).filter(o => o !== sp).map(o => o.name));
-    if (taken.has(name)) name = `${variantWord(sp.genome)} ${name}`;
+    if (taken.has(name)) { const v = `${variantWord(sp.genome)} ${name}`; name = v; for (let k = 2; taken.has(name); k++) name = `${v} ${ROMAN[k] || k}`; }
     sp.name = name; sp.blended = true;
   }
   return bred.length;
@@ -245,6 +253,7 @@ export function tick(state, dtMinutes, opts = {}) {
     if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // pickers work once an hour
     state.beltClock = (state.beltClock || 0) + dtMinutes; const step = CONFIG.power.belt.stepMinutes;   // the belts move a tile every few minutes
     if (state.beltClock >= step) { const n = Math.min(8, Math.floor(state.beltClock / step)); state.beltClock -= n * step; for (let i = 0; i < n; i++) beltStep(state); }
+    dryerPass(state);   // after the belts, so what just arrived goes straight in
   }
   // evaporation (sun only: not at night)
   const hr = hourOf(state);
@@ -333,10 +342,10 @@ export function demandFactor(n) { const D = CONFIG.demand; if (n <= D.full) retu
 // What a pickup pays for these items: one line per species (the starred ones go to the buyer first).
 export function priceCrate(state, items) {
   const bySp = new Map();
-  for (const it of items) { const k = it.kind && it.kind !== 'crop' ? crateKey(it) : it.species; if (!bySp.has(k)) bySp.set(k, []); bySp.get(k).push(it); }
+  for (const it of items) { const k = it.kind && it.kind !== 'crop' && it.kind !== 'product' ? crateKey(it) : it.product ? `${it.species}:${it.product}` : it.species; if (!bySp.has(k)) bySp.set(k, []); bySp.get(k).push(it); }
   const lines = [];
   for (const [id, its] of bySp) {
-    if (its[0].kind && its[0].kind !== 'crop') {   // second-hand: a flat price each, no buyer's limit
+    if (its[0].kind && its[0].kind !== 'crop' && its[0].kind !== 'product') {   // second-hand: a flat price each, no buyer's limit
       const n = its.reduce((a, b) => a + b.qty, 0), each = secondHand(its[0]);
       lines.push({ name: `${itemName(its[0], state.species)} (second-hand)`, kind: its[0].kind, level: its[0].level || 0, qty: n, each, total: Math.round(each * n * 100) / 100, full: n, cut: 0 });
       continue;
@@ -344,13 +353,14 @@ export function priceCrate(state, items) {
     let n = 0, total = 0, full = 0, cut = 0;
     for (const it of its.slice().sort((a, b) => (b.q || 0) - (a.q || 0))) { const each = salePrice(state, it); for (let i = 0; i < it.qty; i++) { n++; const f = demandFactor(n); total += each * f; if (f === 1) full++; else cut++; } }
     total = Math.round(total * 100) / 100;
-    lines.push({ name: state.species[id]?.name || '?', species: id, qty: n, each: n ? total / n : 0, total, full, cut });
+    const spId = its[0].species, dried = !!its[0].product;
+    lines.push({ name: (dried ? 'Dried ' : '') + (state.species[spId]?.name || '?'), species: spId, product: its[0].product || null, qty: n, each: n ? total / n : 0, total, full, cut });
   }
   return { lines, total: Math.round(lines.reduce((v, l) => v + l.total, 0) * 100) / 100, count: lines.reduce((n, l) => n + l.qty, 0) };
 }
 export const crateValue = state => priceCrate(state, state.crate.items).total;
 // Second-hand: the cart buys machines, pipe, line and belt back at a share of the list price. Each takes a crate place.
-export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'pipe', 'line', 'belt', 'chest'];
+export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'dryer', 'pipe', 'line', 'belt', 'chest'];
 export function listPrice(it) {
   const C = CONFIG;
   switch (it.kind) {
@@ -359,6 +369,7 @@ export function listPrice(it) {
     case 'generator': return C.power.generator.price;
     case 'picker': return C.power.picker.price;
     case 'hopper': return C.power.hopper.price;
+    case 'dryer': return C.power.dryer.price;
     case 'chest': return C.chest.field.price;
     case 'pipe': return C.pipe.packPrice / C.pipe.packSize;
     case 'line': return C.power.line.packPrice / C.power.line.packSize;
@@ -367,17 +378,17 @@ export function listPrice(it) {
   return 0;
 }
 export const secondHand = it => Math.round(listPrice(it) * CONFIG.crate.secondHand * 100) / 100;
-const crateKey = it => it.kind && it.kind !== 'crop' ? `${it.kind}:${it.level || 0}` : `${it.species}:${it.q || 0}`;
+const crateKey = it => it.kind && it.kind !== 'crop' && it.kind !== 'product' ? `${it.kind}:${it.level || 0}` : `${it.species}:${it.q || 0}${it.product ? ':' + it.product : ''}`;
 // Move crops, or machines for the second-hand price, from a bag slot into the crate (as many as fit).
 export function putInCrate(state, slotIndex, n = Infinity) {
   const it = state.inventory.slots[slotIndex];
-  if (!it || (it.kind !== 'crop' && !SELLABLE.includes(it.kind))) return fail('Crops go in the crate, and machines to sell second-hand');
+  if (!it || (!isFood(it) && !SELLABLE.includes(it.kind))) return fail('Crops go in the crate, and machines to sell second-hand');
   const room = state.crate.capacity - crateCount(state);
   if (room <= 0) { today(state).crateRefused++; return fail('The crate is full. The cart comes tonight.'); }
   const take = Math.min(n, it.qty, room);
   removeFromSlot(state.inventory, slotIndex, take);
   const key = crateKey(it), have = state.crate.items.find(c => crateKey(c) === key);
-  if (have) have.qty += take; else state.crate.items.push(it.kind === 'crop' ? { species: it.species, q: it.q || 0, qty: take } : { kind: it.kind, level: it.level || 0, qty: take });
+  if (have) have.qty += take; else state.crate.items.push(isFood(it) ? { species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) } : { kind: it.kind, level: it.level || 0, qty: take });
   const name = it.kind === 'crop' ? state.species[it.species]?.name || 'crop' : itemName(it, state.species);
   const full = crateCount(state) >= state.crate.capacity;
   if (full && today(state).crateFullAt == null) today(state).crateFullAt = hourOf(state);
@@ -518,14 +529,14 @@ export function useItem(state, slotIndex, x, y) {
     t.belt = true; t.load = []; state.beltRev = (state.beltRev || 0) + 1;
     return { ok: true, msg: '', float: beltRunning(state, x, y) ? 'Laid' : 'Laid (still)' };
   }
-  if (item.kind === 'picker' || item.kind === 'hopper') {
+  if (item.kind === 'picker' || item.kind === 'hopper' || item.kind === 'dryer') {
     if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
     if (t.belt) return fail('Not on the belt: beside it');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.obj = { kind: item.kind, held: [] }; state.lineRev = (state.lineRev || 0) + 1;
+    t.obj = item.kind === 'dryer' ? { kind: 'dryer', held: [], out: [], doing: null } : { kind: item.kind, held: [] }; state.lineRev = (state.lineRev || 0) + 1;
     const beltBy = N4.some(([dx, dy]) => tileAt(state.world, x + dx, y + dy)?.belt);
-    return { ok: true, msg: machinePowered(state, x, y) ? beltBy ? '' : item.kind === 'picker' ? 'Lay belt beside it to a hopper, or empty it by hand' : 'Run belt to it from the pickers' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
+    return { ok: true, msg: machinePowered(state, x, y) ? beltBy ? '' : item.kind === 'picker' ? 'Lay belt beside it to a hopper, or empty it by hand' : item.kind === 'dryer' ? 'Run belt to it, or load it by hand; belt leading away carries what it dries' : 'Run belt to it from the pickers' : linePowered(state, x, y) ? 'No power: the generator runs all it can' : 'Dead: no generator on this line', float: 'Set' };
   }
   if (item.kind === 'pipe') {   // on open ground, or under a bed: the bed stays a bed
     if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Pipe goes on clear ground');
@@ -796,9 +807,13 @@ const N4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 export const isGenerator = t => t?.obj?.kind === 'generator';
 export const isChest = t => t?.obj?.kind === 'chest';
 export function chestTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isChest(t)) out.push({ x, y, t }); } return out; }
-export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper';
+export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper' || t?.obj?.kind === 'dryer';
+export const isDryer = t => t?.obj?.kind === 'dryer';
 export const heldCount = held => (held || []).reduce((n, it) => n + it.qty, 0);
-function addHeld(held, it) { const key = `${it.species}:${it.q || 0}`; const have = held.find(h => `${h.species}:${h.q || 0}` === key); if (have) have.qty += it.qty; else held.push({ species: it.species, q: it.q || 0, qty: it.qty }); }
+const pileKey = it => `${it.species}:${it.q || 0}${it.product ? ':' + it.product : ''}`;
+function addHeld(held, it) { const key = pileKey(it); const have = held.find(h => pileKey(h) === key); if (have) have.qty += it.qty; else held.push({ species: it.species, q: it.q || 0, qty: it.qty, ...(it.product ? { product: it.product } : {}) }); }
+// a pile entry as an item for your pockets, the crate or the counter
+export const pileItem = it => ({ kind: it.product ? 'product' : 'crop', species: it.species, q: it.q || 0, qty: it.qty, ...(it.product ? { product: it.product } : {}) });
 export function generatorTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isGenerator(t)) out.push({ x, y, t }); } return out; }
 export function machineTiles(state, kind = null) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isMachine(t) && (!kind || t.obj.kind === kind)) out.push({ x, y, t }); } return out; }
 // The line network: connected runs of power line, each powered by the generators standing on or beside it (their
@@ -848,9 +863,14 @@ const BELTS = new WeakMap();
 export function beltNet(state) {
   const w = state.world, rev = `${state.beltRev || 0}:${state.lineRev || 0}`, hit = BELTS.get(state);
   if (hit && hit.rev === rev && hit.w === w) return hit;
-  const idx = (x, y) => y * w.w + x, net = lineNet(state), dist = new Map(), queue = [];
-  for (const { x, y } of machineTiles(state, 'hopper')) { if (!net.on.has(idx(x, y))) continue; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, 1); queue.push(k); } } }
-  while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
+  const idx = (x, y) => y * w.w + x, net = lineNet(state), dist = new Map();
+  // hoppers first, then dryers over whatever belt no hopper reaches: a belt that can reach a hopper always runs to it, so a
+  // dryer's feed is a run that ends at the dryer and its tray goes out on a run that leads on to a hopper
+  for (const kind of ['hopper', 'dryer']) {
+    const queue = [];
+    for (const { x, y } of machineTiles(state, kind)) { if (!net.on.has(idx(x, y))) continue; for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, 1); queue.push(k); } } }
+    while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
+  }
   const out = { rev, w, dist }; BELTS.set(state, out);
   return out;
 }
@@ -859,7 +879,8 @@ export const beltRunning = (state, x, y) => !!tileAt(state.world, x, y)?.belt &&
 // the powered hopper itself at the end of the run; -1 when it stands still.
 export function beltDir(state, x, y) {
   const w = state.world, net = beltNet(state), d = net.dist.get(y * w.w + x); if (d == null) return -1;
-  for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], t = tileAt(w, x + dx, y + dy), k = (y + dy) * w.w + x + dx; if (d === 1 ? (t?.obj?.kind === 'hopper' && lineNet(state).on.has(k)) : net.dist.get(k) === d - 1) return i; }
+  if (d === 1) { for (const kind of ['hopper', 'dryer']) for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], t = tileAt(w, x + dx, y + dy), k = (y + dy) * w.w + x + dx; if (t?.obj?.kind === kind && lineNet(state).on.has(k)) return i; } return -1; }
+  for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (tileAt(w, x + dx, y + dy)?.belt && net.dist.get(k) === d - 1) return i; }
   return -1;
 }
 // One step of every belt: crops on the last tile tip into the hopper, every other tile hands its crops one tile on
@@ -873,6 +894,7 @@ export function beltStep(state) {
     for (const [dx, dy] of N4) {
       const n = tileAt(w, x + dx, y + dy), nk = idx(x + dx, y + dy); if (!n) continue;
       if (d === 1 && n.obj?.kind === 'hopper' && pw.on.has(nk)) pour(t.load, n.obj.held = n.obj.held || [], CONFIG.power.hopper.holds);
+      else if (d === 1 && n.obj?.kind === 'dryer' && pw.on.has(nk)) pour(t.load, n.obj.held = n.obj.held || [], CONFIG.power.dryer.holds);
       else if (n.belt && net.dist.get(nk) === d - 1) pour(t.load, n.load = n.load || [], B.holds);
       if (!t.load.length) break;
     }
@@ -881,6 +903,12 @@ export function beltStep(state) {
     if (!pw.on.has(idx(x, y)) || !t.obj.held?.length) continue;
     const by = N4.map(([dx, dy]) => ({ t: tileAt(w, x + dx, y + dy), k: idx(x + dx, y + dy) })).filter(o => o.t?.belt && net.dist.has(o.k)).sort((a, b) => net.dist.get(a.k) - net.dist.get(b.k));
     for (const o of by) { pour(t.obj.held, o.t.load = o.t.load || [], B.holds); if (!t.obj.held.length) break; }
+  }
+  // each powered dryer sets its tray on a running belt beside it that leads away (not the one feeding it)
+  for (const { x, y, t } of machineTiles(state, 'dryer')) {
+    if (!pw.on.has(idx(x, y)) || !t.obj.out?.length) continue;
+    const by = N4.map(([dx, dy], i) => ({ t: tileAt(w, x + dx, y + dy), k: idx(x + dx, y + dy), back: (i + 2) % 4, x: x + dx, y: y + dy })).filter(o => o.t?.belt && net.dist.has(o.k) && beltDir(state, o.x, o.y) !== o.back).sort((a, b) => net.dist.get(a.k) - net.dist.get(b.k));
+    for (const o of by) { pour(t.obj.out, o.t.load = o.t.load || [], B.holds); if (!t.obj.out.length) break; }
   }
 }
 // Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
@@ -901,6 +929,43 @@ export function machinePass(state) {
   beltStep(state);   // the baskets go straight onto the belt
   return picked;
 }
+// The dryers, by the clock (so a night's sleep finishes what was drying): a batch of one kind takes dryHours of that species;
+// when it is done it goes on the tray (if the tray has room) and the next batch starts from the hopper on top, dated from
+// when the last one finished, so catching up after a sleep keeps the timing honest. Anything already dried passes
+// straight through to the tray. Returns how many pieces came off dried.
+export function dryerPass(state) {
+  const D = CONFIG.power.dryer, net = lineNet(state), idx = (x, y) => y * state.world.w + x; let done = 0;
+  for (const { x, y, t } of machineTiles(state, 'dryer')) {
+    const o = t.obj; o.held = o.held || []; o.out = o.out || [];
+    for (let i = o.held.length - 1; i >= 0; i--) if (o.held[i].product) { const it = o.held[i]; const room = D.output - heldCount(o.out); if (room <= 0) break; const take = Math.min(room, it.qty); addHeld(o.out, { ...it, qty: take }); it.qty -= take; if (!it.qty) o.held.splice(i, 1); }
+    if (!net.on.has(idx(x, y))) continue;   // unpowered: what is in it waits
+    for (let guard = 0; guard < 64; guard++) {
+      if (o.doing) {
+        if (state.minutes < o.doing.done) break;
+        if (heldCount(o.out) + o.doing.qty > D.output) break;   // the tray is full: it waits, dried
+        addHeld(o.out, { species: o.doing.species, q: o.doing.q, qty: o.doing.qty, product: 'dried' }); done += o.doing.qty;
+        state.stats.dried = (state.stats.dried || 0) + o.doing.qty; const T = today(state); T.dried = (T.dried || 0) + o.doing.qty;
+        var from = o.doing.done; o.doing = null;
+      } else var from = state.minutes;
+      const it = o.held.find(h => !h.product); if (!it) break;
+      const sp = state.species[it.species]; if (!sp) { o.held.splice(o.held.indexOf(it), 1); continue; }
+      const qty = Math.min(D.batch, it.qty); it.qty -= qty; if (!it.qty) o.held.splice(o.held.indexOf(it), 1);
+      o.doing = { species: it.species, q: it.q || 0, qty, from, done: from + Math.round(dryHours(sp) * 60) };
+    }
+  }
+  return done;
+}
+export const dryerProgress = (state, o) => !o.doing ? 0 : Math.max(0, Math.min(1, (state.minutes - o.doing.from) / Math.max(1, o.doing.done - o.doing.from)));
+// A crop in hand onto a dryer: as much of the stack as its hopper takes.
+export function loadDryer(state, slotIndex, x, y, n = Infinity) {
+  const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isDryer(t) || !it) return fail('');
+  if (it.kind === 'product') return fail('Already dried');
+  if (it.kind !== 'crop') return fail('Only crops dry');
+  if (!inReach(state, x, y)) return fail('Too far');
+  const o = t.obj; o.held = o.held || []; const room = CONFIG.power.dryer.holds - heldCount(o.held); if (room <= 0) return fail('The dryer is full');
+  const take = Math.min(room, it.qty, n); removeFromSlot(state.inventory, slotIndex, take); addHeld(o.held, { species: it.species, q: it.q || 0, qty: take });
+  return { ok: true, msg: '', float: `+${take} in`, count: take };
+}
 // The hoppers tip into the crate, as much as fits; the rest waits for the next cart.
 export function drainHoppers(state) { const n = drainHoppersInto(state); if (n && SFX.length < 40) SFX.push({ type: 'cascade', x: BUILDINGS.crate.x, y: BUILDINGS.crate.y }); return n; }
 function drainHoppersInto(state) {
@@ -910,22 +975,22 @@ function drainHoppersInto(state) {
     const held = t.obj.held || [];
     while (held.length) {
       const room = state.crate.capacity - crateCount(state); if (room <= 0) return moved;
-      const it = held[0], take = Math.min(room, it.qty), key = `${it.species}:${it.q || 0}`;
-      const have = state.crate.items.find(c => `${c.species}:${c.q || 0}` === key);
-      if (have) have.qty += take; else state.crate.items.push({ species: it.species, q: it.q || 0, qty: take });
+      const it = held[0], take = Math.min(room, it.qty), key = pileKey(it);
+      const have = state.crate.items.find(c => pileKey(c) === key);
+      if (have) have.qty += take; else state.crate.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) });
       it.qty -= take; moved += take; if (!it.qty) held.shift();
     }
   }
   return moved;
 }
 // Empty hands on a picker, a hopper or a belt tile: what it holds into your pockets, as much as fits.
-export const heldOn = t => isMachine(t) ? t.obj.held : t?.belt ? t.load : null;
+export const heldOn = t => isDryer(t) ? t.obj.out : isMachine(t) ? t.obj.held : t?.belt ? t.load : null;
 export function takeHeld(state, x, y) {
-  const t = tileAt(state.world, x, y), held = heldOn(t); if (!held?.length) return fail('Nothing in it');
+  const t = tileAt(state.world, x, y), held = heldOn(t); if (!held?.length) return fail(isDryer(t) ? 'Nothing dried yet' : 'Nothing in it');
   let taken = 0;
-  while (held.length) { const it = held[0], left = addItem(state.inventory, { kind: 'crop', species: it.species, q: it.q || 0, qty: it.qty }); taken += it.qty - left; if (left) { it.qty = left; break; } held.shift(); }
+  while (held.length) { const it = held[0], left = addItem(state.inventory, pileItem(it)); taken += it.qty - left; if (left) { it.qty = left; break; } held.shift(); }
   if (!taken) return fail('Your pockets are full');
-  return { ok: true, msg: '', float: `+${taken} ${taken === 1 ? 'crop' : 'crops'}`, taken };
+  return { ok: true, msg: '', float: `+${taken} ${isDryer(t) ? 'dried' : taken === 1 ? 'crop' : 'crops'}`, taken };
 }
 
 // ---------- sleep ----------
@@ -944,6 +1009,8 @@ export function sleep(state, opts = {}) {
   for (let left = wakeAt - state.minutes; left > 0;) { const step = Math.min(30, left); state.minutes += step; tick(state, step, { asleep: true }); left -= step; }
   state.minutes = wakeAt;
   report.day = dayOf(state);
+  report.dried = dryerPass(state);   // the night's drying
+  if (report.dried) report.lines.push(`The dryer finished ${report.dried} overnight.`);
   // how well you slept: fed and watered → full energy; starving or parched → down to wakeFloor of it
   const fed = fedAtBed, F = CONFIG.needs.wakeFloor;
   const rested = Math.round(state.energyMax * (F + (1 - F) * fed));
@@ -1083,7 +1150,7 @@ export function resolveBreed(state) {
     if (!state.species[sp.id]) {
       // unique names: add a variant word when the plain name is taken
       const names = new Set(Object.values(state.species).map(s => s.name));
-      if (names.has(sp.name)) sp.name = `${variantWord(sp.genome)} ${sp.name}`;
+      if (names.has(sp.name)) { const v = `${variantWord(sp.genome)} ${sp.name}`; let name = v; for (let k = 2; names.has(name); k++) name = `${v} ${ROMAN[k] || k}`; sp.name = name; }
       state.species[sp.id] = sp;
       if (!sterile) { state.discovered.push(sp.id); state.stats.discoveries++; out.isNew = true; }
     }

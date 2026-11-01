@@ -2,8 +2,8 @@
 import { CONFIG } from './config.js';
 import * as S from './sim.js';
 import { itemName, itemKey } from './items.js';
-import { formatMoney, titleFor, salePrice, seedBookBonus } from './economy.js';
-import { cropSprite, produceSprite } from './render/crops.js';
+import { formatMoney, titleFor, salePrice, seedBookBonus, driedFactor, dryHours } from './economy.js';
+import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
 import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
 import * as M from './market.js';
@@ -27,12 +27,13 @@ export function itemIcon(item, species, size = 48) {
   if (item.kind === 'tool') src = toolIcon(item.tool);
   else if (item.kind === 'seed') { const g = species[item.species]?.genome; src = g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   else if (item.kind === 'crop') { const sp = species[item.species]; src = sp ? produceSprite(sp) : null; }
+  else if (item.kind === 'product') { const sp = species[item.species]; src = sp ? driedSprite(sp) : null; }
   else if (item.kind === 'fert') src = fertIcon();
   else if (item.kind === 'fuel') src = fuelIcon();
   else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
   else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
-  else if (['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.kind)) src = stationIcon(item.kind);
+  else if (['generator', 'line', 'belt', 'picker', 'hopper', 'dryer'].includes(item.kind)) src = stationIcon(item.kind);
   else if (item.kind === 'chest') src = chestSprite(false);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
@@ -156,9 +157,15 @@ export class UI {
       html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
       html += `<div class="pc-row"><span>Sells for</span><span>${formatMoney(salePrice(s, it))}${it.qty > 1 ? ` <span class="muted">×${it.qty} = ${formatMoney(salePrice(s, it) * it.qty)}</span>` : ''}</span></div>`;
       html += `<div class="pc-row"><span>Eat</span><span>+${Math.round(hunger)} food · +${energy} energy</span></div>`;
-      html += sp.sterile ? `<div class="pc-row"><span>Dries into</span><span>nothing (sterile)</span></div>` : `<div class="pc-row"><span>Dries into</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`;
+      html += sp.sterile ? `<div class="pc-row"><span>On the rack</span><span>nothing (sterile)</span></div>` : `<div class="pc-row"><span>On the rack</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`;
+      html += `<div class="pc-row"><span>In the dryer</span><span>${formatMoney(salePrice(s, { ...it, kind: 'product', product: 'dried' }))} each · ${dryHours(sp).toFixed(1)} h a batch</span></div>`;
       html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>`;
       html += `<div class="pc-note">Click yourself to eat it. Drop it in the crate to sell.</div>`;
+    } else if (it.kind === 'product' && sp) {
+      html += `<div class="pc-sub">dried ${esc(g.archetype)} ${esc(g.family)}</div>`;
+      html += `<div class="pc-row"><span>Sells for</span><span>${formatMoney(salePrice(s, it))}${it.qty > 1 ? ` <span class="muted">×${it.qty} = ${formatMoney(salePrice(s, it) * it.qty)}</span>` : ''}</span></div>`;
+      html += `<div class="pc-row"><span>Fresh it was</span><span>${formatMoney(salePrice(s, { kind: 'crop', species: it.species, q: it.q }))} · dried ×${driedFactor(sp).toFixed(2)}</span></div>`;
+      html += `<div class="pc-note">Its own line at the cart's buyer, apart from the fresh crop. Shoppers at the market ask for dried goods by name.${it.q ? ' Stars count for half once it is dried.' : ''}</div>`;
     } else if (it.kind === 'seed' && sp) {
       html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
       html += `<div class="pc-row"><span>Ripens in</span><span>${growRealMinutes(g).toFixed(1)} min</span></div>`;
@@ -388,7 +395,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'chest' ? chestSprite(false) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'chest' ? chestSprite(false) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -448,6 +455,33 @@ export class UI {
   }
   // The chest by the porch: your five pockets on top, the chest below. Click moves a stack across, right-click moves
   // one, and dragging a stack onto any slot puts it there (onto a like stack it merges, onto another it swaps).
+  // The dryer: what waits on top, the batch under way, the tray; your crops to load; the tray to take.
+  openDryer(x, y) {
+    const s = this.state, g = this.game, D = CONFIG.power.dryer, t = s.world.tiles[y * s.world.w + x], o = t.obj; if (!o || o.kind !== 'dryer') return;
+    this.show('Dryer', body => {
+      const row = el('div', 'station-row'); const left = el('div');
+      const powered = S.machinePowered(s, x, y);
+      left.appendChild(el('div', 'pc-sec', `Waiting on top · ${S.heldCount(o.held)} / ${D.holds}`));
+      const q = el('div', 'pslots'); if (!o.held?.length) q.appendChild(this.pslot(null, s.species, { hint: 'empty' })); else for (const it of o.held) q.appendChild(this.pslot(S.pileItem(it), s.species)); left.appendChild(q);
+      left.appendChild(el('div', 'pc-sec', 'Drying'));
+      if (o.doing) { const sp = s.species[o.doing.species], pct = Math.round(S.dryerProgress(s, o) * 100), realMin = Math.max(0, o.doing.done - s.minutes) / S.gameMinutesPerRealSecond() / 60; left.appendChild(el('div', null, `<div class="pc-row"><span>${esc(sp?.name || '?')} ×${o.doing.qty}</span><span>${pct}%</span></div>${bar(pct, '#e8a23b')}<div class="pc-row"><span>Done in</span><span>${!powered ? 'no power' : realMin < 1 ? 'under a minute' : `~${Math.ceil(realMin)} min`}</span></div>`)); }
+      else left.appendChild(el('div', 'muted', powered ? 'Nothing in it.' : S.linePowered(s, x, y) ? 'No power: the generator runs all it can.' : 'Dead: no generator on this line.'));
+      left.appendChild(el('div', 'pc-sec', `On the tray · ${S.heldCount(o.out)} / ${D.output}`));
+      const tray = el('div', 'pslots'); if (!o.out?.length) tray.appendChild(this.pslot(null, s.species, { hint: 'empty' })); else for (const it of o.out) { const sl = this.pslot(S.pileItem(it), s.species, { cls: 'ready' }); sl.title = 'Click to take them'; sl.onclick = () => { const r = S.takeHeld(s, x, y); if (r.msg) this.toast(r.msg); if (r.float) { g.addFloat(r.float, s.player.x, s.player.y - 1.6, '#f6c453'); g.sound.play('scoop'); } this.refresh(); }; tray.appendChild(sl); } left.appendChild(tray);
+      const details = el('div', 'details'); setDetails(details, `<div class="pc-name">Dryer</div><div class="pc-row"><span>A batch</span><span>${D.batch} of one kind</span></div><div class="pc-row"><span>Takes</span><span>${D.baseHours}–${D.baseHours + D.skinHours} h by the skin</span></div><div class="pc-row"><span>Price dried</span><span>×${CONFIG.dried.base.toFixed(1)} to ×${(CONFIG.dried.base + CONFIG.dried.sugar).toFixed(1)} by the sugar</span></div><div class="pc-note">Belt run to it feeds it; belt leading away carries the tray. It runs through the night. Dried goods are their own line at the cart and the market.</div>`);
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      body.appendChild(el('div', 'pc-sec', 'Your crops'));
+      const grid = el('div', 'pslots'); let any = false;
+      s.inventory.slots.forEach((it, i) => {
+        if (it?.kind !== 'crop') return; any = true; const sp = s.species[it.species];
+        const sl = this.pslot(it, s.species); sl.title = `Dries to ${formatMoney(salePrice(s, { ...it, kind: 'product', product: 'dried' }))} each in ${dryHours(sp).toFixed(1)} h. Click to load, shift-click for the stack.`;
+        sl.onclick = e => { const r = e.shiftKey ? S.loadDryer(s, i, x, y) : S.loadDryer(s, i, x, y, 1); if (r.msg) this.toast(r.msg); else g.sound.play('rackPlace'); this.refresh(); };
+        grid.appendChild(sl);
+      });
+      if (!any) grid.appendChild(el('div', 'muted', 'No crops in your pockets. Sweet, thin-skinned ones dry best.'));
+      body.appendChild(grid);
+    }, 'dryer');
+  }
   openChest(chest = this.state.chest) {
     const s = this.state, invs = { pocket: s.inventory, chest }, field = chest !== s.chest; this.chestOpen = chest;
     let drag = null, dragged = false;
@@ -709,6 +743,8 @@ export function traitNotes(sp) {
   else if (g.hardiness < 0.3) out.push({ word: 'fragile', good: -1, why: 'withers when dry or soggy' });
   if (g.size > 0.75) out.push({ word: 'big', good: 1, why: 'sells dearer' }); else if (g.size < 0.25) out.push({ word: 'small', good: -1, why: 'sells cheaper' });
   if (g.regrow) out.push({ word: 'regrows', good: 1, why: 'picks again, no replanting' });
+  if ((g.sugar ?? 0.4) >= 0.7) out.push({ word: 'sweet', good: 1, why: `dries to ×${(CONFIG.dried.base + CONFIG.dried.sugar * g.sugar).toFixed(1)}` }); else if ((g.sugar ?? 0.4) <= 0.25) out.push({ word: 'bland', good: -1, why: 'loses by drying: sell it fresh' });
+  if ((g.skin ?? 0.5) <= 0.3) out.push({ word: 'thin skin', good: 1, why: 'dries fast' }); else if ((g.skin ?? 0.5) >= 0.7) out.push({ word: 'thick skin', good: -1, why: 'slow in the dryer' });
   if ((g.vigor || 0) >= 0.05) out.push({ word: 'hybrid vigour', good: 1, why: `sells ×${(1 + CONFIG.genetics.vigorValue * g.vigor).toFixed(2)}` });
   const T = { golden: 'sells for 3×', glowing: 'rare: sells dearer', multiHarvest: 'regrows after each pick', frostHardy: 'rare: sells dearer' };
   for (const [k, v] of Object.entries(g.traits)) if (v) out.push({ word: '★ ' + k.replace(/([A-Z])/g, ' $1').toLowerCase(), good: 1, why: T[k] || 'rare' });

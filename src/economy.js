@@ -5,9 +5,14 @@ export function breedCost(state, a, b) { return Math.round(E.breedCostBase + (a.
 
 export function salePrice(state, item) {
   const sp = state.species[item.species]; if (!sp) return 0;
-  const quality = 1 + (item.q || 0) * CONFIG.fertiliser.qualityStarValue;
-  return sp.value * quality * (1 + seedBookBonus(state));
+  const dried = item.kind === 'product' || !!item.product;
+  const quality = 1 + (item.q || 0) * CONFIG.fertiliser.qualityStarValue * (dried ? CONFIG.dried.starValue : 1);
+  return sp.value * (dried ? driedFactor(sp) : 1) * quality * (1 + seedBookBonus(state));
 }
+// what drying multiplies a crop's price by: from the sugar gene (see config.dried)
+export const driedFactor = sp => CONFIG.dried.base + CONFIG.dried.sugar * (sp.genome.sugar ?? 0.4);
+// how long the dryer takes over one batch of a species, in game hours: from the skin gene
+export const dryHours = sp => CONFIG.power.dryer.baseHours + CONFIG.power.dryer.skinHours * (sp.genome.skin ?? 0.5);
 export function formatMoney(v) {
   const abs = Math.abs(v);
   const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];

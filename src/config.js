@@ -70,7 +70,11 @@ export const CONFIG = {
   // else is a store you empty by hand. Tiers (faster, stronger) come later with a level like pumps.
   power: { generator: { price: 600, fuelPerDay: 1, power: 6 }, line: { packSize: 10, packPrice: 25 },
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
-    picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 } },
+    picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 },
+    // The dryer (Build 67): the first thing that turns a crop into a product. On powered line like a picker; belt run to it feeds
+    // it (its motor drives that belt, like a hopper's) and it sets what it has dried on any running belt beside it that leads away.
+    // It dries `batch` of one kind at a time, taking baseHours + skinHours × the skin gene; `holds` wait in the hopper on top, `output` on the tray.
+    dryer: { price: 320, holds: 8, output: 12, batch: 4, power: 1, baseHours: 3, skinHours: 5 } },
   // Flow has a range in tiles, like a signal. The well gives `wellHead` tiles of flow to the pipe leaving it; every tile
   // travelled costs 1; where the pipe splits, each branch gets what it asks for (the sprinklers and tiles beyond it) and
   // what none asked for is shared evenly, so a short stub never starves a long run; a sprinkler drinks its
@@ -103,6 +107,10 @@ export const CONFIG = {
   // the next `full` the first step, and so on; the cart sells the surplus on cheaper. A crate of one crop pays less
   // per crop than a crate of three, so variety (and every new species bred) is worth money.
   demand: { full: 8, steps: [0.6, 0.4] },
+  // What drying does to a price: a dried crop is worth its fresh price × (base + sugar × the sugar gene), so a bland crop loses
+  // by drying and a sweet one doubles; stars count for half as much once it is dried (the product is the thing, not the fruit).
+  // Dried goods are their own line at the cart's buyer (their own `demand.full`) and the market's shoppers ask for them by name.
+  dried: { base: 0.7, sugar: 1.6, starValue: 0.5, wantChance: 0.3 },
   wild: { numericJitter: 0.12, growJitter: 0.25 },   // bird seeds vary this much from their base species
 
   crop: {

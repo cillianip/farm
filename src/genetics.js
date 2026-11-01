@@ -28,6 +28,8 @@ export const GENES = [
   { k: 'thirst', type: 'num' },        // care genes carry no rarity: they pay in your time, not at the cart
   { k: 'hardiness', type: 'num' },
   { k: 'ripeHours', type: 'num', min: 6, max: 72 },
+  { k: 'sugar', type: 'num', noId: true },   // what the dryer makes of it: sweet dries dear, bland is not worth drying (Build 67; not in the id, so older species keep theirs)
+  { k: 'skin', type: 'num', noId: true },    // thick skin dries slowly
   { k: 'regrow', type: 'bool', w: v => v ? 1 : 0 },
   { k: 'vigor', type: 'num' },        // hybrid vigour: set by cross(), not blended; pays at the cart (see produceValue)
 ];
@@ -64,7 +66,7 @@ export function normaliseGenome(g) {
 
 export function canonical(g) {
   const n = normaliseGenome(g);
-  const parts = GENES.map(s => `${s.k}=${n[s.k]}`);
+  const parts = GENES.filter(s => !s.noId).map(s => `${s.k}=${n[s.k]}`);
   parts.push('traits=' + RARE_TRAITS.filter(t => n.traits[t]).join('+'));
   return parts.join(';');
 }
@@ -183,16 +185,16 @@ const BASE = {
   elongation: 0.5, width: 0.5, bumpiness: 0.1, ribs: 0, tip: 0.5, curve: 0.1, top: 'crown', count: 1, size: 0.4,
   hue1: 30, sat1: 0.8, light1: 0.55, hue2: 100, sat2: 0.6, light2: 0.45, pattern: 'none',
   leafShape: 'pointed', leafDensity: 0.5, height: 0.4, leafHue: 110,
-  growHours: 6, thirst: 0.5, hardiness: 0.5, ripeHours: 30, regrow: false, vigor: 0, traits: {}, gen: 0,
+  growHours: 6, thirst: 0.5, hardiness: 0.5, ripeHours: 30, regrow: false, vigor: 0, sugar: 0.4, skin: 0.5, traits: {}, gen: 0,
 };
 export const STARTER_GENOMES = {
-  carrot: { ...BASE, family: 'root', archetype: 'taper', elongation: 0.85, width: 0.3, tip: 0.9, hue1: 28, sat1: 0.95, light1: 0.55, leafShape: 'frond', leafHue: 115, growHours: 6, size: 0.4 },
-  turnip: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.45, width: 0.6, hue1: 60, sat1: 0.15, light1: 0.85, hue2: 290, sat2: 0.5, light2: 0.5, pattern: 'gradient', leafShape: 'round', growHours: 4, size: 0.45, thirst: 0.4 },
-  potato: { ...BASE, family: 'root', archetype: 'lumpy', elongation: 0.5, width: 0.6, bumpiness: 0.6, hue1: 35, sat1: 0.45, light1: 0.52, leafShape: 'round', leafDensity: 0.7, count: 3, growHours: 12, size: 0.35, hardiness: 0.7, thirst: 0.3 },
-  tomato: { ...BASE, family: 'bush', archetype: 'crown', elongation: 0.45, width: 0.6, hue1: 5, sat1: 0.9, light1: 0.5, leafHue: 120, count: 3, growHours: 16, size: 0.35, regrow: true, ripeHours: 20, thirst: 0.7, height: 0.6 },
-  pumpkin: { ...BASE, family: 'gourd', archetype: 'ribbed', elongation: 0.4, width: 0.8, ribs: 0.7, hue1: 25, sat1: 0.95, light1: 0.5, top: 'stem', leafShape: 'round', leafDensity: 0.8, count: 1, growHours: 30, size: 0.9, hardiness: 0.6 },
-  corn: { ...BASE, family: 'grain', archetype: 'ear', elongation: 0.8, width: 0.4, hue1: 50, sat1: 0.9, light1: 0.6, top: 'stem', leafShape: 'blade', height: 0.9, count: 2, growHours: 22, size: 0.5, thirst: 0.6 },
-  lavender: { ...BASE, family: 'flower', archetype: 'cluster', elongation: 0.6, width: 0.3, hue1: 270, sat1: 0.6, light1: 0.6, top: 'none', leafShape: 'blade', height: 0.6, count: 4, growHours: 14, size: 0.3, thirst: 0.2, hardiness: 0.8 },
+  carrot: { ...BASE, family: 'root', archetype: 'taper', elongation: 0.85, width: 0.3, tip: 0.9, hue1: 28, sat1: 0.95, light1: 0.55, leafShape: 'frond', leafHue: 115, growHours: 6, size: 0.4, sugar: 0.55, skin: 0.35 },
+  turnip: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.45, width: 0.6, hue1: 60, sat1: 0.15, light1: 0.85, hue2: 290, sat2: 0.5, light2: 0.5, pattern: 'gradient', leafShape: 'round', growHours: 4, size: 0.45, thirst: 0.4, sugar: 0.3, skin: 0.4 },
+  potato: { ...BASE, family: 'root', archetype: 'lumpy', elongation: 0.5, width: 0.6, bumpiness: 0.6, hue1: 35, sat1: 0.45, light1: 0.52, leafShape: 'round', leafDensity: 0.7, count: 3, growHours: 12, size: 0.35, hardiness: 0.7, thirst: 0.3, sugar: 0.15, skin: 0.5 },
+  tomato: { ...BASE, family: 'bush', archetype: 'crown', elongation: 0.45, width: 0.6, hue1: 5, sat1: 0.9, light1: 0.5, leafHue: 120, count: 3, growHours: 16, size: 0.35, regrow: true, ripeHours: 20, thirst: 0.7, height: 0.6, sugar: 0.5, skin: 0.25 },
+  pumpkin: { ...BASE, family: 'gourd', archetype: 'ribbed', elongation: 0.4, width: 0.8, ribs: 0.7, hue1: 25, sat1: 0.95, light1: 0.5, top: 'stem', leafShape: 'round', leafDensity: 0.8, count: 1, growHours: 30, size: 0.9, hardiness: 0.6, sugar: 0.6, skin: 0.8 },
+  corn: { ...BASE, family: 'grain', archetype: 'ear', elongation: 0.8, width: 0.4, hue1: 50, sat1: 0.9, light1: 0.6, top: 'stem', leafShape: 'blade', height: 0.9, count: 2, growHours: 22, size: 0.5, thirst: 0.6, sugar: 0.7, skin: 0.45 },
+  lavender: { ...BASE, family: 'flower', archetype: 'cluster', elongation: 0.6, width: 0.3, hue1: 270, sat1: 0.6, light1: 0.6, top: 'none', leafShape: 'blade', height: 0.6, count: 4, growHours: 14, size: 0.3, thirst: 0.2, hardiness: 0.8, sugar: 0.2, skin: 0.3 },
 };
 export const STARTER_NAMES = { carrot: 'Carrot', turnip: 'Turnip', potato: 'Potato', tomato: 'Tomato', pumpkin: 'Pumpkin', corn: 'Sweetcorn', lavender: 'Lavender' };
 export const STARTER_KEYS = ['carrot', 'turnip', 'potato'];           // in the shop from the start
@@ -201,14 +203,14 @@ export const STARTER_KEYS = ['carrot', 'turnip', 'potato'];           // in the 
 export const WILD_BASES = {
   carrot: STARTER_GENOMES.carrot, turnip: STARTER_GENOMES.turnip, potato: STARTER_GENOMES.potato, tomato: STARTER_GENOMES.tomato,
   pumpkin: STARTER_GENOMES.pumpkin, corn: STARTER_GENOMES.corn, lavender: STARTER_GENOMES.lavender,
-  radish: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.5, width: 0.5, hue1: 350, sat1: 0.8, light1: 0.5, hue2: 0, sat2: 0, light2: 0.95, leafShape: 'round', growHours: 3, size: 0.25, thirst: 0.6 },
-  beetroot: { ...BASE, family: 'root', archetype: 'crown', elongation: 0.5, width: 0.6, hue1: 335, sat1: 0.7, light1: 0.3, leafShape: 'pointed', leafHue: 100, growHours: 8, size: 0.4, hardiness: 0.6 },
-  onion: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.5, width: 0.6, hue1: 40, sat1: 0.5, light1: 0.75, top: 'stem', leafShape: 'blade', height: 0.6, growHours: 10, size: 0.4, thirst: 0.3, hardiness: 0.7 },
-  parsnip: { ...BASE, family: 'root', archetype: 'elongated', elongation: 0.9, width: 0.35, tip: 0.8, hue1: 50, sat1: 0.3, light1: 0.85, leafShape: 'frond', growHours: 9, size: 0.45, hardiness: 0.6 },
-  lettuce: { ...BASE, family: 'gourd', archetype: 'head', elongation: 0.5, width: 0.6, hue1: 95, sat1: 0.6, light1: 0.5, hue2: 75, sat2: 0.6, light2: 0.78, top: 'none', leafShape: 'round', leafDensity: 0.3, growHours: 5, size: 0.5, thirst: 0.8, hardiness: 0.3 },
-  pea: { ...BASE, family: 'vine', archetype: 'pod', elongation: 0.7, width: 0.3, curve: 0.4, hue1: 100, sat1: 0.6, light1: 0.45, top: 'stem', leafShape: 'round', height: 0.7, count: 4, growHours: 10, size: 0.2, regrow: true, ripeHours: 18 },
-  strawberry: { ...BASE, family: 'bush', archetype: 'berry', elongation: 0.55, width: 0.7, tip: 0.4, hue1: 355, sat1: 0.9, light1: 0.48, pattern: 'none', hue2: 50, sat2: 0.8, light2: 0.75, leafShape: 'round', height: 0.25, count: 4, growHours: 12, size: 0.2, regrow: true, ripeHours: 16, thirst: 0.6 },
-  wheat: { ...BASE, family: 'grain', archetype: 'head', elongation: 0.8, width: 0.4, hue1: 45, sat1: 0.7, light1: 0.65, hue2: 40, sat2: 0.6, light2: 0.5, top: 'none', leafShape: 'blade', height: 0.8, count: 3, growHours: 14, size: 0.3, thirst: 0.3, hardiness: 0.8 },
+  radish: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.5, width: 0.5, hue1: 350, sat1: 0.8, light1: 0.5, hue2: 0, sat2: 0, light2: 0.95, leafShape: 'round', growHours: 3, size: 0.25, thirst: 0.6, sugar: 0.25, skin: 0.3 },
+  beetroot: { ...BASE, family: 'root', archetype: 'crown', elongation: 0.5, width: 0.6, hue1: 335, sat1: 0.7, light1: 0.3, leafShape: 'pointed', leafHue: 100, growHours: 8, size: 0.4, hardiness: 0.6, sugar: 0.65, skin: 0.5 },
+  onion: { ...BASE, family: 'root', archetype: 'bulb', elongation: 0.5, width: 0.6, hue1: 40, sat1: 0.5, light1: 0.75, top: 'stem', leafShape: 'blade', height: 0.6, growHours: 10, size: 0.4, thirst: 0.3, hardiness: 0.7, sugar: 0.35, skin: 0.6 },
+  parsnip: { ...BASE, family: 'root', archetype: 'elongated', elongation: 0.9, width: 0.35, tip: 0.8, hue1: 50, sat1: 0.3, light1: 0.85, leafShape: 'frond', growHours: 9, size: 0.45, hardiness: 0.6, sugar: 0.5, skin: 0.45 },
+  lettuce: { ...BASE, family: 'gourd', archetype: 'head', elongation: 0.5, width: 0.6, hue1: 95, sat1: 0.6, light1: 0.5, hue2: 75, sat2: 0.6, light2: 0.78, top: 'none', leafShape: 'round', leafDensity: 0.3, growHours: 5, size: 0.5, thirst: 0.8, hardiness: 0.3, sugar: 0.1, skin: 0.15 },
+  pea: { ...BASE, family: 'vine', archetype: 'pod', elongation: 0.7, width: 0.3, curve: 0.4, hue1: 100, sat1: 0.6, light1: 0.45, top: 'stem', leafShape: 'round', height: 0.7, count: 4, growHours: 10, size: 0.2, regrow: true, ripeHours: 18, sugar: 0.55, skin: 0.3 },
+  strawberry: { ...BASE, family: 'bush', archetype: 'berry', elongation: 0.55, width: 0.7, tip: 0.4, hue1: 355, sat1: 0.9, light1: 0.48, pattern: 'none', hue2: 50, sat2: 0.8, light2: 0.75, leafShape: 'round', height: 0.25, count: 4, growHours: 12, size: 0.2, regrow: true, ripeHours: 16, thirst: 0.6, sugar: 0.8, skin: 0.15 },
+  wheat: { ...BASE, family: 'grain', archetype: 'head', elongation: 0.8, width: 0.4, hue1: 45, sat1: 0.7, light1: 0.65, hue2: 40, sat2: 0.6, light2: 0.5, top: 'none', leafShape: 'blade', height: 0.8, count: 3, growHours: 14, size: 0.3, thirst: 0.3, hardiness: 0.8, sugar: 0.3, skin: 0.7 },
 };
 export const WILD_NAMES = { ...STARTER_NAMES, radish: 'Radish', beetroot: 'Beetroot', onion: 'Onion', parsnip: 'Parsnip', lettuce: 'Lettuce', pea: 'Pea', strawberry: 'Strawberry', wheat: 'Wheat' };
 

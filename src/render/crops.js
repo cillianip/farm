@@ -27,6 +27,18 @@ export function produceSprite(species) {
   return c;
 }
 
+// Dried: the same produce smaller, browner and duller, with a crease. Cached.
+export function driedSprite(species) {
+  const key = species.id + ':dried';
+  if (cache.has(key)) return cache.get(key);
+  const [c, ctx] = makeCanvas(16, 16);
+  const P = pixelDrawer(ctx), g = species.genome;
+  const g2 = { ...g, hue1: g.hue1 - 10, sat1: g.sat1 * 0.55, light1: Math.max(0.18, g.light1 * 0.7), hue2: g.hue2 - 10, sat2: g.sat2 * 0.5, light2: Math.max(0.15, g.light2 * 0.7), traits: {} };
+  drawProduce(P, g2, 8, 9, 4.5, colours(g2), 0, 16, true);
+  P.px(7, 8, 'rgba(40,20,5,0.35)'); P.px(8, 10, 'rgba(40,20,5,0.35)'); P.px(9, 7, 'rgba(255,230,180,0.25)');
+  cache.set(key, c);
+  return c;
+}
 export function colours(g) {
   const golden = g.traits?.golden;
   const h1 = golden ? 45 : g.hue1, s1 = golden ? 0.95 : g.sat1, l1 = golden ? 0.55 : g.light1;
