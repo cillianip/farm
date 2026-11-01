@@ -731,8 +731,23 @@ export class Game {
     // night tint
     const h = S.hourOf(s);
     const dark = h >= 18 && h < 22 ? (h - 18) / 4 * 0.55 : h >= 22 || h < 4 ? 0.55 : h < 7 ? (7 - h) / 3 * 0.55 : 0;
-    const warm = h >= 17.5 && h < 20.5 ? 0.18 * (1 - Math.abs(h - 19) / 1.5) : h >= 5 && h < 8 ? 0.14 * (1 - Math.abs(h - 6.5) / 1.5) : 0;
-    if (warm > 0) { ctx.fillStyle = `rgba(255,140,60,${warm.toFixed(3)})`; ctx.fillRect(0, 0, this.vw, this.vh); }
+    const dusk = h >= 17.5 && h < 20.5 ? 0.09 * (1 - Math.abs(h - 19) / 1.5) : 0, dawn = h >= 5 && h < 8 ? 0.07 * (1 - Math.abs(h - 6.5) / 1.5) : 0;   // a soft rose at dusk, a soft gold at dawn: a glow, not a sandy wash
+    if (dusk > 0) { ctx.fillStyle = `rgba(255,120,110,${dusk.toFixed(3)})`; ctx.fillRect(0, 0, this.vw, this.vh); }
+    if (dawn > 0) { ctx.fillStyle = `rgba(255,200,120,${dawn.toFixed(3)})`; ctx.fillRect(0, 0, this.vw, this.vh); }
+    // a sun glint: now and then on a dry day a soft band of light drifts across the view, as if a cloud had moved off the sun
+    if (h >= 8 && h < 17.5 && !s.rainToday && !this.sleeping) {
+      const g = this.glint || (this.glint = { at: now + 12000 + Math.random() * 30000, t0: null });
+      if (g.t0 == null && now >= g.at) g.t0 = now;
+      if (g.t0 != null) {
+        const f = (now - g.t0) / 9000;
+        if (f >= 1) { g.t0 = null; g.at = now + 35000 + Math.random() * 50000; }
+        else {
+          const a = 0.11 * Math.sin(f * Math.PI), x = -this.vw * 0.6 + f * this.vw * 2.2;
+          const lg = ctx.createLinearGradient(x, 0, x + this.vw * 0.9, this.vh * 0.6); lg.addColorStop(0, 'rgba(255,245,200,0)'); lg.addColorStop(0.5, `rgba(255,245,200,${a.toFixed(3)})`); lg.addColorStop(1, 'rgba(255,245,200,0)');
+          ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = lg; ctx.fillRect(0, 0, this.vw, this.vh); ctx.restore();
+        }
+      }
+    } else if (this.glint) this.glint.t0 = null;
     if (dark > 0) { ctx.fillStyle = `rgba(20,16,60,${dark.toFixed(3)})`; ctx.fillRect(0, 0, this.vw, this.vh); }
     { const hum = S.humidityOf(s);   // wet weather: a cool cast, and glints on the ground after rain
       if (s.rainToday) {

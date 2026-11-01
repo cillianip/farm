@@ -1226,7 +1226,7 @@ await test('the square: shoppers come in at the gate, walk the round, buy as the
   assert.ok(M.stock(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')).ok);
   const F = M.MARKET.fountain, inF = (x, y) => x >= F.x && x < F.x + F.w && y >= F.y && y < F.y + F.h;
   const n = M.spawnShopper(s, null); n.legs = 6; n.cw = true; const seen = new Set(); let crossed = false, left = false;
-  for (let i = 0; i < 90; i++) { M.marketTick(s, 1); if (inF(n.x, n.y)) crossed = true; seen.add(n.phase); if (!s.market.npcs.includes(n)) { left = true; break; } }
+  for (let i = 0; i < 200; i++) { M.marketTick(s, 1); if (inF(n.x, n.y)) crossed = true; seen.add(n.phase); if (!s.market.npcs.includes(n)) { left = true; break; } }
   assert.ok(seen.has('loop') && seen.has('buy') && seen.has('out'), [...seen].join()); assert.ok(n.shopped); assert.ok(!crossed, 'never through the fountain'); assert.ok(left, 'left by the gate');
   assert.ok(!M.walkable(F.x + 0.5, F.y + 0.5), 'the fountain blocks'); assert.ok(!M.walkable(8, 3.5), 'the counter blocks'); assert.ok(M.walkable(8.5, 2.5), 'inside the tent'); assert.ok(M.walkable(3, 4.5), 'behind a merchant'); assert.ok(!M.walkable(2.5, 5.5), 'a merchant\'s stall blocks'); assert.ok(M.walkable(9, 9.5), 'the gate');
   const st = s.market.store; assert.equal(st.slots.length, CONFIG.market.storeSlots);
@@ -1321,7 +1321,7 @@ await test('the market: dried goods go on the counter, a shopper who wants somet
   s.minutes = (S.dayOf(s) - 1) * 1440 + 7 * 60; assert.ok(M.depart(s, 'market').ok); M.arrive(s, 'market');
   assert.ok(M.stock(s, pi).ok, 'dried goods sell at the stall'); assert.equal(s.market.counter.slots.filter(Boolean)[0].kind, 'product');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; const m = s.market; const n0 = M.spawnShopper(s, 'dried'); n0.id = 991; n0.legs = 8;
-  const money = s.money; let ev = null; for (let i = 0; i < 60 && !ev; i++) { M.marketTick(s, 1); ev = m.events.find(e => e.type === 'sale'); } assert.ok(ev, 'a sale: ' + JSON.stringify(m.events)); assert.ok(ev.tip > 0 && s.money > money); assert.equal(M.familyWord('dried'), 'something dried');
+  const money = s.money; let ev = null; for (let i = 0; i < 120 && !ev; i++) { M.marketTick(s, 1); ev = m.events.find(e => e.type === 'sale'); } assert.ok(ev, 'a sale: ' + JSON.stringify(m.events)); assert.ok(ev.tip > 0 && s.money > money); assert.equal(M.familyWord('dried'), 'something dried');
   const n = m.npcs.find(x => x.id === 991); assert.ok(n.bubble && n.bubble.product === 'dried' && n.bubble.match, JSON.stringify(n.bubble));
 });
 

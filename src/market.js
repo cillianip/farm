@@ -123,7 +123,7 @@ export function marketTick(state, dtMinutes) {
       else if (walkTo(n, MARKET.loop[n.wp], step)) {
         if (n.wp === 1 && !n.shopped) { n.shopped = true; n.phase = 'buy'; n.t = 0; n.dir = 'up'; buy(state, n); }
         else if (n.legs <= 0 && (n.wp === 3 || n.wp === 4)) { n.phase = 'out'; n.stage = 1; }   // leaving from a bottom corner, so the way out never crosses the fountain
-        else { n.legs--; n.wp = nextWp(n); if (n.wp !== 1 && (n.id * 7 + n.wp * 3) % 10 < 3) n.pause = 1.5; }
+        else { n.legs--; n.wp = nextWp(n); if (n.wp !== 1 && (n.id * 7 + n.wp * 3) % 10 < 5) n.pause = 2 + ((n.id + n.wp) % 3); }   // a stroll: half the corners get a two- to four-minute stand and stare
       }
     }
     else if (n.phase === 'buy') { n.t += dtMinutes; if (n.t >= C.pauseMinutes) { n.phase = 'loop'; n.bubble = null; n.legs--; n.wp = nextWp(n); } }

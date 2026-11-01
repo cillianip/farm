@@ -101,7 +101,7 @@ export const CONFIG = {
   // your stall, one every arrivalMinutes; each wants a family of food (wantChance) or anything, buys one (or two, twoChance)
   // of what matches, or of anything half the time when nothing matches, at full price plus a tip of up to tipMax, more for a
   // match and for stars. The seed merchant marks packets up, the hardware stall marks packs up; both sell on the spot.
-  market: { travelMinutes: 60, open: 8, close: 18, arrivalMinutes: [7, 13], pauseMinutes: 3, laneSpeed: 1.1, counterSlots: 6,
+  market: { travelMinutes: 60, open: 8, close: 18, arrivalMinutes: [7, 13], pauseMinutes: 4, laneSpeed: 0.45, counterSlots: 6,
     wantChance: 0.6, buyAnyChance: 0.5, twoChance: 0.35, tipMax: 0.25, matchTip: 0.1, starTip: 0.05, seedMarkup: 1.5, hardwareMarkup: 1.25, storeSlots: 16 },   // storeSlots: the chest in the back of your tent          // seed packets rotate every this many days
   // The cart's buyer has a daily order per kind of crop: the first `full` of a species in one pickup fetch the full price,
   // the next `full` the first step, and so on; the cart sells the surplus on cheaper. A crate of one crop pays less
