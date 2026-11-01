@@ -85,8 +85,9 @@ export const actionFactor = state => isTired(state) ? CONFIG.needs.tiredActionSl
 export function migrate(state) {
   M.ensureMarket(state);
   { const rs = tileAt(state.world, BUILDINGS.roadsign.x, BUILDINGS.roadsign.y); if (rs && rs.t === 'grass') { rs.t = 'roadsign'; rs.tilled = false; rs.crop = null; rs.obj = null; } }   // older saves: the sign to the market
-  { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; } }   // and the loading bay's board (Build 73)
-  { const st = tileAt(state.world, BAY.x0, BAY.y0); if (st && st.t === 'cstack') st.t = 'grass'; }   // the crate stack of Build 74 is gone
+  // Builds 73 to 76 put the bay on your land west of the track: give those tiles back (the board, the stack corner, the truck's spot)
+  for (const [x, y, kinds] of [[31, 24, ['board']], [30, 25, ['cstack']], [32, 25, ['truck']], [33, 25, ['truck']], [32, 26, ['truck']], [33, 26, ['truck']]]) { const t = tileAt(state.world, x, y); if (t && kinds.includes(t.t)) t.t = 'grass'; }
+  { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'board' && !state.truck) bd.t = 'grass'; }
   state.bay = { level: 2 };
   if (state.truck === true) state.truck = { level: 0, bed: [] };   // Build 76: the truck is a thing with a bed
   if (state.truck) { parkTruck(state); for (const { t } of dcrateTiles(state)) { const o = t.obj, extra = dcrateCount(o) - CONFIG.truck.crateHolds; if (extra > 0) { let left = extra; for (let i = o.items.length - 1; i >= 0 && left > 0; i--) { const take = Math.min(left, o.items[i].qty); o.items[i].qty -= take; left -= take; if (!o.items[i].qty) o.items.splice(i, 1); } } } }   // older crates held 36
@@ -407,7 +408,10 @@ export const bayLevel = state => 2;
 export const truckTier = state => CONFIG.truck.tiers[Math.min(CONFIG.truck.tiers.length - 1, state.truck?.level || 0)];
 export const truckSlots = state => state.truck ? truckTier(state).slots : 0;
 // the truck's tiles: solid ground it stands on
-export function parkTruck(state) { for (let y = TRUCK_SPOT.y; y < TRUCK_SPOT.y + TRUCK_SPOT.h; y++) for (let x = TRUCK_SPOT.x; x < TRUCK_SPOT.x + TRUCK_SPOT.w; x++) { const t = tileAt(state.world, x, y); if (t && (t.t === 'grass' || t.t === 'truck')) { t.t = 'truck'; t.tilled = false; t.crop = null; t.obj = null; t.belt = false; t.load = null; } } }
+export function parkTruck(state) {
+  for (let y = TRUCK_SPOT.y; y < TRUCK_SPOT.y + TRUCK_SPOT.h; y++) for (let x = TRUCK_SPOT.x; x < TRUCK_SPOT.x + TRUCK_SPOT.w; x++) { const t = tileAt(state.world, x, y); if (t && (t.t === 'grass' || t.t === 'truck')) { t.t = 'truck'; t.tilled = false; t.crop = null; t.obj = null; t.belt = false; t.load = null; } }
+  const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; }   // and the board goes up
+}
 // The haulier keeps a few empties standing on the gravel (emptiesOut, or the truck's slots if fewer): each morning, and again
 // whenever you load a full crate, so the bay stays walkable and the supply never runs dry.
 export const emptiesWanted = state => Math.min(CONFIG.truck.emptiesOut, truckSlots(state));

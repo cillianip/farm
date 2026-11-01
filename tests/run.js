@@ -1286,13 +1286,13 @@ await test('the truck: sold once the crate is fully extended; it stands in the b
   s.player.x = W.TRUCK_SPOT.x - 0.5; s.player.y = W.TRUCK_SPOT.y + 1; r = S.loadTruck(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, 1); assert.ok(!s.carrying); assert.equal(S.bayCrates(s).length, Math.min(T2.emptiesOut, T2.tiers[0].slots), 'an empty took its place');
   assert.equal(S.allCrateItems(s).reduce((n, i) => n + i.qty, 0), T2.crateHolds, 'the bed counts, the gravel does not');
   // a hopper beside a crate and a belt that ends at one still fill it
-  const { x: hx, y: hy } = S.bayCrates(s).find(c => !S.dcrateCount(c.t.obj) && !tile(c.x, c.y - 1).obj && tile(c.x, c.y - 1).t === 'grass' && !tile(c.x - 1, c.y - 1).obj && tile(c.x - 1, c.y - 1).t === 'grass');   // a crate with free ground north of it for a hopper
-  tile(hx, hy - 1).line = true; tile(hx, hy - 1).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(hx - 1, hy - 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
-  assert.ok(S.machinePowered(s, hx, hy - 1), 'the hopper runs'); assert.ok(S.hopperByCrate(hx, hy - 1, s));
+  const { x: hx, y: hy } = S.bayCrates(s).find(c => !S.dcrateCount(c.t.obj) && !tile(c.x - 1, c.y).obj && tile(c.x - 1, c.y).t === 'grass' && !tile(c.x - 1, c.y).track && !tile(c.x - 1, c.y + 1).obj && tile(c.x - 1, c.y + 1).t === 'grass');   // a crate with free ground west of it for a hopper
+  tile(hx - 1, hy).line = true; tile(hx - 1, hy).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(hx - 1, hy + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
+  assert.ok(S.machinePowered(s, hx - 1, hy), 'the hopper runs'); assert.ok(S.hopperByCrate(hx - 1, hy, s));
   s.crate.items = [{ species: carrot.id, q: 0, qty: 2 }];
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
   assert.ok(rep.sale && rep.sale.count === T2.crateHolds + 2, 'the bed and the porch crate: ' + JSON.stringify(rep.sale)); assert.deepEqual(rep.sale.crates, { shipped: 1 }); assert.equal(s.truck.bed.length, 0);
-  assert.equal(S.bayWaiting(s), 3, 'the hopper tipped into a crate beside it at the pickup; it waits on the gravel'); assert.equal(tile(hx, hy - 1).obj.held.length, 0); assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|'));
+  assert.equal(S.bayWaiting(s), 3, 'the hopper tipped into a crate beside it at the pickup; it waits on the gravel'); assert.equal(tile(hx - 1, hy).obj.held.length, 0); assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|'));
   assert.equal(S.bayCrates(s).length, Math.min(T2.emptiesOut, T2.tiers[0].slots), 'the haulier keeps the gravel topped up');
   // bigger trucks
   assert.ok(placeOrder(s, 'truck1').ok); S.sleep(s); S.collectParcels(s); assert.equal(s.truck.level, 1); assert.equal(S.truckSlots(s), T2.tiers[1].slots); assert.ok(S.bayCrates(s).length >= Math.min(T2.emptiesOut, T2.tiers[1].slots));
@@ -1310,6 +1310,16 @@ await test('the filter sorts by a species you show it, and back to dried goods',
   assert.ok(aTile.load.every(l => l.species === turnip.id) && S.heldCount(aTile.load) === 2, 'turnips one way: ' + JSON.stringify(aTile.load)); assert.ok(bTile.load.every(l => l.species === carrot.id) && S.heldCount(bTile.load) === 2, 'carrots the other');
   assert.ok(S.setFilter(s, X + 2, y0, { kind: 'product', product: 'dried', species: carrot.id, qty: 1 }).ok); assert.equal(tile(X + 2, y0).obj.rule, 'dried');
   assert.equal(S.setFilter(s, X + 2, y0, { kind: 'fuel', qty: 1 }).msg, 'Show it a crop, a seed or dried goods');
+});
+await test('the bay is never farmland: it is cleared ground south of the track that no plot holds, and the hoe will not dig it', () => {
+  const s = arm(S.createState(1)); const b = W.BAY;
+  for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) { assert.ok(W.isCleared(s.world, x, y), 'cleared'); assert.ok(!W.isOwnedFarmland(s.world, x, y), 'not farmland'); assert.ok(!W.isTree(s.world, x, y), 'no trees'); }
+  s.world.chunks.push(W.chunkKey(...Object.values(W.chunkOfTile(b.x0, b.y0))));   // even when you own the chunk around it
+  assert.ok(!W.isOwnedFarmland(s.world, b.x0, b.y0)); s.player.x = b.x0 + 0.5; s.player.y = b.y0 + 1.5; assert.ok(!S.useItem(s, 0, b.x0, b.y0).ok, 'no bed on the bay');
+  assert.ok(W.isTree(s.world, b.x0, b.y1 + 1), 'the forest starts again below it');
+  // an old save with the bay on its land gets the tiles back
+  const old = JSON.parse(serialize(s)); old.world.tiles[24 * old.world.w + 31].t = 'board'; old.world.tiles[25 * old.world.w + 32].t = 'truck';
+  const m = deserialize(JSON.stringify(old)); S.migrate(m); assert.equal(m.world.tiles[24 * m.world.w + 31].t, 'grass'); assert.equal(m.world.tiles[25 * m.world.w + 32].t, 'grass');
 });
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
