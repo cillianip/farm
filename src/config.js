@@ -196,7 +196,9 @@ export const CONFIG = {
     compostTiers: [{ max: 12, perBag: 3 }, { max: 24, perBag: 2.5 }, { max: 40, perBag: 2 }],   // the bin and its two extensions (Build 68): bigger, and a bag from fewer plants
     binPrices: [150, 400],
     compostBudgetPerInput: 0.08,  // budget grows with how many and how good the inputs were
-    compostBudgetCap: 0.6,
+    compostBudgetCap: 0.6,          // the cap for common and uncommon inputs; rarer inputs raise it (Build 79)
+    compostCapByTier: [0.6, 0.6, 0.75, 0.9, 0.95],   // by the inputs' average tier: common, uncommon, rare, epic, legendary
+    qualityPullByTier: [0, 1, 2, 3, 4],             // how hard a crop of each tier pulls the bag toward Quality
     statCap: 0.8,
     qualityStarValue: 0.3,        // each quality star adds +30% value
     mutationBonusPerPoint: 1.5,

@@ -19,13 +19,16 @@ export function makeCompost(inputs, species) {
       if (g.count >= 3) pull.yield += 1; else if (g.count === 2) pull.yield += 0.4;
       if (g.hardiness > 0.6) pull.hardiness += 1;
       if (g.thirst < 0.35) pull.waterKeep += 1;
-      if (sp.tier !== 'common') pull.quality += 1 + (CONFIG.tiers.order.indexOf(sp.tier) - 1) * 0.5;
-      if ((g.gen || 0) > 0) pull.mutation += 0.6 + Math.min(2, g.gen * 0.3);
+      pull.quality += F.qualityPullByTier[CONFIG.tiers.order.indexOf(sp.tier)] || 0;   // rarer pulls harder: rare twice, epic three times what uncommon does
+      if ((g.gen || 0) > 0) pull.mutation += 0.2 + Math.min(0.3, g.gen * 0.1);           // a bred crop pulls a little toward Mutation, not enough to spoil a Quality bag
       qualitySum += CONFIG.tiers.order.indexOf(sp.tier);
     }
   }
   const total = FERT_STATS.reduce((s, k) => s + pull[k], 0) || 1;
-  const budget = Math.min(F.compostBudgetCap, n * F.compostBudgetPerInput * (1 + qualitySum / Math.max(1, n)));
+  // the cap rises with the inputs' average tier: an uncommon bin stops at 60%, a rare one at 75%, an epic one at 90%
+  const avgTier = qualitySum / Math.max(1, n), lo = Math.floor(avgTier), hi = Math.min(F.compostCapByTier.length - 1, lo + 1), f = avgTier - lo;
+  const cap = F.compostCapByTier[Math.min(lo, F.compostCapByTier.length - 1)] * (1 - f) + F.compostCapByTier[hi] * f;
+  const budget = Math.min(cap, n * F.compostBudgetPerInput * (1 + avgTier));
   const stats = {};
   for (const k of FERT_STATS) { const v = Math.round(budget * (pull[k] / total) * 100) / 100; if (v >= 0.02) stats[k] = Math.min(F.statCap, v); }
   const keys = Object.keys(stats);

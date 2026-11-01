@@ -1321,6 +1321,16 @@ await test('the bay is never farmland: it is cleared ground south of the track t
   const old = JSON.parse(serialize(s)); old.world.tiles[24 * old.world.w + 31].t = 'board'; old.world.tiles[25 * old.world.w + 32].t = 'truck';
   const m = deserialize(JSON.stringify(old)); S.migrate(m); assert.equal(m.world.tiles[24 * m.world.w + 31].t, 'grass'); assert.equal(m.world.tiles[25 * m.world.w + 32].t, 'grass');
 });
+await test('the bin: pumpkin makes the best uncommon bag, two stars; a rare pure-Quality crop beats it; an epic one makes three stars sure; a bred crop no longer spoils its own bag', async () => {
+  const F = await import('../src/fertiliser.js'); const species = {}; const mk = (g, name, tier) => { const sp = G.makeSpecies(g, { name }); if (tier) sp.tier = tier; species[sp.id] = sp; return sp; };
+  const pk = mk(G.STARTER_GENOMES.pumpkin, 'Pumpkin'); assert.equal(pk.tier, 'uncommon');
+  const bag = F.makeCompost([{ species: pk.id, qty: 12 }], species); assert.equal(F.starsFromQuality(bag.stats.quality).sure, 2); assert.ok(bag.stats.quality <= 0.6 + 1e-9);
+  const rare = mk({ ...G.STARTER_GENOMES.pumpkin, gen: 2, size: 0.93 }, 'Rare one', 'rare'), epic = mk({ ...G.STARTER_GENOMES.pumpkin, gen: 3, size: 0.96 }, 'Epic one', 'epic'); assert.notEqual(rare.id, epic.id);
+  const rb = F.makeCompost([{ species: rare.id, qty: 12 }], species), eb = F.makeCompost([{ species: epic.id, qty: 12 }], species);
+  assert.ok(rb.stats.quality > bag.stats.quality, 'rare beats pumpkin: ' + rb.stats.quality); assert.equal(F.starsFromQuality(rb.stats.quality).sure, 2);
+  assert.equal(F.starsFromQuality(eb.stats.quality).sure, 3, 'epic: three stars sure: ' + eb.stats.quality);
+  const mixed = F.makeCompost([{ species: pk.id, qty: 6 }, { species: rare.id, qty: 6 }], species); assert.ok(mixed.stats.quality > 0.5 && mixed.stats.quality < rb.stats.quality, 'a mixed bin is a good bag but not the rare one: ' + mixed.stats.quality);
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');
