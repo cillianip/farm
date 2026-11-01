@@ -13,25 +13,43 @@ const hourOf = s => (s.minutes % MIN_PER_DAY) / 60;
 const dayOf = s => Math.floor(s.minutes / MIN_PER_DAY) + 1;
 const fail = msg => ({ ok: false, msg });
 
-// The lane, in tiles. Stalls stand above the lane, their counters on its upper edge; shoppers walk the lane's top row;
-// you walk the lower rows. The home sign stands at the left end where the track arrives.
+// The square, in tiles (Build 69). Cobbles inside a ring of trees, a fountain in the middle, the track in through a gate at
+// the bottom. Three stalls face south across the top: the seed merchant, your tent (four wide, a chest in the back you
+// can stand beside), the hardware stall. Shoppers come in at the gate, walk the round past every stall, buy at your
+// counter when they pass it, and leave the way they came. You walk anywhere the cobbles and grass allow, behind the
+// stalls included.
+// Sized to sit whole on a normal screen at the game's scale (18 × 12 tiles), so the camera never has to follow you here.
 export const MARKET = {
-  w: 22, h: 12, laneY: 6,                                    // lane rows laneY and laneY+1
-  stalls: { seeds: { x: 4, key: 'seeds', name: 'Seed merchant' }, yours: { x: 10, key: 'yours', name: 'Your stall' }, hardware: { x: 16, key: 'hardware', name: 'Hardware' } },   // each two tiles wide, x is the left tile
-  homeSign: { x: 1, y: 8 },
-  start: { x: 11, y: 9.2 },
-  bounds: { x0: 0.6, x1: 21.4, y0: 6.3, y1: 10.6 },        // where you can walk
+  w: 18, h: 12,
+  stalls: { seeds: { x: 2, y: 5, w: 2, key: 'seeds', name: 'Seed merchant' }, yours: { x: 7, y: 2, w: 4, key: 'yours', name: 'Your stall' }, hardware: { x: 14, y: 5, w: 2, key: 'hardware', name: 'Hardware' } },   // y is the back row; the counter is the row below it; shoppers stand on the row below that
+  fountain: { x: 8, y: 5, w: 2, h: 2 },
+  store: { x: 10, y: 2 },                                    // the chest in the back of your tent
+  seats: [{ x: 4, y: 7 }, { x: 13, y: 7 }],
+  gate: { x: 8, w: 2, y0: 9 },                               // the track into the square, from the bottom edge
+  homeSign: { x: 11, y: 10 },                                // beside the gate, off the shoppers' round
+  start: { x: 9, y: 9.5 },
+  paved: { x0: 2, x1: 15, y0: 2, y1: 9 },                    // the cobbles
+  loop: [[5.5, 4.5], [9, 4.6], [12.5, 4.5], [12.5, 8.5], [5.5, 8.5]],   // the shoppers' round: NW, your counter, NE, SE, SW
+  entry: [9, 8.5], spawn: [9, 11.6],
+  bounds: { x0: 1.5, x1: 16.5, y0: 1.3, y1: 10.6 },
 };
+const BLOCKED = [
+  MARKET.fountain,
+  { x: 2, y: 5, w: 2, h: 2 }, { x: 14, y: 5, w: 2, h: 2 },   // the merchants' stalls
+  { x: 7, y: 3, w: 4, h: 1 }, { x: 7, y: 2, w: 1, h: 1 }, { ...MARKET.store, w: 1, h: 1 },   // your counter, the tent pole, the chest
+  ...MARKET.seats.map(s => ({ ...s, w: 1, h: 1 })), { ...MARKET.homeSign, w: 1, h: 1 },
+];
 export const FAMILIES = ['root', 'gourd', 'vine', 'grain', 'bush', 'flower'];
-export const stallFront = key => ({ x: MARKET.stalls[key].x + 1, y: MARKET.laneY + 0.5 });   // where a shopper stands to buy
+export const stallFront = key => { const st = MARKET.stalls[key]; return { x: st.x + st.w / 2, y: st.y + 2.5 }; };   // where a shopper stands to buy
+export const paved = (x, y) => { const P = MARKET.paved; return x >= P.x0 && x <= P.x1 && y >= P.y0 && y <= P.y1; };
 
 export function makeMarket() {
-  return { at: false, counter: makeInventory(CONFIG.market.counterSlots), npcs: [], nextAt: null, count: 0, farmPos: null,
+  return { at: false, counter: makeInventory(CONFIG.market.counterSlots), store: makeInventory(CONFIG.market.storeSlots), npcs: [], nextAt: null, count: 0, farmPos: null,
     today: { day: 0, sold: 0, money: 0, tips: 0, visitors: 0 }, lifetime: { sold: 0, money: 0, trips: 0 }, events: [] };
 }
-export function ensureMarket(state) { if (!state.market) state.market = makeMarket(); const m = state.market; m.events = m.events || []; m.lifetime = m.lifetime || { sold: 0, money: 0, trips: 0 }; return m; }
+export function ensureMarket(state) { if (!state.market) state.market = makeMarket(); const m = state.market; m.events = m.events || []; m.lifetime = m.lifetime || { sold: 0, money: 0, trips: 0 }; m.store = m.store || makeInventory(CONFIG.market.storeSlots); return m; }
 export const marketOpen = state => { const h = hourOf(state); return h >= CONFIG.market.open && h < CONFIG.market.close; };
-export function walkable(x, y) { const b = MARKET.bounds; return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
+export function walkable(x, y) { const b = MARKET.bounds; if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false; return !BLOCKED.some(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h); }
 
 // Leaving and arriving. sim.travel wraps these around the hour's walk.
 export function depart(state, dest) {
@@ -68,29 +86,49 @@ export function takeBack(state, counterIndex) {
 }
 export const counterCount = state => ensureMarket(state).counter.slots.reduce((n, it) => n + (it ? it.qty : 0), 0);
 
-// Shoppers: while you are at the market and it is open, one comes along the lane every few minutes. Each wants a kind of
-// food (or anything); at your counter they buy one or two of what matches, or of anything half the time, at full price
-// plus a tip, and walk on. Nothing on the counter, they glance and go. Everything that happens is pushed to m.events
-// for the screen (floats, bubbles) and forgotten by the next tick.
+// Shoppers: while you are at the market and it is open, one comes in at the gate every few minutes. Each wants a kind of
+// food (or anything). They walk the round, a few legs of it clockwise or the other way, pausing at a corner now and
+// then; when they pass your counter they buy one or two of what matches, or of anything half the time, at full price
+// plus a tip; nothing on the counter, they glance and go. Then back to the gate. Everything that happens is pushed to
+// m.events for the screen (floats, bubbles) and forgotten by the next tick.
+export function spawnShopper(state, want) {
+  const m = ensureMarket(state), C = CONFIG.market, r = makeRng(state.seed ^ hashString('shopper' + m.count));
+  if (want === undefined) want = r.chance(C.wantChance) ? (r.chance(CONFIG.dried.wantChance) ? 'dried' : r.pick(FAMILIES)) : null;
+  const n = { id: m.count, x: MARKET.spawn[0], y: MARKET.spawn[1], dir: 'up', want, phase: 'in', t: 0, variant: r.int(0, 5), qty: r.chance(C.twoChance) ? 2 : 1, bubble: null, cw: r.chance(0.5), legs: r.int(4, 8), wp: -1, shopped: false, pause: 0, stage: 0 };
+  m.npcs.push(n); m.count++; m.today.visitors++;
+  return n;
+}
+// one step toward a point; true when there
+function walkTo(n, [tx, ty], step) {
+  const dx = tx - n.x, dy = ty - n.y, d = Math.hypot(dx, dy);
+  if (d <= step) { n.x = tx; n.y = ty; return true; }
+  n.x += dx / d * step; n.y += dy / d * step;
+  n.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  return false;
+}
+const nextWp = n => (n.wp + (n.cw ? 1 : -1) + MARKET.loop.length) % MARKET.loop.length;
 export function marketTick(state, dtMinutes) {
   const m = ensureMarket(state); if (!m.at) return;
   const C = CONFIG.market, now = state.minutes;
   if (marketOpen(state)) {
     if (m.nextAt == null) { const r = makeRng(state.seed ^ hashString('shopper' + m.count)); m.nextAt = now + r.range(C.arrivalMinutes[0], C.arrivalMinutes[1]); }
-    if (now >= m.nextAt) {
-      const r = makeRng(state.seed ^ hashString('shopper' + m.count)), f = stallFront('yours');
-      const want = r.chance(C.wantChance) ? (r.chance(CONFIG.dried.wantChance) ? 'dried' : r.pick(FAMILIES)) : null;
-      m.npcs.push({ id: m.count, x: -1, y: f.y, dir: 'right', want, phase: 'in', t: 0, variant: r.int(0, 5), qty: r.chance(C.twoChance) ? 2 : 1, bubble: null });
-      m.count++; m.today.visitors++; m.nextAt = now + r.range(C.arrivalMinutes[0], C.arrivalMinutes[1]);
-    }
+    if (now >= m.nextAt) { spawnShopper(state); const r = makeRng(state.seed ^ hashString('next' + m.count)); m.nextAt = now + r.range(C.arrivalMinutes[0], C.arrivalMinutes[1]); }
   } else m.nextAt = null;
-  const f = stallFront('yours'), keep = [];
+  const keep = [];
   for (const n of m.npcs) {
     const step = C.laneSpeed * dtMinutes;
-    if (n.phase === 'in') { n.x = Math.min(f.x, n.x + step); n.dir = 'right'; if (n.x >= f.x) { n.phase = 'buy'; n.t = 0; n.dir = 'up'; buy(state, n); } }
-    else if (n.phase === 'buy') { n.t += dtMinutes; if (n.t >= C.pauseMinutes) { n.phase = 'out'; n.dir = 'right'; n.bubble = null; } }
-    else { n.x += step; }
-    if (n.x < MARKET.w + 1) keep.push(n);
+    if (n.phase === 'in') { if (walkTo(n, MARKET.entry, step)) { n.phase = 'loop'; n.wp = n.cw ? 4 : 3; } }   // from the south edge: clockwise heads west to the SW corner, the other way east
+    else if (n.phase === 'loop') {
+      if (n.pause > 0) n.pause -= dtMinutes;
+      else if (walkTo(n, MARKET.loop[n.wp], step)) {
+        if (n.wp === 1 && !n.shopped) { n.shopped = true; n.phase = 'buy'; n.t = 0; n.dir = 'up'; buy(state, n); }
+        else if (n.legs <= 0 && (n.wp === 3 || n.wp === 4)) { n.phase = 'out'; n.stage = 1; }   // leaving from a bottom corner, so the way out never crosses the fountain
+        else { n.legs--; n.wp = nextWp(n); if (n.wp !== 1 && (n.id * 7 + n.wp * 3) % 10 < 3) n.pause = 1.5; }
+      }
+    }
+    else if (n.phase === 'buy') { n.t += dtMinutes; if (n.t >= C.pauseMinutes) { n.phase = 'loop'; n.bubble = null; n.legs--; n.wp = nextWp(n); } }
+    else if (n.phase === 'out') { if (n.stage === 1) { if (walkTo(n, MARKET.entry, step)) n.stage = 2; } else walkTo(n, MARKET.spawn, step); }
+    if (!(n.phase === 'out' && n.stage === 2 && n.y >= MARKET.spawn[1] - 0.01)) keep.push(n);
   }
   m.npcs = keep;
 }

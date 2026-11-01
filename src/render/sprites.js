@@ -719,6 +719,54 @@ export function stallSprite(variant = 0) {
   }, 'rgba(40,25,15,0.95)');
 }
 // The signpost at the end of the track, and the one at the market: a board with a word.
+// Cobbles for the square (16×16): rounded stones in a warm grey.
+export function cobbleTile(variant = 0) {
+  return sprite(`cobble${variant}`, 16, 16, P => {
+    P.rect(0, 0, 16, 16, '#8f8470');
+    const r = makeRng(1300 + variant);
+    for (let y = 0; y < 16; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < 16; x += 4) { const c = r.chance(0.3) ? '#c3b89f' : r.chance(0.5) ? '#b4a991' : '#aa9f88'; P.rect(x, y, 3, 3, c); P.px(x, y, '#cfc4ab'); }
+  });
+}
+// The fountain (32×32): a stone basin, a column with a bowl on top, water that moves between two frames.
+export function fountainSprite(frame = 0) {
+  return sprite(`fountain${frame}`, 32, 32, P => {
+    const stone = '#9a968c', dark = '#6e6b63', light = '#bdb9ae', water = PAL.water, wl = PAL.waterLight;
+    P.rect(2, 20, 28, 10, dark); P.rect(3, 19, 26, 10, stone); P.rect(4, 19, 24, 1, light); P.rect(0, 23, 32, 6, dark); P.rect(1, 22, 30, 6, stone); P.rect(2, 22, 28, 1, light);   // the basin
+    P.rect(5, 23, 22, 4, water); for (let i = 0; i < 6; i++) P.px(6 + i * 4 + (frame ? 2 : 0), 24 + (i % 2), wl);                                                                // water in the basin
+    P.rect(14, 8, 4, 15, dark); P.rect(15, 8, 2, 15, stone); P.px(15, 8, light);                                                                                                  // the column
+    P.rect(10, 6, 12, 3, dark); P.rect(11, 5, 10, 3, stone); P.rect(12, 5, 8, 1, light); P.rect(13, 6, 6, 1, water);                                                             // the bowl
+    P.rect(15, 1, 2, 4, wl); P.px(frame ? 13 : 12, 3, wl); P.px(frame ? 18 : 19, 3, wl); P.px(frame ? 11 : 12, 6 + (frame ? 1 : 0), wl); P.px(frame ? 20 : 19, 6 + (frame ? 0 : 1), wl);   // the spout and its spray
+    P.px(9, 20 + (frame ? 1 : 0), wl); P.px(22, 21 - (frame ? 1 : 0), wl);                                                                                                        // drips into the basin
+    P.rect(2, 30, 28, 2, 'rgba(30,20,10,0.25)');
+  });
+}
+// Your tent (64 wide): the back half is the striped roof and the back wall, drawn behind you; the front half is the
+// counter with the name board, drawn in front. Together they cover three tile rows.
+export function tentBackSprite() {
+  return sprite('tentBack', 64, 32, P => {
+    const red = '#c8553d', redDark = '#a0412f', cloth = '#f5e6c3', clothDark = '#e0cda2';
+    for (let y = 0; y < 14; y++) { const x0 = 8 - Math.min(8, y), w = 48 + Math.min(16, y * 2); for (let x = x0; x < x0 + w; x++) { const s = Math.floor((x + 2) / 6) % 2; P.px(x, y + 2, s ? cloth : red); } }   // the roof, peaking
+    P.rect(0, 15, 64, 2, redDark); for (let x = 0; x < 64; x += 6) { P.rect(x + 1, 17, 4, 1, Math.floor((x + 2) / 6) % 2 ? clothDark : red); }                                     // the hem and scallops
+    P.rect(2, 18, 60, 14, '#e7d7b2'); P.rect(2, 18, 60, 1, clothDark); for (let x = 6; x < 60; x += 10) P.rect(x, 19, 1, 13, 'rgba(120,90,60,0.18)');                              // the back wall
+    P.rect(1, 14, 2, 18, PAL.woodDark); P.rect(61, 14, 2, 18, PAL.woodDark); P.px(1, 14, PAL.woodLight); P.px(61, 14, PAL.woodLight);                                              // the poles
+    P.px(31, 0, PAL.gold); P.px(32, 0, PAL.gold); P.px(31, 1, '#d9a84e'); P.px(32, 1, '#d9a84e');                                                                                  // the finial
+  });
+}
+export function tentFrontSprite() {
+  return sprite('tentFront', 64, 16, (P, ctx) => {
+    P.rect(0, 2, 64, 9, PAL.wood); P.rect(0, 2, 64, 1, PAL.woodLight); P.rect(0, 10, 64, 1, PAL.woodDark); P.rect(0, 6, 64, 1, PAL.woodDark);   // the counter
+    P.rect(1, 11, 62, 2, PAL.woodDark); P.rect(3, 12, 58, 1, '#2f1f12');                                                                     // its shadow and feet
+    P.rect(20, 0, 24, 5, PAL.woodLight); P.rect(20, 0, 24, 1, '#c99a66'); P.rect(20, 4, 24, 1, PAL.woodDark);                                // the name board hanging over the counter
+    drawText(ctx, 'FARM', 22, 0, '#3b2314', 1);
+  }, 'rgba(40,25,15,0.95)');
+}
+// A seat (16×12): a plank bench on two legs.
+export function seatSprite() {
+  return sprite('seat', 16, 12, P => {
+    P.rect(1, 4, 14, 3, PAL.wood); P.rect(1, 4, 14, 1, PAL.woodLight); P.rect(1, 6, 14, 1, PAL.woodDark);
+    P.rect(2, 7, 2, 4, PAL.woodDark); P.rect(12, 7, 2, 4, PAL.woodDark); P.rect(1, 1, 14, 2, PAL.woodDark); P.rect(1, 1, 14, 1, PAL.wood);
+  });
+}
 export function roadSignSprite(label = 'MARKET') {
   return sprite('roadsign' + label, 36, 24, (P, ctx) => {
     P.rect(17, 11, 2, 13, PAL.woodDark); P.px(17, 13, PAL.wood);

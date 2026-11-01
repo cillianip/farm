@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -123,9 +123,11 @@ export class Game {
   interactKey() {
     if (this.ui.openPanel) return this.ui.closePanel();
     if (this.sleeping || this.action || this.state.carrying) return;
-    if (this.state.market?.at) {   // the stall or a merchant you stand by
-      const L = MARKET.laneY, p = this.state.player; let best = null;
-      for (const st of Object.values(MARKET.stalls)) { const b = { x: st.x, y: L - 1, w: 2, h: 1 }, cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h), d = Math.hypot(p.x - cx, p.y - cy); if (d < 2.4 && (!best || d < best.d)) best = { d, open: () => st.key === 'yours' ? this.ui.openStall() : this.ui.openMerchant(st.key) }; }
+    if (this.state.market?.at) {   // the stall, a merchant or the tent chest you stand by
+      const p = this.state.player; let best = null;
+      const near = (b, open) => { const cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h), d = Math.hypot(p.x - cx, p.y - cy); if (d < 2.4 && (!best || d < best.d)) best = { d, open }; };
+      for (const st of Object.values(MARKET.stalls)) near({ x: st.x, y: st.y, w: st.w, h: 2 }, () => st.key === 'yours' ? this.ui.openStall() : this.ui.openMerchant(st.key));
+      near({ ...MARKET.store, w: 1, h: 1 }, () => this.ui.openChest(this.state.market.store));
       if (best) best.open(); return;
     }
     const stations = [['seedrack', { ...S.objectPos(this.state, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => this.state.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
@@ -252,6 +254,8 @@ export class Game {
       case 'sign': { this.openSign(); return true; }
       case 'roadsign': { this.travelTo('market'); return true; }
       case 'homesign': { this.travelTo('farm'); return true; }
+      case 'mstore': { const ch = s.market.store; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.near.x + 0.5, o.near.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
+      case 'fountain': { if (it) { this.ui.toast('Empty hands to drink'); return true; } this.startAction('drink', MARKET.fountain.x, MARKET.fountain.y, CONFIG.actions.drinkSeconds); return true; }
       case 'stall': { if (it && (it.kind === 'crop' || it.kind === 'product')) { const r = M.stock(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 1, o.y - 0.2, '#f6c453'); this.sound.play('drop'); } } else this.ui.openStall(); return true; }
       case 'merchant': { this.ui.openMerchant(o.key); return true; }
       case 'fchest': { const ch = s.world.tiles[o.y * s.world.w + o.x].obj; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
@@ -393,7 +397,7 @@ export class Game {
     for (const f of this.floats) f.t += dt; this.floats = this.floats.filter(f => f.t < 2.2);
     { // a footfall when a foot lands in the walk animation (frames 1 and 3): the sound, and a print left behind
       const frame = this.moving && !this.action ? Math.floor(this.walkT * 7) % 4 : 0;
-      if (frame !== this.lastFrame && (frame === 1 || frame === 3)) { const p = s.player; let surf = 'grass'; if (s.market?.at) surf = p.y >= MARKET.laneY && p.y < MARKET.laneY + 2 ? 'track' : 'grass'; else { const t = tileAt(s.world, Math.floor(p.x), Math.floor(p.y)); surf = t?.track ? 'track' : t?.tilled ? 'soil' : 'grass'; } this.sound.footfall(surf); }
+      if (frame !== this.lastFrame && (frame === 1 || frame === 3)) { const p = s.player; let surf = 'grass'; if (s.market?.at) surf = M.paved(p.x, p.y) ? 'track' : 'grass'; else { const t = tileAt(s.world, Math.floor(p.x), Math.floor(p.y)); surf = t?.track ? 'track' : t?.tilled ? 'soil' : 'grass'; } this.sound.footfall(surf); }
       this.lastFrame = frame;
       for (const f of this.prints) f.t += dt; if (this.prints.length && this.prints[0].t > 9) this.prints = this.prints.filter(f => f.t < 9);
     }
@@ -783,40 +787,55 @@ export class Game {
     }, 650);
   }
   marketInteractables() {
-    const s = this.state, it = this.hotbarItem(), out = [], L = MARKET.laneY;
+    const s = this.state, it = this.hotbarItem(), out = [];
     for (const st of Object.values(MARKET.stalls)) {
-      const rect = [st.x * 16, (L - 1) * 16 - 12, 32, 28];
-      if (st.key === 'yours') out.push({ kind: 'stall', x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: it && (it.kind === 'crop' || it.kind === 'product') ? 'Put it on the counter  (E: open)' : `Your stall · ${M.counterCount(s)} on the counter  (E: open)` });
-      else out.push({ kind: 'merchant', key: st.key, x: st.x, y: L - 1, near: { x: st.x, y: L - 1, w: 2, h: 1 }, rect, label: `${st.name}  (E: open)` });
+      const near = { x: st.x, y: st.y, w: st.w, h: 2 };
+      if (st.key === 'yours') out.push({ kind: 'stall', x: st.x, y: st.y + 1, near, rect: [st.x * 16, (st.y + 1) * 16, st.w * 16, 16], label: it && (it.kind === 'crop' || it.kind === 'product') ? 'Put it on the counter  (E: open)' : `Your stall · ${M.counterCount(s)} on the counter  (E: open)` });
+      else out.push({ kind: 'merchant', key: st.key, x: st.x, y: st.y + 1, near, rect: [st.x * 16, st.y * 16 - 12, st.w * 16, 44], label: `${st.name}  (E: open)` });
     }
+    const St = MARKET.store; out.push({ kind: 'mstore', near: { x: St.x, y: St.y, w: 1, h: 1 }, rect: [St.x * 16 - 1, (St.y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Tent chest') + '  (E: open)' });
+    const F = MARKET.fountain; out.push({ kind: 'fountain', near: F, rect: [F.x * 16, F.y * 16 - 8, F.w * 16, F.h * 16 + 8], label: it ? 'The fountain' : 'Drink' });
     const H = MARKET.homeSign; out.push({ kind: 'homesign', near: { x: H.x, y: H.y, w: 1, h: 1 }, rect: [H.x * 16 - 10, (H.y + 1) * 16 - 22, 36, 12], label: "Walk home  (an hour)" });
     return out;
   }
   marketInfo(x, y) {
-    const s = this.state, L = MARKET.laneY;
-    for (const st of Object.values(MARKET.stalls)) if (y >= L - 2 && y <= L - 1 && x >= st.x && x < st.x + 2) {
-      if (st.key === 'yours') return { title: 'Your stall', sub: `${M.counterCount(s)} on the counter. Shoppers buy what they like at full price and tip. Sold today: ${s.market.today.sold} for ${formatMoney(s.market.today.money)}.` };
+    const s = this.state, F = MARKET.fountain;
+    for (const st of Object.values(MARKET.stalls)) if (y >= st.y - 1 && y <= st.y + 1 && x >= st.x && x < st.x + st.w) {
+      if (st.key === 'yours') return { title: 'Your stall', sub: `${M.counterCount(s)} on the counter. Shoppers buy what they like at full price and tip as they pass. Sold today: ${s.market.today.sold} for ${formatMoney(s.market.today.money)}. The chest in the back keeps stock between visits.` };
       return { title: st.name, sub: st.key === 'seeds' ? 'Seeds from elsewhere, three kinds a day, never what the catalogue has.' : 'Fuel, pipe, line and belt in your pocket now, at a markup.' };
     }
+    if (x === MARKET.store.x && y === MARKET.store.y) return { title: 'Tent chest', sub: `${s.market.store.slots.filter(Boolean).length} / ${s.market.store.slots.length} slots. Stock you leave here waits for your next visit.` };
+    if (x >= F.x && x < F.x + F.w && y >= F.y && y < F.y + F.h) return { title: 'The fountain', sub: 'Empty hands to drink.' };
+    if (MARKET.seats.some(q => q.x === x && q.y === y)) return { title: 'A bench', sub: 'Shoppers sit here when their feet hurt.' };
     if (x === MARKET.homeSign.x && y === MARKET.homeSign.y) return { title: 'To the farm', sub: "An hour's walk back down the track." };
-    if (y >= L && y <= L + 1) return { title: 'The lane', sub: M.marketOpen(s) ? 'Shoppers pass by between 8 and 6.' : 'Quiet: the market is shut.' };
+    if (x >= MARKET.gate.x && x < MARKET.gate.x + MARKET.gate.w && y >= MARKET.gate.y0) return { title: 'The gate', sub: 'Shoppers come and go this way.' };
+    if (M.paved(x, y)) return { title: 'The square', sub: M.marketOpen(s) ? 'Shoppers walk the round between 8 and 6 and buy as they pass your counter.' : 'Quiet: the market is shut.' };
     return { title: '' };
   }
-  // The market scene: a lane under the trees, three stalls, the shoppers, you. Same overlay as the farm.
+  // The market scene: the square under the trees, the fountain, three stalls across the top, the shoppers on their round, you.
   renderMarket(now) {
-    const ctx = this.ctx, s = this.state, m = s.market, u = CONFIG.scale, W = MARKET.w, H = MARKET.h, L = MARKET.laneY;
+    const ctx = this.ctx, s = this.state, m = s.market, u = CONFIG.scale, W = MARKET.w, H = MARKET.h, G = MARKET.gate;
     const cx = Math.round(this.cam.x), cy = Math.round(this.cam.y);
     ctx.fillStyle = '#2b4a26'; ctx.fillRect(0, 0, this.vw, this.vh);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const sx = x * T - cx, sy = y * T - cy; if (y === L || y === L + 1) ctx.drawImage(trackTile((x + y) % 3), sx, sy, T, T); else ctx.drawImage(grassTile((x * 7 + y * 13) % 6), sx, sy, T, T); }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const sx = x * T - cx, sy = y * T - cy; const gate = x >= G.x && x < G.x + G.w && y >= G.y0; if (gate) ctx.drawImage(trackTile((x + y) % 3), sx, sy, T, T); else if (M.paved(x, y)) ctx.drawImage(cobbleTile((x * 5 + y * 3) % 4), sx, sy, T, T); else ctx.drawImage(grassTile((x * 7 + y * 13) % 6), sx, sy, T, T); }
     const drawables = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (y <= 2 || y >= H - 1 || x === 0 || x === W - 1) { const v = (x * 7 + y * 13) % 3; drawables.push({ y: y + 1, draw: () => ctx.drawImage(treeSprite(v), x * T - cx - 2 * u, y * T - cy - T, 20 * u, 32 * u) }); }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((y <= 1 || y >= H - 1 || x === 0 || x === W - 1) && !(y >= H - 1 && x >= G.x && x < G.x + G.w)) { const v = (x * 7 + y * 13) % 3; drawables.push({ y: y + 1, draw: () => ctx.drawImage(treeSprite(v), x * T - cx - 2 * u, y * T - cy - T, 20 * u, 32 * u) }); }
     for (const st of Object.values(MARKET.stalls)) {
-      const v = st.key === 'yours' ? 0 : st.key === 'seeds' ? 1 : 2, sx = st.x * T - cx, sy = (L - 1) * T - cy - 12 * u;
-      drawables.push({ y: L - 0.5, draw: () => {
-        ctx.drawImage(stallSprite(v), sx, sy, 32 * u, 28 * u);
-        if (st.key === 'yours') { let k = 0; for (const it of m.counter.slots) { if (!it || k >= 4) continue; const sp = s.species[it.species]; if (!sp) continue; ctx.drawImage(produceSprite(sp), sx + (3 + k * 7) * u, sy + 15 * u, 7 * u, 7 * u); k++; } }
-      } });
+      const sx = st.x * T - cx;
+      if (st.key === 'yours') {
+        drawables.push({ y: st.y - 0.1, draw: () => ctx.drawImage(tentBackSprite(), sx, (st.y - 1) * T - cy, 64 * u, 32 * u) });   // the roof and back wall: you stand in front of them
+        drawables.push({ y: st.y + 2, draw: () => {
+          ctx.drawImage(tentFrontSprite(), sx, (st.y + 1) * T - cy, 64 * u, 16 * u);
+          let k = 0; for (const it of m.counter.slots) { if (!it || k >= 6) continue; const sp = s.species[it.species]; if (!sp) continue; ctx.drawImage(it.kind === 'product' ? driedSprite(sp) : produceSprite(sp), sx + (3 + k * 10) * u, (st.y + 1) * T - cy - 3 * u, 8 * u, 8 * u); k++; }
+        } });
+      } else {
+        const v = st.key === 'seeds' ? 1 : 2, sy = st.y * T - cy - 12 * u;
+        drawables.push({ y: st.y + 2, draw: () => ctx.drawImage(stallSprite(v), sx, sy, 32 * u, 28 * u) });
+      }
     }
+    { const St = MARKET.store; drawables.push({ y: St.y + 1, draw: () => { ctx.drawImage(groundPatch(), St.x * T - cx, St.y * T - cy, T, T); ctx.drawImage(chestSprite(this.ui.chestOpen === m.store && !!this.ui.openPanel, true), St.x * T - cx, (St.y + 1) * T - cy - 16 * u, T, 16 * u); } }); }
+    { const F = MARKET.fountain; drawables.push({ y: F.y + F.h, draw: () => ctx.drawImage(fountainSprite(Math.floor(now / 260) % 2), F.x * T - cx, F.y * T - cy - 8 * u, 32 * u, 32 * u) }); }
+    for (const q of MARKET.seats) drawables.push({ y: q.y + 1, draw: () => ctx.drawImage(seatSprite(), q.x * T - cx, (q.y + 1) * T - cy - 12 * u, T, 12 * u) });
     { const Hs = MARKET.homeSign; drawables.push({ y: Hs.y + 1, draw: () => ctx.drawImage(roadSignSprite('FARM'), Hs.x * T - cx - 10 * u, (Hs.y + 1) * T - cy - 24 * u, 36 * u, 24 * u) }); }
     for (const n of m.npcs) {
       const frame = n.phase === 'buy' ? 0 : Math.floor((now / 110 + n.id * 3) % 4), nx = Math.round(n.x * T - T / 2) - cx, ny = Math.round(n.y * T) - cy - PLAYER_H * u + 3 * u;
