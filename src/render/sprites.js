@@ -78,9 +78,10 @@ export function wellSprite(frame = 0) {
 }
 // Delivery crate: a slatted wooden box by the track. level 0 empty, 1 some produce showing, 2 full (lid propped on top).
 // Delivery crate (20×18): an open-topped slatted crate with straw inside. level 0 empty, 1 some produce, 2 heaped.
-export function crateSprite(level = 0) {
-  return sprite(`crate${level}`, 20, 18, P => {
+export function crateSprite(level = 0, delivery = false) {
+  return sprite(`crate${level}${delivery ? 'd' : ''}`, 20, 18, P => {
     P.rect(2, 7, 16, 10, PAL.wood);
+    if (delivery) { P.rect(2, 12, 16, 2, '#c8553d'); P.px(9, 12, '#f5e6c3'); P.px(10, 13, '#f5e6c3'); }   // a red band and a chalk mark: the truck's
     for (const y of [10, 14]) { P.rect(2, y, 16, 1, PAL.woodDark); P.rect(2, y - 1, 16, 1, PAL.woodLight); }
     P.rect(2, 7, 1, 10, PAL.woodDark); P.rect(17, 7, 1, 10, PAL.woodDark); P.rect(2, 17, 16, 1, PAL.woodDark);
     P.rect(3, 8, 1, 9, PAL.metalDark); P.rect(16, 8, 1, 9, PAL.metalDark); P.px(3, 9, PAL.metal); P.px(16, 15, PAL.metal);
@@ -176,6 +177,15 @@ export function cartSprite(frame = 0) {
     for (const wx of [8, 20]) { const o = frame ? 1 : 0;                                                       // wheels
       P.disc(wx, 15, 4, PAL.woodDark); P.disc(wx, 15, 3, PAL.wood); P.px(wx, 15, PAL.metalDark);
       P.px(wx - 2 + o, 13, PAL.woodDark); P.px(wx + 2 - o, 17, PAL.woodDark); P.px(wx + 2 - o, 13, PAL.woodDark); P.px(wx - 2 + o, 17, PAL.woodDark); P.px(wx, 12, PAL.metalDark); P.px(wx, 18, PAL.metalDark); P.px(wx - 3, 15, PAL.metalDark); P.px(wx + 3, 15, PAL.metalDark); }
+  }, 'rgba(40,25,15,0.9)');
+}
+// The truck (28×20): a cab, a flatbed with slatted sides, two wheels; frames roll the wheels.
+export function truckSprite(frame = 0) {
+  return sprite(`truck${frame}`, 28, 20, P => {
+    P.rect(2, 7, 18, 7, PAL.wood); P.rect(2, 7, 18, 1, PAL.woodLight); P.rect(2, 13, 18, 1, PAL.woodDark); for (let x = 4; x < 20; x += 4) P.rect(x, 8, 1, 5, PAL.woodDark);   // the flatbed and its slats
+    P.rect(20, 4, 7, 10, '#4f8fcf'); P.rect(20, 4, 7, 1, '#7fb4e6'); P.rect(21, 5, 5, 4, PAL.window); P.rect(26, 11, 1, 2, PAL.gold); P.rect(20, 13, 7, 1, '#3f72a8');        // the cab, its window, a lamp
+    P.rect(1, 13, 26, 2, PAL.metalDark);                                                                                                                                   // the chassis
+    for (const wx of [7, 22]) { const o = frame ? 1 : 0; P.disc(wx, 16, 3, '#2a2a2a'); P.disc(wx, 16, 2, '#444'); P.px(wx + o - 1, 16, PAL.metalLight); P.px(wx, 15 + o, PAL.metalDark); }   // wheels
   }, 'rgba(40,25,15,0.9)');
 }
 // A parcel left in the crate: brown paper, string, a label.
@@ -499,7 +509,7 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.

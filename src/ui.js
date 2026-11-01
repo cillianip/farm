@@ -33,7 +33,7 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
   else if (item.kind === 'pump') src = pumpIcon(item.level || 0);
-  else if (['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter'].includes(item.kind)) src = stationIcon(item.kind);
+  else if (['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'dcrate'].includes(item.kind)) src = stationIcon(item.kind);
   else if (item.kind === 'chest') src = chestSprite(false, false, item.level || 0);
   else if (item.kind === 'withered') src = witheredSprite();
   else if (item.kind === 'pulled') { const sp = species[item.species]; src = sp ? cropSprite(sp, item.unknown ? 1 : 2, 0) : witheredSprite(); }
@@ -134,7 +134,7 @@ export class UI {
     if (tile.t === 'crate') {
       const n = S.crateCount(s);
       html += `<div class="pc-sec">Inside</div><div class="pc-row"><span>Filled</span><span>${n} / ${s.crate.capacity}</span></div>${bar(n / s.crate.capacity * 100, '#f6c453')}`;
-      const P = S.priceCrate(s, s.crate.items);
+      const P = S.priceCrate(s, S.allCrateItems(s));
       for (const l of P.lines) { html += `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>`; if (l.cut) html += `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>`; }
       if (n) { html += `<div class="pc-row"><span>Tonight</span><span>+${formatMoney(P.total)}</span></div>`; if (P.lines.some(l => l.cut)) html += `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price; the rest sell on cheaper.</div>`; }
       else if (s.crate.lastSale) html += `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>`;
@@ -398,7 +398,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id.startsWith('chest') ? chestSprite(false, false, +item.id.slice(5) || 0) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id.startsWith('chest') ? chestSprite(false, false, +item.id.slice(5) || 0) : item.id === 'dcrate' ? crateSprite(0, true) : item.id === 'truck' ? stationIcon('truck') : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'dcrate'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -541,7 +541,7 @@ export class UI {
       if (!s.crate.items.length) inside.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
       left.appendChild(inside);
       const details = el('div', 'details');
-      const sum = () => { const P = S.priceCrate(s, s.crate.items); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };
+      const sum = () => { const P = S.priceCrate(s, S.allCrateItems(s)); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };
       setDetails(details, sum());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       const amt = this.crateAmount || 1;

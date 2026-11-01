@@ -110,6 +110,9 @@ export const CONFIG = {
   // the next `full` the first step, and so on; the cart sells the surplus on cheaper. A crate of one crop pays less
   // per crop than a crate of three, so variety (and every new species bred) is worth money.
   demand: { full: 8, steps: [0.6, 0.4] },
+  // The truck (Build 72): once the crate is fully extended the catalogue sells a truck that replaces the cart and empties every
+  // delivery crate on the farm along with the one by the porch; delivery crates are set where the belts end.
+  truck: { price: 900, cratePrice: 150, crateHolds: 36 },
   // What drying does to a price: a dried crop is worth its fresh price × (base + sugar × the sugar gene), so a bland crop loses
   // by drying and a sweet one doubles; stars count for half as much once it is dried (the product is the thing, not the fruit).
   // Dried goods are their own line at the cart's buyer (their own `demand.full`) and the market's shoppers ask for them by name.

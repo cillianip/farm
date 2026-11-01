@@ -1282,6 +1282,43 @@ await test('splitter and filter: each crop in turn down two ways; dried goods on
   assert.equal(S.heldCount(freshTile.load), 1, 'swapped: the dried one took the other way');
   assert.equal(S.useItem(s, 0, X + 2, y0).float, 'Picked up', 'the hoe lifts the filter'); assert.ok(tile(X + 2, y0).belt && !tile(X + 2, y0).obj); assert.ok(s.inventory.slots.some(i => i?.kind === 'filter'));
 });
+await test('the truck: sold once the crate is fully extended; delivery crates set on open grass take crops by hand, from a hopper beside them and from a belt that ends at them; the night empties them all as one order', async () => {
+  const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], T2 = CONFIG.truck, carrot = byName(s, 'Carrot');
+  s.money = 5000; assert.equal(catalog(s).find(i => i.id === 'truck').blocked, 'Extend the crate fully first'); assert.equal(catalog(s).find(i => i.id === 'dcrate').blocked, 'Needs the truck');
+  s.crate.extensions = 3; assert.ok(!catalog(s).find(i => i.id === 'truck').blocked); assert.ok(placeOrder(s, 'truck').ok); S.sleep(s); S.collectParcels(s); assert.ok(s.truck, 'the truck came');
+  assert.ok(!catalog(s).find(i => i.id === 'dcrate').blocked); assert.ok(placeOrder(s, 'dcrate').ok); S.sleep(s); S.collectParcels(s); const di = s.inventory.slots.findIndex(i => i?.kind === 'dcrate'); assert.ok(di >= 0 || s.chest.slots.some(i => i?.kind === 'dcrate'), 'a crate to set');
+  if (di < 0) { addItem(s.inventory, { kind: 'dcrate', qty: 1 }); }
+  const y0 = Y + 4; s.player.x = X + 2.5; s.player.y = y0 + 1.5; const pr = S.useItem(s, s.inventory.slots.findIndex(i => i?.kind === 'dcrate'), X + 2, y0); assert.ok(pr.ok, pr.msg); assert.ok(S.isDcrate(tile(X + 2, y0)));
+  addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 5 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
+  let r = S.putInDcrate(s, ci, X + 2, y0, 2); assert.ok(r.ok && r.count === 2, JSON.stringify(r)); assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 2);
+  // a hopper beside it tips in at the pickup; a belt that ends at it flows in
+  for (let x = X + 3; x <= X + 6; x++) tile(x, y0).line = true; tile(X + 3, y0).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(X + 4, y0 + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
+  tile(X + 2, y0 - 1).belt = true; tile(X + 2, y0 - 1).load = [{ species: carrot.id, q: 0, qty: 1, product: 'dried' }]; tile(X + 3, y0 - 1).belt = true; tile(X + 3, y0 - 1).load = []; s.beltRev = (s.beltRev || 0) + 1;
+  assert.ok(S.hopperByCrate(X + 3, y0, s), 'the hopper stands by a delivery crate');
+  assert.equal(S.beltDir(s, X + 2, y0 - 1), 2, 'the belt that ends at the crate flows south into it: ' + S.beltDir(s, X + 2, y0 - 1));
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0; for (let i = 0; i < CONFIG.power.belt.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 3, 'the dried carrot came off the belt');
+  s.crate.items = [{ species: carrot.id, q: 0, qty: 2 }];
+  const all = S.allCrateItems(s); assert.equal(all.reduce((n, i) => n + i.qty, 0), 5);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
+  assert.ok(rep.sale && rep.sale.count === 8, 'porch crate 2 + delivery crate 2 + dried 1 + hopper 3 = 8: ' + JSON.stringify(rep.sale)); assert.equal(S.dcrateCount(tile(X + 2, y0).obj), 0); assert.equal(tile(X + 3, y0).obj.held.length, 0);
+  assert.equal(rep.sale.lines.find(l => !l.product).qty, 7, 'one order for fresh carrots across both crates'); 
+  s.player.x = X + 2.5; s.player.y = y0 + 1.5; s.inventory.slots[4] = null;   // the night took you home; a pocket free
+  const lift = S.useItem(s, 0, X + 2, y0); assert.equal(lift.float, 'Picked up', 'the hoe lifts an empty delivery crate: ' + lift.msg);
+});
+await test('the filter sorts by a species you show it, and back to dried goods', () => {
+  const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt, carrot = byName(s, 'Carrot'), turnip = byName(s, 'Turnip');
+  const y0 = Y + 4; for (let x = X; x <= X + 5; x++) tile(x, y0).line = true; tile(X + 1, y0 + 1).obj = { kind: 'generator', fuel: 9 }; tile(X + 5, y0).obj = { kind: 'hopper', held: [] }; s.lineRev = 1;
+  for (let x = X; x <= X + 4; x++) { tile(x, y0).belt = true; tile(x, y0).load = []; } tile(X + 2, y0 - 1).belt = true; tile(X + 2, y0 - 1).load = []; tile(X + 2, y0 - 2).obj = { kind: 'chest', level: 0, slots: new Array(16).fill(null) };
+  tile(X + 2, y0).obj = { kind: 'filter', rule: 'dried', swap: false }; s.beltRev = 1;
+  assert.ok(S.setFilter(s, X + 2, y0, { kind: 'seed', species: turnip.id, qty: 1 }).ok); assert.equal(tile(X + 2, y0).obj.rule, 'species'); assert.ok(/Turnip goes/.test(S.describeSplit(s, X + 2, y0).sub));
+  tile(X + 1, y0).load = [{ species: carrot.id, q: 0, qty: 2 }, { species: turnip.id, q: 0, qty: 2 }]; s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0;
+  for (let i = 0; i < B.stepMinutes * 2; i++) tickMinutes(s, 1);
+  const A = S.splitOutputs(s, X + 2, y0)[0], aTile = A.dir === 0 ? tile(X + 2, y0 - 1) : tile(X + 3, y0), bTile = A.dir === 0 ? tile(X + 3, y0) : tile(X + 2, y0 - 1);
+  assert.ok(aTile.load.every(l => l.species === turnip.id) && S.heldCount(aTile.load) === 2, 'turnips one way: ' + JSON.stringify(aTile.load)); assert.ok(bTile.load.every(l => l.species === carrot.id) && S.heldCount(bTile.load) === 2, 'carrots the other');
+  assert.ok(S.setFilter(s, X + 2, y0, { kind: 'product', product: 'dried', species: carrot.id, qty: 1 }).ok); assert.equal(tile(X + 2, y0).obj.rule, 'dried');
+  assert.equal(S.setFilter(s, X + 2, y0, { kind: 'fuel', qty: 1 }).msg, 'Show it a crop, a seed or dried goods');
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

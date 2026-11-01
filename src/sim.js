@@ -361,7 +361,7 @@ export function priceCrate(state, items) {
 }
 export const crateValue = state => priceCrate(state, state.crate.items).total;
 // Second-hand: the cart buys machines, pipe, line and belt back at a share of the list price. Each takes a crate place.
-export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'pipe', 'line', 'belt', 'chest'];
+export const SELLABLE = ['sprinkler', 'pump', 'generator', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'pipe', 'line', 'belt', 'chest', 'dcrate'];
 export function listPrice(it) {
   const C = CONFIG;
   switch (it.kind) {
@@ -373,6 +373,7 @@ export function listPrice(it) {
     case 'dryer': return C.power.dryer.price;
     case 'chest': return C.chest.field.tiers[Math.min(C.chest.field.tiers.length - 1, it.level || 0)].price;
     case 'splitter': return C.power.splitter.price;
+    case 'dcrate': return C.truck.cratePrice;
     case 'filter': return C.power.filter.price;
     case 'pipe': return C.pipe.packPrice / C.pipe.packSize;
     case 'line': return C.power.line.packPrice / C.power.line.packSize;
@@ -397,13 +398,28 @@ export function putInCrate(state, slotIndex, n = Infinity) {
   if (full && today(state).crateFullAt == null) today(state).crateFullAt = hourOf(state);
   return { ok: true, msg: '', float: `+${take} ${name}`, count: take, full };
 }
-// The overnight pickup: everything in the crate is sold at today's prices.
+export const isDcrate = t => t?.obj?.kind === 'dcrate';
+export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
+export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0);
+// everything waiting for the pickup, the porch crate first then each delivery crate (one buyer's order across all of them)
+export const allCrateItems = state => [...state.crate.items, ...dcrateTiles(state).flatMap(({ t }) => t.obj.items || [])];
+// A crop in hand into a delivery crate: crops and dried goods only, as much as fits.
+export function putInDcrate(state, slotIndex, x, y, n = Infinity) {
+  const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isDcrate(t) || !it) return fail('');
+  if (!isFood(it)) return fail('Crops and dried goods go in a delivery crate');
+  if (!inReach(state, x, y)) return fail('Too far');
+  const o = t.obj, room = CONFIG.truck.crateHolds - dcrateCount(o); if (room <= 0) return fail('The crate is full. The truck comes tonight.');
+  const take = Math.min(n, it.qty, room); removeFromSlot(state.inventory, slotIndex, take);
+  const key = pileKey(it), have = o.items.find(c => pileKey(c) === key); if (have) have.qty += take; else o.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) });
+  return { ok: true, msg: '', float: `+${take} ${it.kind === 'crop' ? state.species[it.species]?.name || 'crop' : itemName(it, state.species)}`, count: take, full: dcrateCount(o) >= CONFIG.truck.crateHolds };
+}
+// The overnight pickup: everything in the crate, and in every delivery crate, is sold at today's prices.
 export function collectCrate(state) {
-  drainHoppers(state);   // the hoppers tip into the crate first, as much as fits
-  if (!state.crate.items.length) return null;
-  const { lines, total, count } = priceCrate(state, state.crate.items);
+  drainHoppers(state);   // the hoppers tip into the crates first, as much as fits
+  const items = allCrateItems(state); if (!items.length) return null;
+  const { lines, total, count } = priceCrate(state, items);
   state.money += total; state.lifetime += total; state.stats.sold += count; state.stats.earned += total;
-  state.crate.items = [];
+  state.crate.items = []; for (const { t } of dcrateTiles(state)) t.obj.items = [];
   const sale = { count, total, lines };
   state.crate.lastSale = sale;
   return sale;
@@ -441,7 +457,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length || t.obj.out?.length || t.obj.doing) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
+    if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length || t.obj.out?.length || t.obj.doing || t.obj.items?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
     // under a bed they stay put: flatten the bed first, then the hoe lifts them
@@ -531,6 +547,14 @@ export function useItem(state, slotIndex, x, y) {
     removeFromSlot(state.inventory, slotIndex, 1);
     t.belt = true; t.load = []; state.beltRev = (state.beltRev || 0) + 1;
     return { ok: true, msg: '', float: beltRunning(state, x, y) ? 'Laid' : 'Laid (still)' };
+  }
+  if (item.kind === 'dcrate') {
+    if (!state.truck) return fail('The truck has to come first');
+    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : t?.tilled ? 'Flatten the bed first' : 'Set it on open grass');
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
+    return { ok: true, msg: 'The truck empties it at night; a hopper beside it tips in, and belt can end at it', float: 'Set' };
   }
   if (item.kind === 'splitter' || item.kind === 'filter') {
     if (!t.belt) return fail('It sits on a belt');
@@ -865,7 +889,7 @@ export function toggleGenerator(state, x, y) {
   return { ok: true, msg: '', float: t.obj.off ? 'Off' : 'On', off: t.obj.off };
 }
 // A hopper beside the crate (any of the eight tiles around it) tips into it when the cart comes.
-export const hopperByCrate = (x, y) => Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1;
+export const hopperByCrate = (x, y, state = null) => (Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) || (!!state && N4.some(([dx, dy]) => isDcrate(tileAt(state.world, x + dx, y + dy))));
 const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
 // Move crops from one pile to another, as much as fits under `cap`. Returns how many moved.
 function pour(from, to, cap) { let n = 0; while (from.length && heldCount(to) < cap) { const it = from[0], take = Math.min(cap - heldCount(to), it.qty); addHeld(to, { ...it, qty: take }); it.qty -= take; n += take; if (!it.qty) from.shift(); } return n; }
@@ -893,6 +917,7 @@ export function beltNet(state) {
     const queue = [];
     const pull = (x, y, kind) => { sinks.set(idx(x, y), kind); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && live.has(k) && beltN(x + dx, y + dy) <= 1 && (!dist.has(k) || dist.get(k) > 1)) { dist.set(k, 1); queue.push(k); } } };   // only a belt that ends at it: a chest beside a run never captures the run
     for (const { x, y } of chestTiles(state)) pull(x, y, 'chest');
+    for (const { x, y } of dcrateTiles(state)) pull(x, y, 'crate');
     { const C = objectPos(state, 'compost'); if (C && tileAt(w, C.x, C.y)?.t === 'compost') pull(C.x, C.y, 'compost'); }
     while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.belt && live.has(k) && !barrier(x + dx, y + dy) && (!dist.has(k) || dist.get(k) > d + 1)) { dist.set(k, d + 1); queue.push(k); } } } }
   const out = { rev, w, dist, sinks }; BELTS.set(state, out);
@@ -903,7 +928,7 @@ export const beltRunning = (state, x, y) => !!tileAt(state.world, x, y)?.belt &&
 // the powered hopper itself at the end of the run; -1 when it stands still.
 export function beltDir(state, x, y) {
   const w = state.world, net = beltNet(state), d = net.dist.get(y * w.w + x); if (d == null) return -1;
-  if (d === 1) { for (const kind of ['hopper', 'dryer', 'chest', 'compost']) for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (net.sinks.get(k) === kind) return i; } return -1; }
+  if (d === 1) { for (const kind of ['hopper', 'dryer', 'crate', 'chest', 'compost']) for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (net.sinks.get(k) === kind) return i; } return -1; }
   for (let i = 0; i < 4; i++) { const [dx, dy] = N4[i], k = (y + dy) * w.w + x + dx; if (tileAt(w, x + dx, y + dy)?.belt && net.dist.get(k) === d - 1) return i; }
   return -1;
 }
@@ -941,6 +966,7 @@ function sinkTake(state, n, load) {
   if (n.obj?.kind === 'hopper') return pour(load, n.obj.held = n.obj.held || [], CONFIG.power.hopper.holds);
   if (n.obj?.kind === 'dryer') return pour(load, n.obj.held = n.obj.held || [], CONFIG.power.dryer.holds);
   let moved = 0;
+  if (n.obj?.kind === 'dcrate') { const o = n.obj; o.items = o.items || []; while (load.length) { const room = CONFIG.truck.crateHolds - dcrateCount(o); if (room <= 0) break; const it = load[0], take = Math.min(room, it.qty), key = pileKey(it), have = o.items.find(c => pileKey(c) === key); if (have) have.qty += take; else o.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) }); it.qty -= take; moved += take; if (!it.qty) load.shift(); } return moved; }
   if (n.obj?.kind === 'chest') { while (load.length) { const it = load[0], left = addItem(n.obj, pileItem(it)); const got = it.qty - left; if (!got) break; moved += got; it.qty = left; if (!it.qty) load.shift(); } return moved; }
   if (n.t === 'compost') {
     const cp = state.compost; if (cp.running || cp.ready) return 0;
@@ -984,8 +1010,16 @@ function splitStep(state, t, x, y) {
     }
   } else {
     const A = outs[o.swap ? Math.min(1, outs.length - 1) : 0], B = outs[o.swap ? 0 : Math.min(1, outs.length - 1)];
-    for (let i = t.load.length - 1; i >= 0; i--) { const match = o.rule === 'dried' ? !!t.load[i].product : false; const to = match ? A : B; for (let guard = 0; guard < 16 && t.load[i] && (!!t.load[i].product) === match; guard++) if (!sendOne(state, t.load, i, to)) break; }
+    const matchOf = it => o.rule === 'species' ? it.species === o.species : !!it.product;
+    for (let i = t.load.length - 1; i >= 0; i--) { const match = matchOf(t.load[i]); const to = match ? A : B; for (let guard = 0; guard < 16 && t.load[i] && matchOf(t.load[i]) === match; guard++) if (!sendOne(state, t.load, i, to)) break; }
   }
+}
+// Show the filter a thing and it sorts by that: a crop or a seed for its species, dried goods for dried.
+export function setFilter(state, x, y, item) {
+  const t = tileAt(state.world, x, y); if (t?.obj?.kind !== 'filter' || !item) return fail('');
+  if (item.kind === 'product') { t.obj.rule = 'dried'; t.obj.species = null; return { ok: true, msg: '', float: 'Sorts dried goods' }; }
+  if (item.kind === 'crop' || item.kind === 'seed') { t.obj.rule = 'species'; t.obj.species = item.species; return { ok: true, msg: '', float: `Sorts ${state.species[item.species]?.name || 'that'}` }; }
+  return fail('Show it a crop, a seed or dried goods');
 }
 export function swapFilter(state, x, y) { const t = tileAt(state.world, x, y); if (t?.obj?.kind !== 'filter') return fail(''); t.obj.swap = !t.obj.swap; return { ok: true, msg: '', float: 'Swapped' }; }
 // the hover card's words for a splitter or a filter
@@ -995,7 +1029,8 @@ export function describeSplit(state, x, y) {
   if (!beltRunning(state, x, y)) return { title: o.kind === 'splitter' ? 'Splitter' : 'Filter', sub: 'Still: this belt runs to nothing.' };
   if (o.kind === 'splitter') return { title: 'Splitter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `Sends each crop in turn: ${outs.map(word).join(', ')}.` };
   const A = outs[o.swap ? Math.min(1, outs.length - 1) : 0], B = outs[o.swap ? 0 : Math.min(1, outs.length - 1)];
-  return { title: 'Filter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `Dried goods go ${word(A)}, everything else ${word(B)}. Click it with empty hands to swap.` };
+  const what = o.rule === 'species' ? `${state.species[o.species]?.name || 'That species'} goes` : 'Dried goods go';
+  return { title: 'Filter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `${what} ${word(A)}, everything else ${word(B)}. Click it with a crop, a seed or dried goods to sort by that; empty hands swap the sides.` };
 }
 // Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
 // in its reach into its basket and drops the basket on the belt beside it. Returns crops picked.
@@ -1056,16 +1091,12 @@ export function loadDryer(state, slotIndex, x, y, n = Infinity) {
 export function drainHoppers(state) { const n = drainHoppersInto(state); if (n && SFX.length < 40) SFX.push({ type: 'cascade', x: BUILDINGS.crate.x, y: BUILDINGS.crate.y }); return n; }
 function drainHoppersInto(state) {
   let moved = 0;
+  const tip = (held, items, cap, count) => { while (held.length) { const room = cap - count(); if (room <= 0) return; const it = held[0], take = Math.min(room, it.qty), key = pileKey(it); const have = items.find(c => pileKey(c) === key); if (have) have.qty += take; else items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) }); it.qty -= take; moved += take; if (!it.qty) held.shift(); } };
   for (const { x, y, t } of machineTiles(state, 'hopper')) {
-    if (!hopperByCrate(x, y)) continue;   // a hopper elsewhere is a store you empty by hand
+    if (!hopperByCrate(x, y, state)) continue;   // a hopper elsewhere is a store you empty by hand
     const held = t.obj.held || [];
-    while (held.length) {
-      const room = state.crate.capacity - crateCount(state); if (room <= 0) return moved;
-      const it = held[0], take = Math.min(room, it.qty), key = pileKey(it);
-      const have = state.crate.items.find(c => pileKey(c) === key);
-      if (have) have.qty += take; else state.crate.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) });
-      it.qty -= take; moved += take; if (!it.qty) held.shift();
-    }
+    if (Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) tip(held, state.crate.items, state.crate.capacity, () => crateCount(state));
+    for (const [dx, dy] of N4) { const n = tileAt(state.world, x + dx, y + dy); if (isDcrate(n) && held.length) tip(held, n.obj.items = n.obj.items || [], CONFIG.truck.crateHolds, () => dcrateCount(n.obj)); }
   }
   return moved;
 }
