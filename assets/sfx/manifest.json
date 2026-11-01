@@ -22,9 +22,9 @@
  }, "wither": [], "fertilise": {
   "files": ["kenney/footstep_grass_000.ogg", "kenney/footstep_grass_001.ogg", "kenney/footstep_grass_002.ogg", "kenney/footstep_grass_003.ogg", "kenney/footstep_grass_004.ogg"], "gain": 0.3
  }, "seedback": [], "chest": {
-  "files": ["kenney/metal_latch.ogg"], "gain": 0.5
+  "files": ["kenney/impact_wood_light_000.ogg", "kenney/impact_wood_light_001.ogg", "kenney/impact_wood_light_002.ogg", "kenney/impact_wood_light_003.ogg", "kenney/impact_wood_light_004.ogg"], "gain": 0.4, "rate": 0.6
  }, "chestClose": {
-  "files": ["kenney/book_place_1.ogg", "kenney/book_place_2.ogg", "kenney/book_place_3.ogg"], "gain": 0.5
+  "files": ["kenney/impact_wood_heavy_000.ogg", "kenney/impact_wood_heavy_001.ogg", "kenney/impact_wood_heavy_002.ogg", "kenney/impact_wood_heavy_003.ogg", "kenney/impact_wood_heavy_004.ogg"], "gain": 0.35, "rate": 0.75
  }, "move": {
   "files": ["kenney/handle_small_leather.ogg", "kenney/handle_small_leather_2.ogg"], "gain": 0.4
  }, "rackPlace": {

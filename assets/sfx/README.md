@@ -61,3 +61,5 @@ The interface no longer makes a sound except a light wooden click when a panel o
 tilt. The chest is `metal_latch` to open and `book_place` to shut. 48 effects and 6 loops remain; 38 have recordings
 (`seeds`, `seedsBred`, `fertilise`, `scoop`, `beltLay`, `passout` joined the list). Gains are lower across the board: keep new
 recordings around −12 dB so nothing jumps out.
+
+A manifest entry may carry `rate`: the recording plays pitched by it (0.6 is a deep, slow version of the same file). The chest uses low-pitched wood knocks since Build 78.

@@ -131,14 +131,26 @@ export class Game {
       near({ ...MARKET.store, w: 1, h: 1 }, () => this.ui.openChest(this.state.market.store));
       if (best) best.open(); return;
     }
-    const stations = [['seedrack', { ...S.objectPos(this.state, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => this.state.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['board', BUILDINGS.board, () => this.ui.openCrate()], ['truck', TRUCK_SPOT, () => this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
-    for (const { x, y, t } of S.chestTiles(this.state)) stations.push(['fchest', { x, y, w: 1, h: 1 }, () => this.ui.openChest(t.obj)]);
-    const BP = S.objectPos(this.state, 'bench'); if (BP && this.state.carrying !== 'bench') stations.push(['bench', { ...BP, w: 1, h: 1 }, () => this.ui.openBench()]);
-    const CP = S.objectPos(this.state, 'compost'); if (CP && this.state.carrying !== 'compost') stations.push(['compost', { ...CP, w: 1, h: 1 }, () => this.ui.openCompost()]);
-    for (const { x, y } of S.machineTiles(this.state, 'dryer')) stations.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y)]);
-    let best = null;
-    for (const [key, b, open] of stations) { const p = this.state.player, cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h), d = Math.hypot(p.x - cx, p.y - cy); if (d < 2.2 && (!best || d < best.d)) best = { d, open }; }
-    if (best) best.open();
+    const t = this.eTarget(); if (t) t.open();
+  }
+  // What E opens on the farm: every station with a panel, as [kind, box, open, x, y].
+  eStations() {
+    const s = this.state, out = [['seedrack', { ...S.objectPos(s, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', BUILDINGS.crate, () => s.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
+    for (const { x, y, t } of S.chestTiles(s)) out.push(['fchest', { x, y, w: 1, h: 1 }, () => this.ui.openChest(t.obj), x, y]);
+    const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') out.push(['bench', { ...BP, w: 1, h: 1 }, () => this.ui.openBench()]);
+    const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') out.push(['compost', { ...CP, w: 1, h: 1 }, () => this.ui.openCompost()]);
+    for (const { x, y } of S.machineTiles(s, 'dryer')) out.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y), x, y]);
+    if (s.truck) { out.push(['board', BUILDINGS.board, () => this.ui.openCrate()]); out.push(['truck', TRUCK_SPOT, () => this.ui.openCrate()]); }
+    return out;
+  }
+  // The one E would open: the station under the cursor if it is one and you are near it, else the nearest within reach.
+  eTarget() {
+    if (this.state.market?.at || this.sleeping || this.state.carrying) return null;
+    const p = this.state.player, stations = this.eStations(), dist = b => { const cx = Math.min(Math.max(p.x, b.x), b.x + b.w), cy = Math.min(Math.max(p.y, b.y), b.y + b.h); return Math.hypot(p.x - cx, p.y - cy); };
+    const h = this.hit;
+    if (h) { const hov = stations.find(([key, b, , x, y]) => key === h.kind && (x === undefined || (x === h.x && y === h.y))); if (hov && dist(hov[1]) < 2.2) return { key: hov[0], b: hov[1], open: hov[2] }; }
+    let best = null; for (const [key, b, open] of stations) { const d = dist(b); if (d < 2.2 && (!best || d < best.d)) best = { d, key, b, open }; }
+    return best;
   }
   openSign() { markCatalogueSeen(this.state); this.ui.openCatalogue(); }
   // Left click: hotbar slot → select; rack → take tools; well → fill the can; soil → use the selected tool (animated).
@@ -651,6 +663,7 @@ export class Game {
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();
+    if (!this.ui.openPanel && !this.action) { const t = this.eTarget(); if (t && !(this.hit && this.hit.kind === t.key)) { const u = CONFIG.scale, cs = Math.max(1, Math.round(u / 2)), bx = (t.b.x + t.b.w / 2) * T - cx, by = t.b.y * T - cy - 6 * u, a = 0.75 + 0.25 * Math.sin(now / 220); ctx.globalAlpha = a; ctx.fillStyle = '#3b2314'; ctx.fillRect(bx - 5 * cs, by - 6 * cs, 10 * cs, 11 * cs); ctx.fillStyle = '#f5e6c3'; ctx.fillRect(bx - 4 * cs, by - 5 * cs, 8 * cs, 9 * cs); drawText(ctx, 'E', bx - textWidth('E', cs) / 2, by - 4 * cs, '#3b2314', cs); ctx.globalAlpha = 1; } }   // the E marker: which station the key opens
     if (this.netView) this.drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1);
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
     if (!this.ui.openPanel && this.mouse.inside && !s.carrying) {
