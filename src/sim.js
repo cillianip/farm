@@ -86,7 +86,7 @@ export function migrate(state) {
   M.ensureMarket(state);
   { const rs = tileAt(state.world, BUILDINGS.roadsign.x, BUILDINGS.roadsign.y); if (rs && rs.t === 'grass') { rs.t = 'roadsign'; rs.tilled = false; rs.crop = null; rs.obj = null; } }   // older saves: the sign to the market
   // Builds 73 to 76 put the bay on your land west of the track: give those tiles back (the board, the stack corner, the truck's spot)
-  for (const [x, y, kinds] of [[31, 24, ['board']], [30, 25, ['cstack']], [32, 25, ['truck']], [33, 25, ['truck']], [32, 26, ['truck']], [33, 26, ['truck']]]) { const t = tileAt(state.world, x, y); if (t && kinds.includes(t.t)) t.t = 'grass'; }
+  for (const [x, y, kinds] of [[31, 24, ['board']], [30, 25, ['cstack']], [32, 25, ['truck']], [33, 25, ['truck']], [32, 26, ['truck']], [33, 26, ['truck']], [37, 29, ['truck']], [38, 29, ['truck']], [37, 30, ['truck']], [38, 30, ['truck']], [34, 29, ['board']]]) { const t = tileAt(state.world, x, y); if (t && kinds.includes(t.t)) t.t = 'grass'; }
   { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'board' && !state.truck) bd.t = 'grass'; }
   state.bay = { level: 2 };
   if (state.truck === true) state.truck = { level: 0, bed: [] };   // Build 76: the truck is a thing with a bed
@@ -392,6 +392,7 @@ const crateKey = it => it.kind && it.kind !== 'crop' && it.kind !== 'product' ? 
 // Move crops, or machines for the second-hand price, from a bag slot into the crate (as many as fit).
 export function putInCrate(state, slotIndex, n = Infinity) {
   const it = state.inventory.slots[slotIndex];
+  if (state.truck) return fail('The porch crate is gone: fill a crate in the bay and load the truck');
   if (!it || (!isFood(it) && !SELLABLE.includes(it.kind))) return fail('Crops go in the crate, and machines to sell second-hand');
   const room = state.crate.capacity - crateCount(state);
   if (room <= 0) { today(state).crateRefused++; return fail('The crate is full. The cart comes tonight.'); }
@@ -412,14 +413,7 @@ export const truckSlots = state => state.truck ? truckTier(state).slots : 0;
 export function parkTruck(state) {
   for (let y = TRUCK_SPOT.y; y < TRUCK_SPOT.y + TRUCK_SPOT.h; y++) for (let x = TRUCK_SPOT.x; x < TRUCK_SPOT.x + TRUCK_SPOT.w; x++) { const t = tileAt(state.world, x, y); if (t && (t.t === 'grass' || t.t === 'truck')) { t.t = 'truck'; t.tilled = false; t.crop = null; t.obj = null; t.belt = false; t.load = null; } }
   const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; }   // and the board goes up
-}
-// The haulier keeps a few empties standing on the gravel (emptiesOut, or the truck's slots if fewer): each morning, and again
-// whenever you load a full crate, so the bay stays walkable and the supply never runs dry.
-export const emptiesWanted = state => Math.min(CONFIG.truck.emptiesOut, truckSlots(state));
-export function dropEmpties(state) {
-  if (!state.truck) return 0; let n = 0; const b = BAY;
-  for (let y = b.y0; y <= b.y1 && bayCrates(state).length < emptiesWanted(state); y++) for (let x = b.x0; x <= b.x1 && bayCrates(state).length < emptiesWanted(state); x++) { const t = tileAt(state.world, x, y); if (t && t.t === 'grass' && !t.track && !t.tilled && !t.obj && !isTruckTile(x, y)) { t.obj = { kind: 'dcrate', items: [] }; n++; } }
-  if (n) state.beltRev = (state.beltRev || 0) + 1; return n;
+  const cr = tileAt(state.world, BUILDINGS.crate.x, BUILDINGS.crate.y); if (cr && cr.t === 'crate') { cr.t = 'grass'; state.crate.items = []; }   // the porch crate is gone: the truck takes crates from the bay
 }
 // Lift a crate, full or empty, and carry it; set it down on open ground, or click the truck to load it.
 export function pickUpCrate(state, x, y) {
@@ -437,8 +431,7 @@ export function loadTruck(state) {
   if (!dcrateCount(state.carriedCrate)) return fail('Only full crates go on the truck');
   const bed = state.truck.bed = state.truck.bed || []; if (bed.length >= truckSlots(state)) return fail(`The truck is full: ${truckSlots(state)} crates`);
   bed.push({ items: state.carriedCrate.items }); state.carriedCrate = null; state.carrying = null;
-  const fresh = dropEmpties(state);   // the haulier hands you an empty back
-  return { ok: true, msg: fresh ? 'An empty crate took its place on the gravel' : '', float: `Loaded ${bed.length} / ${truckSlots(state)}` };
+  return { ok: true, msg: '', float: `Loaded ${bed.length} / ${truckSlots(state)}` };
 }
 export const inBayOf = (state, x, y) => inBay(x, y, bayLevel(state));
 export const baySpotCount = state => baySpots(state.world, bayLevel(state));
@@ -456,7 +449,7 @@ export function setCrate(state, x, y) {
 export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
 export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0);
 // everything waiting for the pickup, the porch crate first then each delivery crate (one buyer's order across all of them)
-export const allCrateItems = state => [...state.crate.items, ...(state.truck?.bed || []).flatMap(c => c.items || [])];
+export const allCrateItems = state => state.truck ? (state.truck.bed || []).flatMap(c => c.items || []) : [...state.crate.items];
 export const bayWaiting = state => bayCrates(state).reduce((n, { t }) => n + dcrateCount(t.obj), 0);   // crops in crates on the gravel, not loaded yet
 // the board by the bay: what is waiting, what it fetches tonight, and what sits in crates outside the bay
 export function bayBoard(state) { const P = priceCrate(state, allCrateItems(state)); const outside = dcrateTiles(state).filter(({ x, y }) => !inBayOf(state, x, y)).reduce((n, { t }) => n + dcrateCount(t.obj), 0); return { count: P.count, total: P.total, lines: P.lines, loaded: state.truck?.bed?.length || 0, slots: truckSlots(state), crates: bayCrates(state).length, waiting: bayWaiting(state), outside }; }
@@ -965,7 +958,7 @@ export function toggleGenerator(state, x, y) {
   return { ok: true, msg: '', float: t.obj.off ? 'Off' : 'On', off: t.obj.off };
 }
 // A hopper beside the crate (any of the eight tiles around it) tips into it when the cart comes.
-export const hopperByCrate = (x, y, state = null) => (Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) || (!!state && N4.some(([dx, dy]) => isDcrate(tileAt(state.world, x + dx, y + dy))));
+export const hopperByCrate = (x, y, state = null) => (!state?.truck && Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) || (!!state && N4.some(([dx, dy]) => isDcrate(tileAt(state.world, x + dx, y + dy))));
 const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
 // Move crops from one pile to another, as much as fits under `cap`. Returns how many moved.
 function pour(from, to, cap) { let n = 0; while (from.length && heldCount(to) < cap) { const it = from[0], take = Math.min(cap - heldCount(to), it.qty); addHeld(to, { ...it, qty: take }); it.qty -= take; n += take; if (!it.qty) from.shift(); } return n; }
@@ -1030,12 +1023,15 @@ export function beltStep(state) {
     for (const o of by) { pour(t.obj.held, o.t.load = o.t.load || [], B.holds); if (!t.obj.held.length) break; }
   }
   // each powered dryer sets its tray on a running belt beside it that leads away (not the one feeding it)
+  for (const { x, y, t } of machineTiles(state, 'hopper')) { if (!t.obj.held?.length || t.obj.off) continue; for (const [dx, dy] of N4) { const n = tileAt(w, x + dx, y + dy); if (isDcrate(n) && t.obj.held.length) tipInto(t.obj.held, n.obj); } }   // a hopper by a crate tips in as it goes
   for (const { x, y, t } of machineTiles(state, 'dryer')) {
     if (!pw.on.has(idx(x, y)) || !t.obj.out?.length) continue;
     const by = N4.map(([dx, dy], i) => ({ t: tileAt(w, x + dx, y + dy), k: idx(x + dx, y + dy), back: (i + 2) % 4, x: x + dx, y: y + dy })).filter(o => o.t?.belt && net.dist.has(o.k) && beltDir(state, o.x, o.y) !== o.back).sort((a, b) => net.dist.get(a.k) - net.dist.get(b.k));
     for (const o of by) { pour(t.obj.out, o.t.load = o.t.load || [], B.holds); if (!t.obj.out.length) break; }
   }
 }
+// a hopper's held pile into a delivery crate, as much as fits
+function tipInto(held, crate) { crate.items = crate.items || []; while (held.length) { const room = CONFIG.truck.crateHolds - dcrateCount(crate); if (room <= 0) return; const it = held[0], take = Math.min(room, it.qty), key = pileKey(it); const have = crate.items.find(c => pileKey(c) === key); if (have) have.qty += take; else crate.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) }); it.qty -= take; if (!it.qty) held.shift(); } }
 // What a sink takes off the belt tile before it: a hopper or a dryer as much as it holds, a chest as much as its slots take,
 // the compost bin crops only (dried goods ride past), as much as its cap takes and only while its lid is open.
 function sinkTake(state, n, load) {
@@ -1191,7 +1187,7 @@ export const planterCount = o => (o.seeds || []).reduce((n, s) => n + s.qty, 0) 
 // Seeds or bags in hand onto a planter: as much of the stack as fits.
 export function loadPlanter(state, slotIndex, x, y, n = Infinity) {
   const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isPlanter(t) || !it) return fail('');
-  if (it.kind !== 'seed' && it.kind !== 'fert') return fail('It takes seeds and bags of fertiliser');
+  if (it.kind !== 'seed' && it.kind !== 'fert') return fail('It takes seeds and fertiliser');
   if (!inReach(state, x, y)) return fail('Too far');
   const o = t.obj, C = CONFIG.power.planter; o.seeds = o.seeds || []; o.bags = o.bags || [];
   if (it.kind === 'seed') {
@@ -1200,10 +1196,10 @@ export function loadPlanter(state, slotIndex, x, y, n = Infinity) {
     const have = o.seeds.find(p => p.species === it.species); if (have) have.qty += take; else o.seeds.push({ species: it.species, qty: take });
     return { ok: true, msg: '', float: `+${take} seeds`, count: take };
   }
-  const room = C.bags - o.bags.reduce((s, p) => s + p.qty, 0); if (room <= 0) return fail('Its bag rack is full');
+  const room = C.bags - o.bags.reduce((s, p) => s + p.qty, 0); if (room <= 0) return fail('It holds no more fertiliser');
   const take = Math.min(n, it.qty, room); removeFromSlot(state.inventory, slotIndex, take);
   const key = it.fert.id || it.fert.name, have = o.bags.find(p => (p.fert.id || p.fert.name) === key); if (have) have.qty += take; else o.bags.push({ fert: it.fert, qty: take });
-  return { ok: true, msg: '', float: `+${take} ${take === 1 ? 'bag' : 'bags'}`, count: take };
+  return { ok: true, msg: '', float: `+${take} fertiliser`, count: take };
 }
 // Empty hands on a planter: its seeds and bags back into your pockets, as much as fits.
 export function unloadPlanter(state, x, y) {
@@ -1223,7 +1219,7 @@ function drainHoppersInto(state) {
   for (const { x, y, t } of machineTiles(state, 'hopper')) {
     if (!hopperByCrate(x, y, state)) continue;   // a hopper elsewhere is a store you empty by hand
     const held = t.obj.held || [];
-    if (Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) tip(held, state.crate.items, state.crate.capacity, () => crateCount(state));
+    if (!state.truck && Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) tip(held, state.crate.items, state.crate.capacity, () => crateCount(state));
     for (const [dx, dy] of N4) { const n = tileAt(state.world, x + dx, y + dy); if (isDcrate(n) && held.length) tip(held, n.obj.items = n.obj.items || [], CONFIG.truck.crateHolds, () => dcrateCount(n.obj)); }
   }
   return moved;
@@ -1244,7 +1240,7 @@ export function takeHeld(state, x, y) {
 // truck's crates, the other way to a hopper by the porch crate. Opened with ?demo in the address; never saved.
 export function makeModelFarm() {
   const state = createState(42); const w = state.world, tile = (x, y) => w.tiles[y * w.w + x];
-  for (const key of ['0,0', '1,0', '1,1']) if (!w.chunks.includes(key)) w.chunks.push(key);
+  for (const key of ['0,0', '1,0', '0,1', '1,1', '2,0', '2,1', '3,0', '3,1']) if (!w.chunks.includes(key)) w.chunks.push(key);   // the clearing runs east to the forest road
   takeTools(state); fillCan(state); state.money = 1200; state.crate.extensions = 3; state.crate.capacity = CONFIG.crate.capacity + 3 * 12;
   state.truck = { level: 0, bed: [] }; parkTruck(state); state.hasBench = true; state.hasCompost = true;
   const carrot = Object.values(state.species).find(sp => sp.name === 'Carrot');
@@ -1260,12 +1256,12 @@ export function makeModelFarm() {
   // the belt: from beside the picker east along the path to a splitter; one way on to the dryer, the other down to a hopper by the porch crate
   for (const x of [31, 32, 33]) { tile(x, 25).belt = true; tile(x, 25).load = []; }
   tile(32, 25).obj = { kind: 'splitter', turn: 0 };
-  tile(32, 26).belt = true; tile(32, 26).load = []; tile(33, 26).line = true; tile(33, 26).obj = { kind: 'hopper', held: [] };
+  tile(32, 26).belt = true; tile(32, 26).load = []; tile(33, 26).obj = { kind: 'chest', level: 1, slots: new Array(chestSlots(1)).fill(null) };   // a large chest at the end of the short branch: fresh carrots for the market
   tile(34, 25).obj = { kind: 'dryer', held: [], out: [], doing: null };
   // out of the dryer: belt east then south across the track to a hopper in the bay, beside the truck's crates
   tile(35, 25).belt = true; tile(35, 25).load = []; for (let y = 26; y <= 28; y++) { tile(35, y).belt = true; tile(35, y).load = []; tile(35, y).line = true; }
   tile(35, 29).line = true; tile(35, 29).obj = { kind: 'hopper', held: [] };
-  dropEmpties(state);
+  tile(36, 29).obj = { kind: 'dcrate', items: [] }; tile(35, 30).obj = { kind: 'dcrate', items: [] };   // two crates set beside the hopper, as you would set them
   state.lineRev = 1; state.beltRev = 1; state.pipeRev = 1;
   state.player.x = 29.5; state.player.y = 28.5; state.player.dir = 'up';
   state.minutes = (dayOf(state) - 1) * 1440 + 9 * 60;
@@ -1330,7 +1326,7 @@ export function sleep(state, opts = {}) {
   for (const l of report.delivery.lines) report.lines.push(l);
   if (report.sale?.count) report.lines.push(`The ${state.truck ? 'truck' : 'cart'} took ${report.sale.count} ${report.sale.count === 1 ? 'crop' : 'crops'} from the ${state.truck ? 'crates' : 'crate'}: +${formatMoney(report.sale.total)}.`);
   if (report.sale?.crates?.shipped) { const c = report.sale.crates; report.lines.push(`The truck took ${c.shipped} ${c.shipped === 1 ? 'crate' : 'crates'} away.`); }
-  { const left = dropEmpties(state); if (left) report.lines.push(`The haulier left ${left} empty ${left === 1 ? 'crate' : 'crates'} in the bay.`); const w = bayWaiting(state); if (w) report.lines.push(`${w} crops wait in crates on the gravel: carry them to the truck.`); }
+  { const w = bayWaiting(state); if (w) report.lines.push(`${w} crops wait in crates on the gravel: carry them to the truck.`); }
   if (report.rain) report.lines.push('It rained overnight: every field is watered.');
   if (report.water) report.lines.push(`Water bill: ${report.water.pours} sprinkler pours, −${formatMoney(report.water.bill)}.`);
   if (report.fuel?.cans) report.lines.push(`Fuel: ${report.fuel.cans} ${report.fuel.cans === 1 ? 'can' : 'cans'} burned.`);

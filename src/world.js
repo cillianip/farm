@@ -20,18 +20,19 @@ export const BUILDINGS = {
   sign: { x: 34, y: 26, w: 1, h: 1 },       // delivery signpost
   crate: { x: 34, y: 27, w: 1, h: 1 },      // delivery crate at the end of the track that leaves the clearing
   roadsign: { x: 39, y: 26, w: 1, h: 1 },   // where the track leaves: the sign to the market
-  board: { x: 34, y: 29, w: 1, h: 1 },      // the loading bay's board, at the bay's west end below the start of the track
+  board: { x: 33, y: 29, w: 1, h: 1 },      // the loading bay's board, below the start of the track
 };
 // The loading bay (Build 73): the gravel beside the start of the track. Delivery crates standing in it are what the truck
 // takes; a crate anywhere else is just a box. The porch crate counts wherever it is.
 // The bay is the strip of forest directly south of the track (Build 77): never farmland, always cleared ground, so no plot
 // can ever hold it. Before the truck comes it is a bare patch of grass by the track; after, gravel.
-export const BAY_LEVELS = [{ x0: 35, x1: 38, y0: 29, y1: 31 }, { x0: 35, x1: 38, y0: 29, y1: 31 }, { x0: 35, x1: 38, y0: 29, y1: 31 }];
+export const BAY_LEVELS = [{ x0: 34, x1: 39, y0: 29, y1: 31 }, { x0: 34, x1: 39, y0: 29, y1: 31 }, { x0: 34, x1: 39, y0: 29, y1: 31 }];
 export const bayRect = level => BAY_LEVELS[Math.max(0, Math.min(BAY_LEVELS.length - 1, level || 0))];
 export const BAY = BAY_LEVELS[BAY_LEVELS.length - 1];
 export const inBay = (x, y, level = BAY_LEVELS.length - 1) => { const b = bayRect(level); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; };
-export const TRUCK_SPOT = { x: 37, y: 29, w: 2, h: 2 };   // where the truck stands in the bay, at its east end beside the track
-export const inBayGround = (x, y) => inBay(x, y) || (x === BUILDINGS.board.x && y === BUILDINGS.board.y);
+export const TRUCK_SPOT = { x: 38, y: 27, w: 3, h: 2 };   // the truck parks on the end of the track, three tiles long, nose to the forest road
+export const BAY_GROUND = { x0: 33, x1: 40, y0: 29, y1: 32 };   // the cleared ground around the bay: a margin so the forest's canopy never hangs over the crates
+export const inBayGround = (x, y) => (x >= BAY_GROUND.x0 && x <= BAY_GROUND.x1 && y >= BAY_GROUND.y0 && y <= BAY_GROUND.y1) || (x === BUILDINGS.board.x && y === BUILDINGS.board.y);
 export const isTruckTile = (x, y) => x >= TRUCK_SPOT.x && x < TRUCK_SPOT.x + TRUCK_SPOT.w && y >= TRUCK_SPOT.y && y < TRUCK_SPOT.y + TRUCK_SPOT.h;
 export const baySpots = (world, level) => { const b = bayRect(level); let n = 0; for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) if (!world.tiles[y * world.w + x].track && !isTruckTile(x, y)) n++; return n; };
 // Objects you can pick up and put down elsewhere (their live positions are in state.objects).

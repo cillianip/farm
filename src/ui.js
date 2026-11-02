@@ -486,6 +486,28 @@ export class UI {
       body.appendChild(grid);
     }, 'dryer');
   }
+  // The planter: its seed box and its fertiliser, the switch, and your pockets to load it from.
+  openPlanter(x, y) {
+    const s = this.state, g = this.game, C = CONFIG.power.planter, t = s.world.tiles[y * s.world.w + x], o = t.obj; if (!o || o.kind !== 'planter') return;
+    const P = S.machineTier(o);
+    this.show(P.name, body => {
+      const row = el('div', 'station-row'); const left = el('div');
+      const ns = (o.seeds || []).reduce((a, p) => a + p.qty, 0), nb = (o.bags || []).reduce((a, p) => a + p.qty, 0);
+      left.appendChild(el('div', 'pc-sec', `Seed box · ${ns} / ${C.seeds}`)); const sg = el('div', 'pslots'); if (!o.seeds?.length) sg.appendChild(this.pslot(null, s.species, { hint: 'empty' })); else for (const p of o.seeds) sg.appendChild(this.pslot({ kind: 'seed', species: p.species, qty: p.qty }, s.species)); left.appendChild(sg);
+      left.appendChild(el('div', 'pc-sec', `Fertiliser · ${nb} / ${C.bags}`)); const bg = el('div', 'pslots'); if (!o.bags?.length) bg.appendChild(this.pslot(null, s.species, { hint: 'none' })); else for (const p of o.bags) bg.appendChild(this.pslot({ kind: 'fert', fert: p.fert, qty: p.qty }, s.species)); left.appendChild(bg);
+      const btns = el('div'); btns.style.marginTop = '6px';
+      const sw = el('button', 'small', o.off ? 'Switch on' : 'Switch off'); sw.onclick = () => { S.toggleMachine(s, x, y); g.sound.play('switch'); this.refresh(); }; btns.appendChild(sw);
+      if (ns + nb) { const back = el('button', 'small', 'Take it all back'); back.style.marginLeft = '6px'; back.onclick = () => { const r = S.unloadPlanter(s, x, y); if (r.msg) this.toast(r.msg); else g.sound.play('scoop'); this.refresh(); }; btns.appendChild(back); }
+      left.appendChild(btns);
+      const details = el('div', 'details'); setDetails(details, `<div class="pc-name">${esc(P.name)}</div><div class="pc-row"><span>Reach</span><span>the ${(2 * P.radius + 1) ** 2 - 1} beds around it</span></div><div class="pc-row"><span>Plants</span><span>${P.perHour} empty beds an hour</span></div><div class="pc-row"><span>Power</span><span>${P.power}</span></div><div class="pc-note">${o.off ? 'Switched off.' : S.machinePowered(s, x, y) ? 'Running.' : S.linePowered(s, x, y) ? 'No power: the generator runs all it can.' : 'Dead: no generator on this line.'} It plants the seed it holds in any empty bed in reach, working fertiliser in first when it has some. It never touches a bed with a plant in it.</div>`);
+      row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      body.appendChild(el('div', 'pc-sec', 'Your seeds and fertiliser · click to load, shift-click for the stack'));
+      const grid = el('div', 'pslots'); let any = false;
+      s.inventory.slots.forEach((it, i) => { if (it?.kind !== 'seed' && it?.kind !== 'fert') return; any = true; const sl = this.pslot(it, s.species); sl.onclick = e => { const r = S.loadPlanter(s, i, x, y, e.shiftKey ? Infinity : 1); if (r.msg) this.toast(r.msg); else g.sound.play('rackPlace'); this.refresh(); }; grid.appendChild(sl); });
+      if (!any) grid.appendChild(el('div', 'muted', 'No seeds or fertiliser in your pockets.'));
+      body.appendChild(grid);
+    }, 'planter');
+  }
   openChest(chest = this.state.chest) {
     const s = this.state, invs = { pocket: s.inventory, chest }, field = chest !== s.chest; this.chestOpen = chest;
     let drag = null, dragged = false;
@@ -534,12 +556,13 @@ export class UI {
   // Delivery crate: what is inside and what it pays tonight, your produce as slots to add.
   openCrate() {
     const s = this.state, g = this.game;
-    this.show('Delivery crate', body => {
+    this.show(s.truck ? S.truckTier(s).name : 'Delivery crate', body => {
       const row = el('div', 'station-row');
-      const left = el('div'); left.appendChild(el('div', 'pc-sec', `Inside · ${S.crateCount(s)} / ${s.crate.capacity}`));
+      const left = el('div'); left.appendChild(el('div', 'pc-sec', s.truck ? `On the bed · ${s.truck.bed?.length || 0} / ${S.truckSlots(s)} crates` : `Inside · ${S.crateCount(s)} / ${s.crate.capacity}`));
       const inside = el('div', 'pslots');
-      for (const it of s.crate.items) inside.appendChild(this.pslot(it.kind ? { kind: it.kind, level: it.level, qty: it.qty } : { kind: 'crop', species: it.species, q: it.q, qty: it.qty }, s.species));
-      if (!s.crate.items.length) inside.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
+      const listed = s.truck ? S.allCrateItems(s) : s.crate.items;
+      for (const it of listed) inside.appendChild(this.pslot(it.kind ? { kind: it.kind, level: it.level, qty: it.qty } : { kind: it.product ? 'product' : 'crop', product: it.product, species: it.species, q: it.q, qty: it.qty }, s.species));
+      if (!listed.length) inside.appendChild(this.pslot(null, s.species, { hint: 'empty' }));
       left.appendChild(inside);
       const details = el('div', 'details');
       const sum = () => { const P = S.priceCrate(s, S.allCrateItems(s)); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };

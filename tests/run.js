@@ -1269,34 +1269,32 @@ await test('splitter and filter: each crop in turn down two ways; dried goods on
   assert.equal(S.heldCount(freshTile.load), 1, 'swapped: the dried one took the other way');
   assert.equal(S.useItem(s, 0, X + 2, y0).float, 'Picked up', 'the hoe lifts the filter'); assert.ok(tile(X + 2, y0).belt && !tile(X + 2, y0).obj); assert.ok(s.inventory.slots.some(i => i?.kind === 'filter'));
 });
-await test('the truck: sold once the crate is fully extended; it stands in the bay with crate slots; the haulier leaves empties each morning; crates fill by hand, from a hopper beside them and from a belt that ends at them; a full crate is lifted, carried and loaded; the night takes the bed and the porch crate as one order; bigger trucks have more slots', async () => {
+await test('the truck: sold once the crate is fully extended; it parks on the track and the porch crate goes; crates are free and set by hand, never by themselves; a hopper beside a crate tips in as the belt runs; a full crate is lifted and loaded; the night takes the bed; parcels come to the sign', async () => {
   const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const Wd = s.world, tile = (x, y) => Wd.tiles[y * Wd.w + x], carrot = byName(s, 'Carrot'), T2 = CONFIG.truck;
-  s.money = 9000; assert.equal(catalog(s).find(i => i.id === 'truck').blocked, 'Extend the crate fully first'); assert.equal(catalog(s).find(i => i.id === 'truck1').blocked, 'Needs the small truck'); assert.ok(!catalog(s).some(i => i.id === 'pickup' || i.id === 'dcrate' || i.id === 'bay'));
-  s.crate.extensions = 3; assert.ok(placeOrder(s, 'truck').ok); S.sleep(s); let r = S.collectParcels(s); assert.ok(s.truck && s.truck.level === 0, 'the truck came'); assert.ok(r.lines.some(l => /empty crates wait/.test(l)), r.lines.join('|'));
-  assert.equal(tile(W.TRUCK_SPOT.x, W.TRUCK_SPOT.y).t, 'truck', 'it stands on its tiles'); assert.equal(S.truckSlots(s), T2.tiers[0].slots);
-  assert.equal(S.bayCrates(s).length, Math.min(T2.emptiesOut, T2.tiers[0].slots), 'a few empties standing'); assert.ok(S.bayCrates(s).every(({ x, y }) => !W.isTruckTile(x, y)));
-  const { x: cx, y: cy } = S.bayCrates(s)[0]; s.player.x = cx + 0.5; s.player.y = cy + 1.5;
+  s.money = 9000; assert.equal(catalog(s).find(i => i.id === 'truck').blocked, 'Extend the crate fully first');
+  s.crate.extensions = 3; assert.ok(placeOrder(s, 'truck').ok); S.sleep(s); let r = S.collectParcels(s); assert.ok(s.truck && s.truck.level === 0, 'the truck came'); assert.ok(r.lines.some(l => /porch crate is gone/.test(l)), r.lines.join('|'));
+  assert.equal(tile(W.TRUCK_SPOT.x, W.TRUCK_SPOT.y).t, 'truck'); assert.ok(tile(W.TRUCK_SPOT.x, W.TRUCK_SPOT.y).track, 'it parks on the track'); assert.equal(tile(WB.crate.x, WB.crate.y).t, 'grass', 'the porch crate is gone');
+  assert.equal(S.bayCrates(s).length, 0, 'no crates until you set them'); S.sleep(s); assert.equal(S.bayCrates(s).length, 0, 'and none appear by themselves');
+  assert.ok(/porch crate is gone/.test(S.putInCrate(s, 2, 1).msg));
+  const b = W.BAY; s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5;
+  r = S.setCrate(s, b.x0 + 1, b.y0); assert.ok(r.ok, r.msg); r = S.setCrate(s, b.x0 + 1, b.y0 + 1); assert.ok(r.ok, r.msg); assert.equal(S.bayCrates(s).length, 2);
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 30 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
-  r = S.putInDcrate(s, ci, cx, cy); assert.ok(r.ok && r.count === T2.crateHolds, 'a crate holds ' + T2.crateHolds + ': ' + JSON.stringify(r)); assert.ok(r.full);
-  // an empty crate does not go on the truck; a full one is lifted and loaded
-  const { x: ex, y: ey } = S.bayCrates(s).find(c => !S.dcrateCount(c.t.obj)); s.player.x = ex + 0.5; s.player.y = ey + 1.5; assert.ok(S.pickUpCrate(s, ex, ey).ok); assert.equal(s.carrying, 'dcrate');
-  s.player.x = W.TRUCK_SPOT.x - 0.5; s.player.y = W.TRUCK_SPOT.y + 1; assert.equal(S.loadTruck(s).msg, 'Only full crates go on the truck');
-  s.player.x = ex + 0.5; s.player.y = ey + 1.5; assert.ok(S.placeObject(s, ex, ey).ok, 'set back down'); assert.ok(S.isDcrate(tile(ex, ey)) && !s.carrying);
-  s.player.x = cx + 0.5; s.player.y = cy + 1.5; assert.equal(S.useItem(s, 0, cx, cy).msg, 'Hold on it to pick it up'); assert.ok(S.pickUpCrate(s, cx, cy).ok); assert.equal(S.dcrateCount(s.carriedCrate), T2.crateHolds);
-  s.player.x = W.TRUCK_SPOT.x - 0.5; s.player.y = W.TRUCK_SPOT.y + 1; r = S.loadTruck(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, 1); assert.ok(!s.carrying); assert.equal(S.bayCrates(s).length, Math.min(T2.emptiesOut, T2.tiers[0].slots), 'an empty took its place');
+  r = S.putInDcrate(s, ci, b.x0 + 1, b.y0); assert.ok(r.ok && r.count === T2.crateHolds && r.full, JSON.stringify(r));
+  // a hopper beside the second crate tips into it as the belt runs, not only at night
+  tile(b.x0, b.y0 + 1).line = true; tile(b.x0, b.y0 + 2).line = true; tile(b.x0, b.y0 + 1).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(b.x0 - 1, b.y0 + 2).obj = { kind: 'generator', fuel: 9 }; tile(b.x0 - 1, b.y0 + 2).t = 'grass'; s.lineRev = (s.lineRev || 0) + 1;
+  assert.ok(S.hopperByCrate(b.x0, b.y0 + 1, s)); s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0; for (let i = 0; i < CONFIG.power.belt.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(S.dcrateCount(tile(b.x0 + 1, b.y0 + 1).obj), 3, 'tipped in as it went'); assert.equal(tile(b.x0, b.y0 + 1).obj.held.length, 0);
+  // lift the full one and load it; an empty will not go on
+  s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.equal(S.useItem(s, 0, b.x0 + 1, b.y0).msg, 'Hold on it to pick it up'); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); assert.equal(S.dcrateCount(s.carriedCrate), T2.crateHolds);
+  s.player.x = W.TRUCK_SPOT.x + 1; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.loadTruck(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, 1); assert.ok(!s.carrying); assert.equal(S.bayCrates(s).length, 1, 'the spot stays empty: no crate appears by itself');
   assert.equal(S.allCrateItems(s).reduce((n, i) => n + i.qty, 0), T2.crateHolds, 'the bed counts, the gravel does not');
-  // a hopper beside a crate and a belt that ends at one still fill it
-  const { x: hx, y: hy } = S.bayCrates(s).find(c => !S.dcrateCount(c.t.obj) && !tile(c.x - 1, c.y).obj && tile(c.x - 1, c.y).t === 'grass' && !tile(c.x - 1, c.y).track && !tile(c.x - 1, c.y + 1).obj && tile(c.x - 1, c.y + 1).t === 'grass');   // a crate with free ground west of it for a hopper
-  tile(hx - 1, hy).line = true; tile(hx - 1, hy).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(hx - 1, hy + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = (s.lineRev || 0) + 1;
-  assert.ok(S.machinePowered(s, hx - 1, hy), 'the hopper runs'); assert.ok(S.hopperByCrate(hx - 1, hy, s));
-  s.crate.items = [{ species: carrot.id, q: 0, qty: 2 }];
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
-  assert.ok(rep.sale && rep.sale.count === T2.crateHolds + 2, 'the bed and the porch crate: ' + JSON.stringify(rep.sale)); assert.deepEqual(rep.sale.crates, { shipped: 1 }); assert.equal(s.truck.bed.length, 0);
-  assert.equal(S.bayWaiting(s), 3, 'the hopper tipped into a crate beside it at the pickup; it waits on the gravel'); assert.equal(tile(hx - 1, hy).obj.held.length, 0); assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|'));
-  assert.equal(S.bayCrates(s).length, Math.min(T2.emptiesOut, T2.tiers[0].slots), 'the haulier keeps the gravel topped up');
-  // bigger trucks
-  assert.ok(placeOrder(s, 'truck1').ok); S.sleep(s); S.collectParcels(s); assert.equal(s.truck.level, 1); assert.equal(S.truckSlots(s), T2.tiers[1].slots); assert.ok(S.bayCrates(s).length >= Math.min(T2.emptiesOut, T2.tiers[1].slots));
-  assert.equal(catalog(s).find(i => i.id === 'truck1').blocked, 'You have it'); assert.ok(!catalog(s).find(i => i.id === 'truck2').blocked);
+  assert.ok(rep.sale && rep.sale.count === T2.crateHolds, 'the bed only: ' + JSON.stringify(rep.sale)); assert.deepEqual(rep.sale.crates, { shipped: 1 }); assert.equal(s.truck.bed.length, 0);
+  assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|')); assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
+  // parcels come to the sign now
+  assert.ok(placeOrder(s, 'truck1').ok); S.sleep(s); assert.ok(s.parcels?.length); S.collectParcels(s); assert.equal(s.truck.level, 1); assert.equal(S.truckSlots(s), T2.tiers[1].slots);
+  // pickers take real amounts: a Picker III takes up to 16 an hour
+  assert.equal(CONFIG.power.picker.tiers[2].perHour, 16); assert.equal(CONFIG.power.picker.tiers[0].perHour, 4);
 });
 await test('the filter sorts by a species you show it, and back to dried goods', () => {
   const s = arm(S.createState(1)); const W = s.world, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt, carrot = byName(s, 'Carrot'), turnip = byName(s, 'Turnip');
@@ -1316,7 +1314,7 @@ await test('the bay is never farmland: it is cleared ground south of the track t
   for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) { assert.ok(W.isCleared(s.world, x, y), 'cleared'); assert.ok(!W.isOwnedFarmland(s.world, x, y), 'not farmland'); assert.ok(!W.isTree(s.world, x, y), 'no trees'); }
   s.world.chunks.push(W.chunkKey(...Object.values(W.chunkOfTile(b.x0, b.y0))));   // even when you own the chunk around it
   assert.ok(!W.isOwnedFarmland(s.world, b.x0, b.y0)); s.player.x = b.x0 + 0.5; s.player.y = b.y0 + 1.5; assert.ok(!S.useItem(s, 0, b.x0, b.y0).ok, 'no bed on the bay');
-  assert.ok(W.isTree(s.world, b.x0, b.y1 + 1), 'the forest starts again below it');
+  assert.ok(!W.isTree(s.world, b.x0, b.y1 + 1) && W.isTree(s.world, b.x0, W.BAY_GROUND.y1 + 1), 'a cleared margin, then the forest starts again');
   // an old save with the bay on its land gets the tiles back
   const old = JSON.parse(serialize(s)); old.world.tiles[24 * old.world.w + 31].t = 'board'; old.world.tiles[25 * old.world.w + 32].t = 'truck';
   const m = deserialize(JSON.stringify(old)); S.migrate(m); assert.equal(m.world.tiles[24 * m.world.w + 31].t, 'grass'); assert.equal(m.world.tiles[25 * m.world.w + 32].t, 'grass');
@@ -1341,7 +1339,7 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   s.player.x = X + 3.5; s.player.y = y0 + 1.5; addItem(s.inventory, { kind: 'seed', species: carrot.id, qty: 9 }); const si = s.inventory.slots.findIndex(i => i?.kind === 'seed' && i.species === carrot.id), nSeeds = s.inventory.slots[si].qty;
   const bag = { name: 'Quality compost III', grade: 3, stats: { quality: 0.6 }, budget: 0.6, id: 'fq' }; addItem(s.inventory, { kind: 'fert', fert: bag, qty: 2 }); const fi = s.inventory.slots.findIndex(i => i?.kind === 'fert');
   let r = S.loadPlanter(s, si, X + 3, y0); assert.ok(r.ok && r.count === nSeeds, JSON.stringify(r)); r = S.loadPlanter(s, fi, X + 3, y0); assert.ok(r.ok && r.count === 2); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2);
-  assert.equal(S.loadPlanter(s, 0, X + 3, y0).msg, 'It takes seeds and bags of fertiliser');
+  assert.equal(S.loadPlanter(s, 0, X + 3, y0).msg, 'It takes seeds and fertiliser');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60 + 59; tickMinutes(s, 2);   // across 10:00
   const planted = () => { let n = 0, fert = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const t = tile(X + 3 + dx, y0 + dy); if (t.crop && !t.crop.unknown) n++; if (t.fert) fert++; } return [n, fert]; };   // a bird may drop a seed in too: those are unknown sprouts, not the planter's
   let [n, f] = planted(); assert.equal(n, T.planter.tiers[1].perHour, 'four beds an hour'); assert.equal(f, 2, 'the two bags went in first'); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2 - n - 2);
@@ -1361,16 +1359,16 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   assert.ok(S.beltRunning(s, X + 3, y0 + 2), 'the belt runs to the hopper'); assert.ok(S.toggleMachine(s, X + 4, y0 + 2).off); assert.ok(!S.beltRunning(s, X + 3, y0 + 2), 'off: the belt stands still');
 });
 await test('generator tiers: more power and more cans a night; belt and line may cross the track; the model farm builds, powers up, and runs a day', () => {
-  const s = S.makeModelFarm(); const W2 = s.world, tile = (x, y) => W2.tiles[y * W2.w + x], T = CONFIG.power;
+  const s = S.makeModelFarm(); const W2 = s.world, tile = (x, y) => W2.tiles[y * W2.w + x], T = CONFIG.power; let Wd2 = null;
   assert.equal(S.generatorTier(tile(26, 25).obj).power, T.generator.tiers[1].power);
-  assert.ok(S.machinePowered(s, 28, 25) && S.machinePowered(s, 30, 25) && S.machinePowered(s, 34, 25) && S.machinePowered(s, 33, 26) && S.machinePowered(s, 35, 29), 'every machine on the path has power');
+  assert.ok(S.machinePowered(s, 28, 25) && S.machinePowered(s, 30, 25) && S.machinePowered(s, 34, 25) && S.machinePowered(s, 35, 29), 'every machine on the path has power'); assert.ok(S.isChest(tile(33, 26)), 'a chest ends the short branch'); assert.ok(W.isCleared(Wd2 = Wd2 || s.world, 36, 24), 'the clearing runs east');
   assert.ok(S.sprinklerFed(s, 29, 25), 'the sprinkler is fed from the well through the windmill'); assert.ok(S.pumpInFlow(s, 34, 21));
   assert.ok(S.beltRunning(s, 31, 25) && S.beltRunning(s, 35, 28), 'the belts run, across the track too'); assert.ok(tile(35, 27).track && tile(35, 27).belt);
   assert.equal(S.splitOutputs(s, 32, 25).length, 2, 'the splitter has two ways out');
-  assert.ok(S.bayCrates(s).length >= 3); assert.ok(S.hopperByCrate(35, 29, s), 'the bay hopper stands by a crate');
+  assert.equal(S.bayCrates(s).length, 2); assert.ok(S.hopperByCrate(35, 29, s), 'the bay hopper stands by a crate');
   // a day passes: the picker picks, the splitter shares, the dryer dries, the hoppers fill
   for (let i = 0; i < 9 * 60; i++) tickMinutes(s, 1);
-  const got = S.heldCount(tile(33, 26).obj.held) + S.heldCount(tile(35, 29).obj.held) + S.heldCount(tile(34, 25).obj.held) + S.heldCount(tile(34, 25).obj.out) + (tile(34, 25).obj.doing?.qty || 0);
+  const got = tile(33, 26).obj.slots.filter(Boolean).reduce((n, i) => n + i.qty, 0) + S.bayWaiting(s) + S.heldCount(tile(35, 29).obj.held) + S.heldCount(tile(34, 25).obj.held) + S.heldCount(tile(34, 25).obj.out) + (tile(34, 25).obj.doing?.qty || 0);
   assert.ok(got > 0, 'crops moved through the line: ' + got); assert.ok(S.ledger(s).today.picked > 0);
   assert.ok(Object.values(W2.tiles).filter(t => t.crop && !t.crop.unknown).length >= 17, 'the planter keeps the block planted'); assert.ok(S.ledger(s).today.planted >= 8, 'it planted through the day: ' + S.ledger(s).today.planted);
   // a line laid on the track by hand

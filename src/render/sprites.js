@@ -198,12 +198,12 @@ export function boardSprite() {
 // The truck parked in the bay (32×32, two tiles wide, facing the track): cab on the right, a flatbed with low slatted sides on
 // the left; the game sets the loaded crates on the bed.
 export function parkedTruckSprite() {
-  return sprite('parkedTruck', 32, 32, P => {
-    P.rect(1, 12, 20, 10, PAL.woodDark); P.rect(2, 13, 18, 8, PAL.wood); for (let x = 4; x < 20; x += 4) P.rect(x, 13, 1, 8, PAL.woodDark); P.rect(2, 13, 18, 1, PAL.woodLight);   // the bed and its slats
-    P.rect(21, 7, 10, 15, '#4f8fcf'); P.rect(21, 7, 10, 1, '#7fb4e6'); P.rect(22, 9, 8, 5, PAL.window); P.rect(22, 9, 8, 1, '#dff3ff'); P.rect(21, 21, 10, 1, '#3f72a8'); P.rect(29, 16, 2, 2, PAL.gold);   // the cab, windscreen, a lamp
-    P.rect(0, 22, 32, 3, PAL.metalDark); P.rect(0, 24, 32, 1, '#2a2a2a');                                                                                                           // the chassis
-    for (const wx of [6, 25]) { P.disc(wx, 27, 4, '#2a2a2a'); P.disc(wx, 27, 3, '#444'); P.disc(wx, 27, 1, PAL.metalLight); }                                                        // wheels
-    P.rect(1, 29, 30, 2, 'rgba(30,20,10,0.25)');
+  return sprite('parkedTruck', 48, 32, P => {
+    P.rect(1, 9, 32, 14, PAL.woodDark); P.rect(2, 10, 30, 12, PAL.wood); for (let x = 5; x < 32; x += 5) P.rect(x, 10, 1, 12, PAL.woodDark); P.rect(2, 10, 30, 1, PAL.woodLight); P.rect(2, 21, 30, 1, PAL.woodDark);   // the bed: long, low slatted sides
+    P.rect(33, 4, 14, 19, '#4f8fcf'); P.rect(33, 4, 14, 1, '#7fb4e6'); P.rect(34, 6, 11, 7, PAL.window); P.rect(34, 6, 11, 1, '#dff3ff'); P.rect(33, 22, 14, 1, '#3f72a8'); P.rect(45, 15, 2, 3, PAL.gold); P.rect(33, 14, 14, 1, '#3f72a8');   // the cab, windscreen, a lamp
+    P.rect(0, 23, 48, 3, PAL.metalDark); P.rect(0, 25, 48, 1, '#2a2a2a');                                                                                                           // the chassis
+    for (const wx of [8, 20, 40]) { P.disc(wx, 28, 4, '#2a2a2a'); P.disc(wx, 28, 3, '#444'); P.disc(wx, 28, 1, PAL.metalLight); }                                                     // three wheels a side
+    P.rect(1, 30, 46, 2, 'rgba(30,20,10,0.25)');
   }, 'rgba(40,25,15,0.9)');
 }
 // The truck (28×20): a cab, a flatbed with slatted sides, two wheels; frames roll the wheels.
