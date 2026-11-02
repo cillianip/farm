@@ -1252,7 +1252,7 @@ export function makeModelFarm() {
   tile(26, 25).obj = { kind: 'generator', level: 1, fuel: 7 };
   // the block: beds two rows above and below the path, carrots at every stage
   let k = 0; for (const y of [23, 24, 26, 27]) for (let x = 27; x <= 31; x++) { const t = tile(x, y); t.tilled = true; t.moisture = 55; t.crop = { speciesId: carrot.id, growth: (k * 23) % 100, health: 100, ripeAt: null, dead: false, plantedAt: state.minutes, harvests: 0, v: k % 4 }; if (t.crop.growth >= 100) t.crop.ripeAt = state.minutes; k++; }
-  tile(29, 25).obj = { kind: 'sprinkler', level: 1 }; tile(28, 25).obj = { kind: 'planter', level: 2, seeds: [{ species: carrot.id, qty: 30 }], bags: [] }; tile(30, 25).obj = { kind: 'picker', level: 2, held: [] };   // tier III: standing a tile off the block's centre, only a reach of three covers all five columns
+  tile(29, 25).obj = { kind: 'sprinkler', level: 1 }; tile(28, 25).obj = { kind: 'planter', level: 1, seeds: [{ species: carrot.id, qty: 30 }], bags: [] }; tile(30, 25).obj = { kind: 'picker', level: 1, held: [] };   // tier II, like the sprinkler: a tier is built to work its sprinkler's block from the tile beside it
   // the belt: from beside the picker east along the path to a splitter; one way on to the dryer, the other down to a hopper by the porch crate
   for (const x of [31, 32, 33]) { tile(x, 25).belt = true; tile(x, 25).load = []; }
   tile(32, 25).obj = { kind: 'splitter', turn: 0 };
