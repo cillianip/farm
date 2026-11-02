@@ -684,8 +684,9 @@ export class Game {
         const x0 = (this.mouse.tx - R) * T - cx, y0 = (this.mouse.ty - R) * T - cy, L = (2 * R + 1) * T;
         ctx.fillStyle = 'rgba(63,143,214,0.18)'; ctx.fillRect(x0, y0, L, L); ctx.strokeStyle = 'rgba(63,143,214,0.75)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, L - 2, L - 2);
       }
-      if ((it?.kind === 'picker' && !this.hit) || mt?.obj?.kind === 'picker') {   // a picker's reach, in green
-        const R2 = (it?.kind === 'picker' && !this.hit ? CONFIG.power.picker.tiers[Math.min(2, it.level || 0)] : S.machineTier(mt.obj)).radius, x0 = (this.mouse.tx - R2) * T - cx, y0 = (this.mouse.ty - R2) * T - cy, L = (2 * R2 + 1) * T;
+      const reachKind = (it?.kind === 'picker' || it?.kind === 'planter') && !this.hit ? it.kind : (mt?.obj?.kind === 'picker' || mt?.obj?.kind === 'planter') ? mt.obj.kind : null;
+      if (reachKind) {   // a picker's or a planter's reach, in green: under the cursor while you hold one, or over a placed one you point at
+        const R2 = ((it?.kind === 'picker' || it?.kind === 'planter') && !this.hit ? CONFIG.power[it.kind].tiers[Math.min(2, it.level || 0)] : S.machineTier(mt.obj)).radius, x0 = (this.mouse.tx - R2) * T - cx, y0 = (this.mouse.ty - R2) * T - cy, L = (2 * R2 + 1) * T;
         ctx.fillStyle = 'rgba(143,211,106,0.18)'; ctx.fillRect(x0, y0, L, L); ctx.strokeStyle = 'rgba(143,211,106,0.8)'; ctx.lineWidth = 2; ctx.strokeRect(x0 + 1, y0 + 1, L - 2, L - 2);
       }
     }
