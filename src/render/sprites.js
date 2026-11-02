@@ -397,11 +397,14 @@ export function compostSprite(level = 0) {
 // Fertiliser worked into a bed: a scatter of dark crumbs and a fleck of green, drawn over the soil under the plant.
 // A fertilised bed is simply a shade lighter (worked compost), with no spots: a plain wash, a touch lighter at the top.
 // Fertilised soil: dark crumbs of compost worked in, and a few bits of straw. No wash over the tile.
-export function fertOverlay() {
-  return sprite('fertOverlay', 16, 16, P => {
-    const dark = 'rgba(38,22,10,0.55)', straw = 'rgba(240,222,160,0.6)';
+// A fertilised bed: dark crumbs worked in, and flecks in the colour of the bag's strongest stat so you can tell the beds apart.
+export function fertOverlay(look = null) {
+  const stat = look?.stat || null, stars = look?.stars || 0;
+  return sprite(`fertOverlay:${stat}:${stars}`, 16, 16, P => {
+    const dark = 'rgba(38,22,10,0.55)', fleck = stat ? STAT_COLOUR[stat][0] : 'rgba(240,222,160,0.6)';
     for (const [x, y] of [[2, 3], [9, 2], [13, 5], [5, 7], [11, 9], [1, 11], [7, 12], [14, 13], [4, 14]]) { P.rect(x, y, 2, 1, dark); P.px(x + 1, y + 1, dark); }
-    for (const [x, y] of [[6, 2], [12, 7], [3, 9], [9, 14]]) P.px(x, y, straw);
+    for (const [x, y] of [[6, 2], [12, 7], [3, 9], [9, 14], [14, 1]]) P.px(x, y, fleck);
+    for (let k = 0; k < stars; k++) P.px(2 + k * 5, 1, PAL.gold);
   });
 }
 // Pipe or line under a bed: a backfilled trench along its run (`mask`: 1 up, 2 right, 4 down, 8 left), lit along its
@@ -748,8 +751,18 @@ export function fuelIcon() {
 export function coinIcon() {
   return sprite('coin', 16, 16, P => { P.rect(4, 3, 8, 10, '#b4863a'); P.rect(3, 4, 10, 8, '#b4863a'); P.rect(5, 4, 6, 8, PAL.gold); P.rect(4, 5, 8, 6, PAL.gold); P.rect(5, 4, 4, 1, '#fff1b8'); P.rect(4, 5, 1, 3, '#fff1b8'); P.rect(7, 6, 2, 4, '#b4863a'); P.rect(4, 14, 9, 1, 'rgba(30,20,10,0.25)'); });
 }
-export function fertIcon() {
-  return sprite('fert', 16, 16, P => { P.rect(3, 5, 10, 9, '#5a4a2a'); P.rect(3, 4, 10, 1, '#7a6a3a'); P.px(5, 7, '#8bc34a'); P.px(9, 9, '#8bc34a'); P.px(7, 11, '#c9b07c'); });
+// A bag of fertiliser (16×16): a tied sack in the colour of its strongest stat, one band per grade, a gold star per sure star.
+// look: {stat, grade, stars} from fertiliser.fertLook; with nothing it is the plain brown bag.
+const STAT_COLOUR = { speed: ['#8fd36a', '#5fa14a'], quality: ['#f6c453', '#b57a1f'], yield: ['#e8a23b', '#b86d1f'], waterKeep: ['#7fb4e6', '#3f72a8'], hardiness: ['#c47a5a', '#8a4a32'], mutation: ['#c47fe6', '#8a5cc0'] };
+export function fertIcon(look = null) {
+  const stat = look?.stat || null, grade = look?.grade || 1, stars = look?.stars || 0;
+  return sprite(`fert:${stat}:${grade}:${stars}`, 16, 16, P => {
+    const [c, cd] = stat ? STAT_COLOUR[stat] : ['#8a6a44', '#5a4a2a'];
+    P.rect(3, 5, 10, 10, cd); P.rect(4, 6, 8, 8, c); P.rect(4, 6, 8, 1, 'rgba(255,255,255,0.25)'); P.rect(4, 13, 8, 1, 'rgba(0,0,0,0.2)');   // the sack
+    P.rect(6, 3, 4, 2, cd); P.rect(5, 2, 6, 1, '#3b2314'); P.px(7, 1, '#3b2314'); P.px(8, 1, '#3b2314');                              // the neck, tied
+    for (let g = 0; g < grade; g++) P.rect(4, 12 - g * 2, 8, 1, cd);                                                                  // a band per grade
+    for (let k = 0; k < stars; k++) { const x = 5 + k * 3; P.px(x, 8, PAL.gold); P.px(x, 7, '#fff1b8'); }                              // the stars
+  });
 }
 
 // ---------- the market ----------

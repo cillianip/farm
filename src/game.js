@@ -10,6 +10,7 @@ import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
 import { drawText, textWidth } from './render/font.js';
 import { formatMoney } from './economy.js';
+import { fertLook } from './fertiliser.js';
 import { catalogueFlag, markCatalogueSeen } from './catalog.js';
 import * as M from './market.js';
 import { MARKET } from './market.js';
@@ -566,7 +567,7 @@ export class Game {
         const [pm, ps] = t.pipe ? buriedMask(x, y, pipeOrWell) : [0, 0], [lm, ls] = t.line ? buriedMask(x, y, lineOrGen) : [0, 0];
         ctx.drawImage(buriedSprite(pm | lm, ps | ls, t.pipe ? 'pipe' : 'line', !!t.pipe && fed.has(y * w.w + x)), sx, sy, T, T);
       }
-      if (t.fert && t.tilled) ctx.drawImage(fertOverlay(), sx, sy, T, T);
+      if (t.fert && t.tilled) ctx.drawImage(fertOverlay(fertLook(t.fert)), sx, sy, T, T);
       if (t.pipe && !t.tilled) ctx.drawImage(pipeSprite((pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0), fed.has(y * w.w + x)), sx, sy, T, T);
       if (t.line && !t.tilled) ctx.drawImage(lineSprite((lineOrGen(x, y - 1) ? 1 : 0) | (lineOrGen(x + 1, y) ? 2 : 0) | (lineOrGen(x, y + 1) ? 4 : 0) | (lineOrGen(x - 1, y) ? 8 : 0), net.dist.has(y * w.w + x)), sx, sy, T, T);
       if (t.belt) {   // the belt over pipe and line, its chevrons sliding toward the hopper; the crops ride on top

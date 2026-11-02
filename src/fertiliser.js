@@ -40,6 +40,10 @@ export function makeCompost(inputs, species) {
 export const GRADE_NUMERAL = { 1: 'I', 2: 'II', 3: 'III' }, GRADE_WORD = { 1: 'thin', 2: 'good', 3: 'rich' };
 export const gradeOf = budget => budget < 0.3 ? 1 : budget < 0.5 ? 2 : 3;
 export const fertGrade = f => f.grade || gradeOf(f.budget || 0);
+// What a bag looks like: its strongest stat gives the sack its colour, the grade its bands, Quality its stars.
+export const STAT_COLOUR = { speed: ['#8fd36a', '#5fa14a'], quality: ['#f6c453', '#b57a1f'], yield: ['#e8a23b', '#b86d1f'], waterKeep: ['#7fb4e6', '#3f72a8'], hardiness: ['#c47a5a', '#8a4a32'], mutation: ['#c47fe6', '#8a5cc0'] };
+export const fertDominant = f => { let best = null, v = 0; for (const [k, x] of Object.entries(f?.stats || {})) if (x > v) { v = x; best = k; } return best; };
+export const fertLook = f => ({ stat: fertDominant(f), grade: fertGrade(f || {}), stars: starsFromQuality(f?.stats?.quality || 0).sure });
 // What one plant pulls the heap toward (labels for the panel). A withered plant adds only a little hardiness.
 export function contributions(sp) {
   if (!sp) return ['Hardiness'];

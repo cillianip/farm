@@ -2,6 +2,7 @@
 import { CONFIG } from '../config.js';
 import * as S from '../sim.js';
 import { formatMoney } from '../economy.js';
+import { fertLook } from '../fertiliser.js';
 import { toolIcon, seedIcon, fertIcon, fuelIcon, sprinklerSprite, witheredSprite, pipeSprite, pumpIcon, stationIcon, chestSprite } from './sprites.js';
 import { produceSprite, cropSprite, driedSprite } from './crops.js';
 
@@ -62,7 +63,7 @@ export function itemSprite(it, species) {
   if (it.kind === 'seed') { const g = species[it.species]?.genome; return g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   if (it.kind === 'crop') { const sp = species[it.species]; return sp ? produceSprite(sp) : null; }
   if (it.kind === 'product') { const sp = species[it.species]; return sp ? driedSprite(sp) : null; }
-  if (it.kind === 'fert') return fertIcon();
+  if (it.kind === 'fert') return fertIcon(fertLook(it.fert));
   if (it.kind === 'fuel') return fuelIcon();
   if (it.kind === 'sprinkler') return sprinklerSprite(it.level || 0, 0);
   if (it.kind === 'pump') return pumpIcon(it.level || 0);

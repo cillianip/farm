@@ -8,7 +8,7 @@ import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipe
 import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
 import * as M from './market.js';
 import { MARKET } from './market.js';
-import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord } from './fertiliser.js';
+import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord, fertLook } from './fertiliser.js';
 import { growRealMinutes, RARE_TRAITS } from './genetics.js';
 
 const $ = id => document.getElementById(id);
@@ -28,7 +28,7 @@ export function itemIcon(item, species, size = 48) {
   else if (item.kind === 'seed') { const g = species[item.species]?.genome; src = g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
   else if (item.kind === 'crop') { const sp = species[item.species]; src = sp ? produceSprite(sp) : null; }
   else if (item.kind === 'product') { const sp = species[item.species]; src = sp ? driedSprite(sp) : null; }
-  else if (item.kind === 'fert') src = fertIcon();
+  else if (item.kind === 'fert') src = fertIcon(fertLook(item.fert));
   else if (item.kind === 'fuel') src = fuelIcon();
   else if (item.kind === 'sprinkler') src = sprinklerSprite(item.level || 0, 0);
   else if (item.kind === 'pipe') src = pipeSprite(10);
