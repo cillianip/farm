@@ -667,6 +667,18 @@ export function barrowSprite(full = false) {
     if (full) { P.px(6, 4, '#e86a6a'); P.px(8, 3, '#f6c453'); P.px(10, 4, '#8fd36a'); P.px(12, 3, '#e8a23b'); }
   }, 'rgba(40,25,15,0.9)');
 }
+// The forklift (16×20): a small yellow lift truck seen from the front-left: a mast, two forks at the foot, a seat and a roll cage.
+export function forkliftSprite() {
+  return sprite('forklift', 16, 20, P => {
+    P.rect(3, 18, 11, 2, 'rgba(30,20,10,0.28)');
+    P.rect(3, 9, 9, 7, '#e8c13a'); P.rect(3, 9, 9, 1, '#f6dd6a'); P.rect(3, 15, 9, 1, '#b8921f');       // the body
+    P.rect(4, 5, 7, 4, '#3b2314'); P.rect(5, 6, 5, 2, '#5a4a2a');                                       // the seat and its back
+    P.rect(3, 3, 1, 12, PAL.metalDark); P.rect(11, 3, 1, 12, PAL.metalDark); P.rect(3, 3, 9, 1, PAL.metalDark);   // the roll cage
+    P.rect(12, 2, 2, 15, PAL.metalDark); P.px(12, 2, PAL.metal); P.rect(12, 10, 1, 7, PAL.metal);       // the mast
+    P.rect(12, 16, 4, 1, PAL.metalLight); P.rect(12, 17, 4, 1, PAL.metalDark);                           // the forks
+    P.disc(5, 17, 2, '#2a2a2a'); P.disc(10, 17, 2, '#2a2a2a'); P.px(5, 17, PAL.metalLight); P.px(10, 17, PAL.metalLight);   // wheels
+  }, 'rgba(40,25,15,0.9)');
+}
 // A basket (16×16): woven, with a handle.
 export function basketIcon() {
   return sprite('basket', 16, 16, P => {

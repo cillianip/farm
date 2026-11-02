@@ -1395,6 +1395,26 @@ await test('weight: pockets stack crops to 12, a basket to 24 and 36, fertiliser
   r = S.grabBarrow(s); assert.ok(r.ok && !s.barrow.held); s.player.x += 5; assert.equal(S.putInBarrow(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')).msg, 'Too far');
   assert.ok(S.isHeavy({ ...s, inventory: { ...s.inventory, slots: [{ kind: 'crop', species: carrot.id, qty: 36 }, { kind: 'crop', species: carrot.id, qty: 12 }, null, null, null] } }), 'heavy from 40 crops');
 });
+await test('the forklift: parks in the bay once the truck is here; get on, lift three crates with clicks, load the truck in one go, set one down; full crates only go on; the market leaves it behind', async () => {
+  const { catalog, placeOrder } = await import('../src/catalog.js'); const s = arm(S.createState(1)); const Wd = s.world, tile = (x, y) => Wd.tiles[y * Wd.w + x], carrot = byName(s, 'Carrot'), T2 = CONFIG.truck, F = CONFIG.forklift;
+  s.money = 9000; assert.equal(catalog(s).find(i => i.id === 'forklift').blocked, 'Needs the truck');
+  s.crate.extensions = 3; assert.ok(placeOrder(s, 'truck').ok); S.sleep(s); S.collectParcels(s); assert.ok(placeOrder(s, 'forklift').ok); S.sleep(s); S.collectParcels(s);
+  assert.ok(s.forklift && !s.forklift.mounted && W.inBay(s.forklift.x, s.forklift.y), 'parked in the bay'); assert.equal(catalog(s).find(i => i.id === 'forklift').blocked, 'You have it');
+  const b = W.BAY; s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; for (const [x, y] of [[b.x0, b.y0], [b.x0 + 1, b.y0], [b.x0, b.y0 + 1], [b.x0 + 1, b.y0 + 1]]) if (!tile(x, y).obj) assert.ok(S.setCrate(s, x, y).ok);
+  for (const [x, y, n] of [[b.x0, b.y0, 12], [b.x0 + 1, b.y0, 12], [b.x0, b.y0 + 1, 12], [b.x0 + 1, b.y0 + 1, 0]]) if (tile(x, y).obj?.kind === 'dcrate') tile(x, y).obj.items = n ? [{ species: carrot.id, q: 0, qty: n }] : [];
+  assert.equal(S.forkLift(s, b.x0, b.y0).msg, 'Get on the forklift first');
+  s.player.x = s.forklift.x + 0.5; s.player.y = s.forklift.y + 1.4; let r = S.mountForklift(s); assert.ok(r.ok && s.forklift.mounted, r.msg);
+  s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5;
+  const crates = [[b.x0, b.y0], [b.x0 + 1, b.y0], [b.x0, b.y0 + 1], [b.x0 + 1, b.y0 + 1]].filter(([x, y]) => tile(x, y).obj?.kind === 'dcrate');
+  for (const [x, y] of crates.slice(0, 3)) { r = S.forkLift(s, x, y); assert.ok(r.ok, r.msg); assert.ok(!tile(x, y).obj); }
+  assert.equal(s.forklift.crates.length, 3); if (crates[3]) assert.ok(/forks hold/.test(S.forkLift(s, ...crates[3]).msg));
+  s.player.x = W.TRUCK_SPOT.x + 1.5; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.forkLoad(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, s.truck.bed.length);
+  const fullOnForks = s.forklift.crates.filter(c => S.dcrateCount(c)).length; assert.equal(fullOnForks, 0, 'every full crate went on'); assert.ok(s.truck.bed.length >= 2);
+  // an empty crate stays on the forks and is set down
+  s.player.x = b.x0 + 2.5; s.player.y = b.y0 + 2.5; const had = s.forklift.crates.length; if (had) { r = S.forkDrop(s, b.x0 + 2, b.y0 + 2); assert.ok(r.ok, r.msg); assert.equal(s.forklift.crates.length, had - 1); assert.ok(S.isDcrate(tile(b.x0 + 2, b.y0 + 2))); }
+  r = S.mountForklift(s); assert.ok(r.ok && !s.forklift.mounted); assert.equal(s.forklift.x, s.player.x - 0.5);
+  assert.ok(S.mountForklift(s).ok); const M = await import('../src/market.js'); s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; assert.ok(M.depart(s, 'market').ok); assert.ok(!s.forklift.mounted, 'left behind');
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

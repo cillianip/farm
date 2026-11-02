@@ -148,7 +148,8 @@ export const CONFIG = {
     heavyAt: 40, heavySpeed: 0.75 },                                           // this many crops in your pockets and you walk slower
   inventory: { slots: 5, hotbar: 5, stack: 99, cropStack: [12, 24, 36], fertStack: 10 },   // pockets hold few crops (Build 85): a basket raises the stack; seeds are light and stack to 99; chests and counters stack to 99
   basket: { prices: [30, 90] },                      // the basket and the big basket: the pocket stack for crops, cropStack[1] then [2]
-  barrow: { price: 120, slots: 6, stack: 48, speed: 0.75 },   // the wheelbarrow: pushed along behind you, six stacks of 48, and you walk slower with it   // what you carry IS the hotbar: five pockets. Everything else lives in the chest.
+  barrow: { price: 120, slots: 6, stack: 48, speed: 0.75 },
+  forklift: { price: 700, speed: 1.8, forks: 3 },   // the forklift (Build 86): get on, drive fast, lift three crates at once, load the truck in one go   // the wheelbarrow: pushed along behind you, six stacks of 48, and you walk slower with it   // what you carry IS the hotbar: five pockets. Everything else lives in the chest.
   chest: { slots: 24, field: { price: 80, slots: 16, tiers: [{ name: 'Field chest', slots: 16, price: 80 }, { name: 'Large chest', slots: 32, price: 220 }, { name: 'Great chest', slots: 56, price: 500 }] } },   // field chests come in three sizes (Build 71); a belt can end at any of them   // the chest by the porch, and the field chests the catalogue sells: set anywhere on your land
 
   economy: {

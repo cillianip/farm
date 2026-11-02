@@ -3,7 +3,7 @@
 import { CONFIG } from './config.js';
 import * as W from './world.js';
 import { BUILDINGS } from './world.js';
-import { parkTruck, makeBarrow } from './sim.js';
+import { parkTruck, makeBarrow, makeForklift } from './sim.js';
 import { makeSpecies, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { makeRng, hashString } from './rng.js';
 import { addItem } from './items.js';
@@ -85,6 +85,8 @@ export function catalog(state) {
       const tiers = T.tiers, cur = state.truck ? (state.truck.level || 0) : -1, pend = tiers.reduce((m, _, i) => Math.max(m, pendingCount(state, i ? 'truck' + i : 'truck') ? i : -1), -1), have = Math.max(cur, pend, state.parcels?.some(p => p.id === 'truck') ? 0 : -1);
       tiers.forEach((tier, i) => items.push({ id: i ? 'truck' + i : 'truck', group: 'Stations', family: 'Delivery truck', tier: ['Small', 'Medium', 'Large'][i], name: tier.name, effect: i === 0 ? `A truck parks at the end of the track with ${tier.slots} crate slots on its bed, and the porch crate goes. Crates are free: click the gravel beside the truck to set one (${T.crateHolds} crops); belts and hoppers fill them; lift a full one and carry it to the truck. It leaves at night with what you loaded` : `${tier.slots} crate slots on the bed instead of ${tiers[i - 1].slots}: ${tier.slots * T.crateHolds} crops a night`, level: have >= i ? 'owned' : '', price: tier.price, blocked: have >= i ? 'You have it' : i === 0 ? (!full ? 'Extend the crate fully first' : null) : have < i - 1 ? `Needs the ${tiers[i - 1].name.toLowerCase()}` : null }));
     }
+    { const F = CONFIG.forklift, has = !!state.forklift || pendingCount(state, 'forklift') > 0 || state.parcels?.some(p => p.id === 'forklift');
+      items.push({ id: 'forklift', group: 'Stations', name: 'Forklift', effect: `Parks in the bay. Click it to get on: drive at nearly twice your pace, lift ${F.forks} crates onto the forks with a click, load them all onto the truck with one more. The Factorio way to move crates`, level: has ? 'owned' : '', price: F.price, blocked: has ? 'You have it' : !state.truck ? 'Needs the truck' : null }); }
     items.push({ id: 'splitter', group: 'Power', name: 'Splitter', effect: 'Sits on a belt tile: each crop that arrives goes down a different way in turn, so two lines share one picker line', level: owned('splitter'), price: PW.splitter.price, blocked: null });
     items.push({ id: 'filter', group: 'Power', name: 'Filter', effect: 'Sits on a belt tile: dried goods go one way, everything else the other · click it to swap the sides', level: owned('filter'), price: PW.filter.price, blocked: null });
     items.push({ id: 'hopper', group: 'Power', name: 'Hopper', effect: `Drives the belt that runs to it, holds ${PW.hopper.holds} crops. Beside the crate it tips in when the cart comes · ${PW.hopper.power} power`, level: owned('hopper'), price: PW.hopper.price, blocked: null });
@@ -194,6 +196,7 @@ export function collectParcels(state) {
     if (/^chest\d?$/.test(o.id)) { const lv = +o.id.slice(5) || 0, tier = CONFIG.chest.field.tiers[lv]; if (state.carrying) { keep.push(o); lines.push(`${tier.name}: put down what you carry first`); continue; } state.carrying = 'chest'; state.carriedChest = { kind: 'chest', level: lv, slots: new Array(tier.slots).fill(null) }; chest = true; lines.push(`${tier.name}: carry it and put it down`); }
     else
     if (o.id === 'tray') { state.seedRack.trays.push({ item: null, readyAt: null, startedAt: null }); lines.push(`Drying tray fitted: ${state.seedRack.trays.length} trays`); }
+    else if (o.id === 'forklift') { const b = W.BAY; let spot = null; for (let y = b.y1; y >= b.y0 && !spot; y--) for (let x = b.x1; x >= b.x0 && !spot; x--) { const t = state.world.tiles[y * state.world.w + x]; if (t && t.t === 'grass' && !t.track && !t.obj && !W.isTruckTile(x, y)) spot = [x, y]; } state.forklift = makeForklift(...(spot || [b.x1, b.y1])); lines.push('Forklift: parked in the bay. Click it to get on'); }
     else if (o.id === 'basket') { state.inventory.basket = Math.min(2, (state.inventory.basket || 0) + 1); lines.push(`${state.inventory.basket === 2 ? 'Big basket' : 'Basket'}: crops stack to ${CONFIG.inventory.cropStack[state.inventory.basket]} in your pockets`); }
     else if (o.id === 'barrow') { const C = CONFIG.chest, B = BUILDINGS; const spot = [[B.chest.x + 1, B.chest.y], [B.chest.x - 1, B.chest.y], [B.chest.x, B.chest.y + 1]].find(([x, y]) => { const t = state.world.tiles[y * state.world.w + x]; return t && t.t === 'grass' && !t.obj && !t.tilled; }) || [B.chest.x + 1, B.chest.y + 1]; state.barrow = makeBarrow(spot[0], spot[1]); lines.push('Wheelbarrow: it stands by the porch chest. Click it to take the handles'); }
     else if (o.id === 'bin') { state.compost.level = Math.min(CONFIG.fertiliser.compostTiers.length - 1, (state.compost.level || 0) + 1); lines.push(`Bigger bin: holds ${CONFIG.fertiliser.compostTiers[state.compost.level].max}`); }

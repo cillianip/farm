@@ -1256,6 +1256,44 @@ export function putInBarrow(state, slotIndex, n = Infinity) {
   removeFromSlot(state.inventory, slotIndex, moved);
   return { ok: true, msg: '', float: `+${moved} in the barrow`, moved };
 }
+// ---------- the forklift ----------
+// Parked in the bay. Click it to get on: you drive at nearly twice walking pace and lift crates onto the forks, three at a
+// time, with a click; click the truck to load them all; click open ground to set one down; click the forklift (or E) to get off.
+export function makeForklift(x, y) { return { x, y, crates: [], mounted: false }; }
+export function mountForklift(state) {
+  const f = state.forklift; if (!f) return fail('No forklift');
+  if (f.mounted) { f.mounted = false; f.x = state.player.x - 0.5; f.y = state.player.y - 0.5; return { ok: true, msg: '', float: 'Off' }; }
+  if (state.carrying) return fail('Put down what you carry first');
+  if (state.barrow?.held) return fail('Let go of the barrow first');
+  if (dist(state.player.x, state.player.y, f.x + 0.5, f.y + 0.5) > CONFIG.player.reach + 0.6) return fail('Too far');
+  f.mounted = true; state.player.x = f.x + 0.5; state.player.y = f.y + 0.5;
+  return { ok: true, msg: '', float: 'On' };
+}
+export function forkLift(state, x, y) {
+  const f = state.forklift; if (!f?.mounted) return fail('Get on the forklift first');
+  const t = tileAt(state.world, x, y); if (!isDcrate(t)) return fail('');
+  if (!inReach(state, x, y)) return fail('Too far');
+  if (f.crates.length >= CONFIG.forklift.forks) return fail(`The forks hold ${CONFIG.forklift.forks}`);
+  f.crates.push({ items: t.obj.items || [] }); t.obj = null; state.beltRev = (state.beltRev || 0) + 1;
+  return { ok: true, msg: '', float: `Lifted ${f.crates.length} / ${CONFIG.forklift.forks}` };
+}
+export function forkDrop(state, x, y) {
+  const f = state.forklift; if (!f?.mounted) return fail(''); if (!f.crates.length) return fail('Nothing on the forks');
+  const t = tileAt(state.world, x, y); if (!t) return fail('');
+  if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.obj || isTruckTile(x, y)) return fail(t?.obj ? 'Something stands there' : 'Not here');
+  if (!inReach(state, x, y)) return fail('Too far');
+  t.obj = { kind: 'dcrate', items: f.crates.pop().items }; state.beltRev = (state.beltRev || 0) + 1;
+  return { ok: true, msg: '', float: 'Set down' };
+}
+export function forkLoad(state) {
+  const f = state.forklift; if (!f?.mounted) return fail(''); if (!state.truck) return fail('No truck');
+  const p = state.player, cx = Math.min(Math.max(p.x, TRUCK_SPOT.x), TRUCK_SPOT.x + TRUCK_SPOT.w), cy = Math.min(Math.max(p.y, TRUCK_SPOT.y), TRUCK_SPOT.y + TRUCK_SPOT.h);
+  if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.6) return fail('Too far');
+  const bed = state.truck.bed = state.truck.bed || []; let n = 0;
+  for (let i = f.crates.length - 1; i >= 0; i--) { const c = f.crates[i]; if (!dcrateCount(c)) continue; if (bed.length >= truckSlots(state)) break; bed.push({ items: c.items }); f.crates.splice(i, 1); n++; }
+  if (!n) return fail(f.crates.length ? (bed.length >= truckSlots(state) ? `The truck is full: ${truckSlots(state)} crates` : 'Only full crates go on the truck') : 'Nothing on the forks');
+  return { ok: true, msg: '', float: `Loaded ${n}: ${bed.length} / ${truckSlots(state)}`, n };
+}
 // ---------- the model farm ----------
 // A farm with every machine set up and running, as a guide: a windmill on the pipe from the well, one block of carrots under a Sprinkler II with a Planter III and a
 // Picker III on the path through it, a belt to a splitter, one way to a dryer and on across the track to a hopper by the
