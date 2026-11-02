@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, planterSprite } from './render/sprites.js';
+import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, planterSprite, barrowSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -139,6 +139,7 @@ export class Game {
   eStations() {
     const s = this.state, out = [['seedrack', { ...S.objectPos(s, 'seedrack'), w: 1, h: 1 }, () => this.ui.openSeedRack()], ['crate', s.truck ? { x: -99, y: -99, w: 0, h: 0 } : BUILDINGS.crate, () => s.parcels?.length ? this.interact({ kind: 'crate', near: BUILDINGS.crate }) : this.ui.openCrate()], ['sign', BUILDINGS.sign, () => this.openSign()], ['chest', BUILDINGS.chest, () => this.ui.openChest()]];
     for (const { x, y, t } of S.chestTiles(s)) out.push(['fchest', { x, y, w: 1, h: 1 }, () => this.ui.openChest(t.obj), x, y]);
+    if (s.barrow) out.push(['barrow', { x: s.barrow.x, y: s.barrow.y, w: 1, h: 1 }, () => this.ui.openChest(s.barrow.slots)]);
     const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') out.push(['bench', { ...BP, w: 1, h: 1 }, () => this.ui.openBench()]);
     const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') out.push(['compost', { ...CP, w: 1, h: 1 }, () => this.ui.openCompost()]);
     for (const { x, y } of S.machineTiles(s, 'dryer')) out.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y), x, y]);
@@ -209,6 +210,7 @@ export class Game {
     if (BP && s.carrying !== 'bench') out.push({ kind: 'bench', near: { ...BP, w: 1, h: 1 }, rect: [BP.x * 16, (BP.y + 1) * 16 - 26 + 2, 16, 24], label: ((s.breeder.result || s.breeder.result2) ? 'Take the seeds' : s.breeder.running ? 'Breeding, results in the morning' : s.breeder.a && s.breeder.b ? 'Ready to breed' : 'Breeding bench') + '  (E: open, hold: pick up)' });
     const CP = S.objectPos(s, 'compost');
     if (CP && s.carrying !== 'compost') out.push({ kind: 'compost', near: { ...CP, w: 1, h: 1 }, rect: [CP.x * 16, (CP.y + 1) * 16 - 20 + 1, 16, 19], label: (s.compost.ready ? (it && it.kind !== 'fert' ? 'Compost ready: empty hands to take it' : 'Take the compost') : s.compost.running ? 'Rotting down, ready by morning' : it && S.COMPOSTABLE.includes(it.kind) ? (S.compostCount(s) >= CONFIG.fertiliser.compostMax ? 'The bin is full' : 'Drop it in') : 'Compost bin') + '  (E: open, hold: pick up)' });
+    if (s.barrow && !s.market?.at) { const b = s.barrow, bx = Math.round(b.x), by = Math.round(b.y); out.push({ kind: 'barrow', x: bx, y: by, near: { x: b.x, y: b.y, w: 1, h: 1 }, rect: [Math.round(b.x * 16) - 1, Math.round(b.y * 16) + 1, 18, 14], label: b.held ? (it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Let go of the barrow  (E: open)') : it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Take the handles  (E: open)' }); }
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
     for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Field chest') + '  (E: open, hold: pick up)' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
@@ -281,6 +283,7 @@ export class Game {
       case 'sign': { if (s.truck && s.parcels?.length) return this.interact({ kind: 'crate', near: BUILDINGS.sign }); this.openSign(); return true; }
       case 'roadsign': { this.travelTo('market'); return true; }
       case 'homesign': { this.travelTo('farm'); return true; }
+      case 'barrow': { if (it && it.kind !== 'tool') { const r = S.putInBarrow(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#f6c453'); this.sound.play('drop'); this.save(); } return true; } const r = S.grabBarrow(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#ffffff'); this.sound.play('pickup'); } return true; }
       case 'board': { this.ui.openCrate(); return true; }
       case 'truck': { this.ui.openCrate(); return true; }
       case 'bayspot': { const r = S.setCrate(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y, '#ffffff'); this.sound.play('stake'); this.save(); } return true; }
@@ -463,12 +466,13 @@ export class Game {
     if (!dx && !dy) { this.walkT = 0; return; }
     const len = Math.hypot(dx, dy); dx /= len; dy /= len;
     p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-    const wf = S.walkFactor(this.state), sp = CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * wf;
+    const wf = S.walkFactor(this.state), sp = CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * (this.state.barrow?.held ? CONFIG.barrow.speed : 1) * wf;
     const w = this.state.world, rad = 0.3;
     const free = this.state.market?.at ? ((x, y) => M.walkable(x, y)) : (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
     const x0 = p.x, y0 = p.y;
     if (free(p.x + dx * sp, p.y)) p.x += dx * sp;
     if (free(p.x, p.y + dy * sp)) p.y += dy * sp;
+    if (this.state.barrow?.held) { const b = this.state.barrow, ahead = { up: [0, -0.9], down: [0, 0.9], left: [-0.9, 0], right: [0.9, 0] }[p.dir]; const tx = p.x + ahead[0] - 0.5, ty = p.y + ahead[1] - 0.5; b.x += (tx - b.x) * Math.min(1, dt * 6); b.y += (ty - b.y) * Math.min(1, dt * 6); }   // the barrow is pushed a step ahead of you
     this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
     if (this.printDist >= 0.55) { this.printDist = 0; const side = p.dir === 'left' || p.dir === 'right'; this.leftFoot = !this.leftFoot; this.prints.push({ x: p.x + (this.leftFoot ? -0.14 : 0.14) * (side ? 0.4 : 1), y: p.y + (side ? (this.leftFoot ? -0.06 : 0.06) : 0), t: 0 }); if (this.prints.length > 64) this.prints.shift(); }
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
@@ -650,6 +654,7 @@ export class Game {
     } });
     { const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') { const st = s.breeder.running ? 2 : s.breeder.a || s.breeder.b ? 1 : 0; drawables.push({ y: BP.y + 1, draw: () => { ctx.drawImage(benchSprite(st, Math.floor(now / 350) % 2), BP.x * T - cx, (BP.y + 1) * T - cy - 28 * CONFIG.scale, T, 28 * CONFIG.scale); if ((s.breeder.result || s.breeder.result2)) { const sp = s.species[(s.breeder.result || s.breeder.result2).species], u = CONFIG.scale; if (sp) ctx.drawImage(seedIcon(Math.round(sp.genome.hue1), sp.genome.sat1, sp.genome.light1), BP.x * T - cx + 3 * u, (BP.y + 1) * T - cy - 24 * u, 10 * u, 8 * u); } } }); } }
     { const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') { const lv = S.compostLevel(s); drawables.push({ y: CP.y + 1, draw: () => ctx.drawImage(compostSprite(lv), CP.x * T - cx, (CP.y + 1) * T - cy - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); } }
+    if (s.barrow) { const b = s.barrow, u = CONFIG.scale, full = b.slots.slots.some(Boolean); drawables.push({ y: b.y + 1, draw: () => ctx.drawImage(barrowSprite(full), Math.round(b.x * T) - cx - u, Math.round((b.y + 1) * T) - cy - 14 * u, 18 * u, 14 * u) }); }
     { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
     const Cr = BUILDINGS.crate, crateLevel = S.crateCount(s) >= s.crate.capacity ? 2 : S.crateCount(s) > 0 ? 1 : 0;
     if (s.truck && s.parcels?.length) { const Sg = BUILDINGS.sign, u = CONFIG.scale; drawables.push({ y: Sg.y + 1.02, draw: () => ctx.drawImage(parcelSprite(), Sg.x * T - cx + 2 * u, (Sg.y + 1) * T - cy - 10 * u + Math.round(Math.sin(now / 300)) * u, 12 * u, 10 * u) }); }   // parcels wait at the foot of the sign once the crate is gone

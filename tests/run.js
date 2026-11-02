@@ -360,7 +360,7 @@ await test('serialize/deserialize round trip and offline progress', () => {
 
 console.log('delivery crate');
 await test('only crops go in, up to the capacity, and the cart pays at night', () => {
-  const s = S.createState(5);
+  const s = S.createState(5); s.inventory.basket = 2;   // the big basket: 36 a stack, room for the twenty
   const carrot = byName(s, 'Carrot');
   assert.equal(S.putInCrate(s, 0).ok, false, 'empty slot');
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 20 });
@@ -499,7 +499,7 @@ await test('breeding bench: ordered, carried, placed; two parents breed overnigh
   assert.equal(s.breeder.running, null);
 });
 await test('day ledger: fills, hoed, planted, crate full hour and the sale close at night; the morning compares days', async () => {
-  const s = arm(S.createState(14)); s.player.x = X + 0.5; s.player.y = Y + 0.5;
+  const s = arm(S.createState(14)); s.player.x = X + 0.5; s.player.y = Y + 0.5; s.inventory.basket = 2;
   S.fillCan(s); S.fillCan(s); assert.equal(S.today(s).fills, 1, 'arm() filled once; a full can does not count as a trip');
   const hoe = s.inventory.slots.findIndex(i => i?.tool === 'hoe'), seed = s.inventory.slots.findIndex(i => i?.kind === 'seed');
   assert.ok(S.useItem(s, hoe, X, Y).ok); assert.ok(S.useItem(s, seed, X, Y).ok);
@@ -556,7 +556,7 @@ await test('too tired really means too tired: no pour, no wet bed, no water lost
   s.energy = CONFIG.needs.tiredBelow - 1; assert.ok(S.isTired(s)); assert.equal(S.walkFactor(s), CONFIG.needs.tiredSpeed); assert.equal(S.actionFactor(s), CONFIG.needs.tiredActionSlow);
 });
 await test('five pockets, a chest by the porch; heavy pockets slow you; old 27-slot saves pour the overflow into the chest', () => {
-  const s = arm(S.createState(19));
+  const s = arm(S.createState(19)); s.inventory.basket = 2; s.inventory.slots[3] = null;   // a big basket and a free pocket, so forty crops fit
   assert.equal(s.inventory.slots.length, 5); assert.equal(s.world.tiles[W.BUILDINGS.chest.y * s.world.w + W.BUILDINGS.chest.x].t, 'chest');
   const carrot = byName(s, 'Carrot'), i = s.inventory.slots.findIndex(x => x?.kind === 'seed');
   assert.ok(!S.isHeavy(s)); addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: CONFIG.player.heavyAt }); assert.ok(S.isHeavy(s)); assert.equal(S.walkFactor(s), CONFIG.player.heavySpeed);
@@ -640,7 +640,7 @@ await test('compost bin: ordered, carried, placed, filled by hand, rots down ove
   assert.equal(S.compostLevel(s), 0); assert.ok(S.pickUp(s, 'compost').ok, 'empty again: can be lifted');
 });
 await test('compost bin: cap, empty-night message, and only when there is enough', () => {
-  const s = arm(S.createState(28)); const car = byName(s, 'Carrot');
+  const s = arm(S.createState(28)); const car = byName(s, 'Carrot'); s.inventory.basket = 2;
   addItem(s.inventory, { kind: 'crop', species: car.id, qty: 20 }); const i = s.inventory.slots.findIndex(it => it?.kind === 'crop');
   assert.ok(S.addToCompost(s, i, 2).ok); const r = S.sleep(s); assert.ok(!s.compost.ready && S.compostCount(s) === 2, 'two is not enough'); assert.ok(r.lines.some(l => l.includes('needs 3')));
   const a = S.addToCompost(s, i, 99); assert.ok(a.ok && a.full && S.compostCount(s) === CONFIG.fertiliser.compostMax); assert.equal(S.canCompost(s).msg, 'The bin is full');
@@ -902,7 +902,7 @@ await test('field chests: bought and carried like the bench, put down on any ope
 console.log('market');
 await test('the market: an hour down the track, crops on the counter, shoppers buy at full price and tip, merchants sell on the spot, pack up and walk home; the night sends you home; too late to go', async () => {
   const M = await import('../src/market.js');
-  const s = arm(S.createState(5)); const C = CONFIG.market; s.money = 50;
+  const s = arm(S.createState(5)); const C = CONFIG.market; s.money = 50; s.inventory.basket = 2;
   const carrot = byName(s, 'Carrot'), turnip = byName(s, 'Turnip');
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 20 }); s.inventory.slots[s.inventory.slots.findIndex(i => i?.kind === 'seed')] = { kind: 'crop', species: turnip.id, qty: 20 };
   s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60;   // 9am
@@ -1375,6 +1375,25 @@ await test('generator tiers: more power and more cans a night; belt and line may
   s.player.x = 36.5; s.player.y = 26.5; addItem(s.inventory, { kind: 'line', qty: 2 }); const li = s.inventory.slots.findIndex(i => i?.kind === 'line'); assert.ok(li >= 0); const r = S.useItem(s, li, 36, 27); assert.ok(r.ok, r.msg); assert.ok(tile(36, 27).line && tile(36, 27).track);
   // the fuel bill of a Generator II
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const f0 = tile(26, 25).obj.fuel; const rep = S.sleep(s); assert.equal(f0 - tile(26, 25).obj.fuel, T.generator.tiers[1].fuelPerDay);
+});
+await test('weight: pockets stack crops to 12, a basket to 24 and 36, fertiliser to 10, seeds to 99; the chest stacks to 99; an old save spills the overflow into the chest; the barrow takes stacks by the handful and walks with you', async () => {
+  const { catalog, placeOrder } = await import('../src/catalog.js'); const { stackMax } = await import('../src/items.js');
+  const s = arm(S.createState(1)); const carrot = byName(s, 'Carrot'); s.money = 1000;
+  assert.equal(stackMax(s.inventory, { kind: 'crop' }), 12); assert.equal(stackMax(s.inventory, { kind: 'seed' }), 99); assert.equal(stackMax(s.inventory, { kind: 'fert' }), 10); assert.equal(stackMax(s.chest, { kind: 'crop' }), 99);
+  s.inventory.slots[2] = s.inventory.slots[3] = s.inventory.slots[4] = null;
+  const left = addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 40 }); assert.equal(left, 4, 'three pockets of 12 take 36'); assert.ok(s.inventory.slots.filter(i => i?.kind === 'crop').every(i => i.qty === 12));
+  assert.ok(placeOrder(s, 'basket').ok); S.sleep(s); S.collectParcels(s); assert.equal(s.inventory.basket, 1); assert.equal(stackMax(s.inventory, { kind: 'crop' }), 24); assert.equal(catalog(s).find(i => i.id === 'basket').level, '1 / 2');
+  assert.ok(placeOrder(s, 'basket').ok); S.sleep(s); S.collectParcels(s); assert.equal(stackMax(s.inventory, { kind: 'crop' }), 36); assert.equal(catalog(s).find(i => i.id === 'basket').blocked, 'Biggest basket');
+  // an old save with 99 carrots in a pocket spills the extra into the chest on load
+  const old = JSON.parse(serialize(s)); old.inventory.basket = 0; old.inventory.slots[2] = { kind: 'crop', species: carrot.id, qty: 99 }; const m = deserialize(JSON.stringify(old)); S.migrate(m); assert.equal(m.inventory.slots[2].qty, 12); assert.ok(m.chest.slots.some(i => i?.kind === 'crop' && i.qty === 87));
+  // the barrow
+  assert.ok(placeOrder(s, 'barrow').ok); S.sleep(s); S.collectParcels(s); assert.ok(s.barrow && !s.barrow.held); assert.equal(catalog(s).find(i => i.id === 'barrow').blocked, 'You have one');
+  s.player.x = s.barrow.x + 0.5; s.player.y = s.barrow.y + 1.5; const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
+  let r = S.putInBarrow(s, ci); assert.ok(r.ok && r.moved === s.barrow.slots.slots[0].qty, JSON.stringify(r)); assert.equal(stackMax(s.barrow.slots, { kind: 'crop' }), CONFIG.barrow.stack);
+  assert.equal(S.putInBarrow(s, 0).msg, 'Tools hang on the rack');
+  r = S.grabBarrow(s); assert.ok(r.ok && s.barrow.held); s.player.x += 5; assert.ok(S.putInBarrow(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')).ok, 'held: it is with you wherever you are');
+  r = S.grabBarrow(s); assert.ok(r.ok && !s.barrow.held); s.player.x += 5; assert.equal(S.putInBarrow(s, s.inventory.slots.findIndex(i => i?.kind === 'crop')).msg, 'Too far');
+  assert.ok(S.isHeavy({ ...s, inventory: { ...s.inventory, slots: [{ kind: 'crop', species: carrot.id, qty: 36 }, { kind: 'crop', species: carrot.id, qty: 12 }, null, null, null] } }), 'heavy from 40 crops');
 });
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {

@@ -656,6 +656,24 @@ export function dryerSprite(frame = 0, full = false) {
     if (full) { P.px(6, 15, '#8a5a2b'); P.px(8, 15, '#a0642c'); P.px(10, 15, '#7a4a22'); }
   });
 }
+// The wheelbarrow (18×14): a tray on a frame with one wheel at the front and two handles behind; `full` shows a load.
+export function barrowSprite(full = false) {
+  return sprite(`barrow${full ? 'f' : ''}`, 18, 14, P => {
+    P.rect(2, 12, 14, 2, 'rgba(30,20,10,0.25)');
+    P.rect(4, 3, 11, 6, PAL.metalDark); P.rect(5, 4, 9, 4, '#6f7a8a'); P.rect(5, 4, 9, 1, PAL.metalLight);   // the tray
+    P.rect(0, 5, 4, 1, PAL.woodDark); P.rect(0, 7, 4, 1, PAL.woodDark); P.px(0, 5, PAL.wood); P.px(0, 7, PAL.wood);   // handles
+    P.rect(6, 9, 1, 2, PAL.metalDark); P.rect(12, 9, 1, 2, PAL.metalDark);                                   // legs
+    P.disc(15, 10, 2, '#2a2a2a'); P.px(15, 10, PAL.metalLight);                                             // the wheel
+    if (full) { P.px(6, 4, '#e86a6a'); P.px(8, 3, '#f6c453'); P.px(10, 4, '#8fd36a'); P.px(12, 3, '#e8a23b'); }
+  }, 'rgba(40,25,15,0.9)');
+}
+// A basket (16×16): woven, with a handle.
+export function basketIcon() {
+  return sprite('basket', 16, 16, P => {
+    P.rect(2, 7, 12, 7, '#b07a3e'); P.rect(2, 7, 12, 1, '#c99a66'); P.rect(2, 13, 12, 1, '#6a4220'); for (let y = 9; y < 13; y += 2) for (let x = 3; x < 14; x += 2) P.px(x + (y % 4 ? 1 : 0), y, '#8c5a2b');
+    P.line(4, 7, 6, 3, '#6a4220'); P.line(6, 3, 10, 3, '#6a4220'); P.line(10, 3, 12, 7, '#6a4220');   // the handle
+  });
+}
 export function witheredSprite() {
   return sprite('withered', 16, 16, P => {
     P.line(8, 13, 7, 8, PAL.witheredDark); P.line(7, 8, 5, 6, PAL.withered); P.line(7, 10, 10, 8, PAL.withered); P.px(4, 6, PAL.withered); P.px(11, 8, PAL.withered);

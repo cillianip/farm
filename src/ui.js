@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { itemName, itemKey, isFood } from './items.js';
 import { formatMoney, titleFor, salePrice, seedBookBonus, driedFactor, dryHours } from './economy.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
-import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite } from './render/sprites.js';
+import { toolIcon, seedIcon, fertIcon, fuelIcon, coinIcon, sprinklerSprite, pipeSprite, witheredSprite, seedRackSprite, crateSprite, treeSprite, benchSprite, cartSprite, handsIcon, compostSprite, pumpIcon, stationIcon, chestSprite, basketIcon, barrowSprite } from './render/sprites.js';
 import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catalog.js';
 import * as M from './market.js';
 import { MARKET } from './market.js';
@@ -398,7 +398,7 @@ export class UI {
     const s = this.state;
     const icon = item => {
       const c = document.createElement('canvas'); c.width = 48; c.height = 48; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
-      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id.startsWith('chest') ? chestSprite(false, false, +item.id.slice(5) || 0) : item.id === 'dcrate' ? crateSprite(0, true) : item.id === 'truck' ? stationIcon('truck') : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'dcrate', 'planter'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
+      const src = item.id === 'can' ? toolIcon('can') : item.id === 'hoe' ? toolIcon('hoe') : item.id === 'tray' ? seedRackSprite(0) : item.id === 'crate' ? crateSprite(0) : item.id === 'deed' ? treeSprite(0) : item.id === 'pickup' ? cartSprite(0) : item.id === 'hands' ? handsIcon() : item.id === 'bench' ? benchSprite(0) : item.id === 'compost' ? compostSprite(1) : item.id === 'bin' ? compostSprite(2) : item.id === 'glass' ? benchSprite(2) : item.id.startsWith('chest') ? chestSprite(false, false, +item.id.slice(5) || 0) : item.id === 'dcrate' ? crateSprite(0, true) : item.id === 'truck' ? stationIcon('truck') : item.id === 'basket' ? basketIcon() : item.id === 'barrow' ? barrowSprite(false) : item.id.startsWith('sprinkler') ? sprinklerSprite(+item.id.slice(9) || 0, 1) : item.id.startsWith('pump') ? pumpIcon(+item.id.slice(4) || 0) : ['generator', 'line', 'belt', 'picker', 'hopper', 'dryer', 'splitter', 'filter', 'dcrate', 'planter'].includes(item.id) ? stationIcon(item.id) : item.id === 'fuel' ? fuelIcon() : item.id.startsWith('repay:') || item.id.startsWith('loan:') ? coinIcon() : item.id === 'pipe' ? pipeSprite(10, true) : item.species ? seedIcon(Math.round(item.species.genome.hue1), item.species.genome.sat1, item.species.genome.light1) : null;
       if (src) { const sc = Math.min(48 / src.width, 48 / src.height); ctx.drawImage(src, (48 - src.width * sc) / 2, (48 - src.height * sc) / 2, src.width * sc, src.height * sc); }
       return c;
     };
@@ -509,7 +509,7 @@ export class UI {
     }, 'planter');
   }
   openChest(chest = this.state.chest) {
-    const s = this.state, invs = { pocket: s.inventory, chest }, field = chest !== s.chest; this.chestOpen = chest;
+    const s = this.state, invs = { pocket: s.inventory, chest }, field = chest !== s.chest, barrow = chest === s.barrow?.slots; this.chestOpen = chest;
     let drag = null, dragged = false;
     const endDrag = () => { if (!drag) return; drag.ghost.remove(); drag.sl.classList.remove('dragging'); $('panel-body').querySelectorAll('.pslot.over').forEach(e => e.classList.remove('over')); drag = null; };
     const grid = (inv, other, hintWord, key) => {
@@ -542,7 +542,7 @@ export class UI {
       if (over && over.dataset.inv && !over.classList.contains('locked')) { const to = invs[over.dataset.inv], ti = +over.dataset.i; if (!(to === inv && ti === i)) { S.moveSlot(s, inv, i, to, ti); this.game.sound.play('move'); } }
       this.refresh();
     };
-    this.show(field ? 'Field chest' : 'Chest', body => {
+    this.show(barrow ? 'Wheelbarrow' : field ? 'Field chest' : 'Chest', body => {
       body.appendChild(el('div', 'pc-sec', `Pockets · ${S.carriedCount(s)} things${S.isHeavy(s) ? ' · heavy' : ''}`));
       body.appendChild(grid(s.inventory, chest, 'pocket', 'pocket'));
       const used = chest.slots.filter(Boolean).length;

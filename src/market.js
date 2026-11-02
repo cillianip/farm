@@ -59,6 +59,7 @@ export function depart(state, dest) {
   if (state.carrying) return fail('Put down what you carry first');
   if (dest === 'market' && hourOf(state) >= CONFIG.market.close - 1) return fail(`The market shuts at ${CONFIG.market.close - 12}pm: too late to go today`);
   if (dest === 'market') m.farmPos = { x: state.player.x, y: state.player.y, dir: state.player.dir };
+  if (state.barrow) state.barrow.held = false;   // the barrow stays home
   return { ok: true, msg: '' };
 }
 export function arrive(state, dest) {

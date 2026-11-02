@@ -8,13 +8,15 @@ export const isFood = it => !!it && (it.kind === 'crop' || it.kind === 'product'
 export const makeInventory = n => ({ slots: new Array(n).fill(null) });
 export const stackable = it => it.kind !== 'tool';
 // true when addItem would take all of it (a stack with room, or a free slot)
-export const hasRoom = (inv, item) => { const key = itemKey(item); return inv.slots.some(s => !s || (stackable(item) && itemKey(s) === key && s.qty + item.qty <= CONFIG.inventory.stack)); };
+// how high a stack goes: pockets hold few crops (more with a basket) and few bags; seeds and parts stack high; a chest or a counter stacks everything high; a barrow has its own cap
+export const stackMax = (inv, item) => { if (inv?.pocket) { if (item.kind === 'crop' || item.kind === 'product') return CONFIG.inventory.cropStack[Math.min(CONFIG.inventory.cropStack.length - 1, inv.basket || 0)]; if (item.kind === 'fert') return CONFIG.inventory.fertStack; } return inv?.stackCap || CONFIG.inventory.stack; };
+export const hasRoom = (inv, item) => { const key = itemKey(item); return inv.slots.some(s => !s || (stackable(item) && itemKey(s) === key && s.qty + item.qty <= stackMax(inv, item))); };
 
 // returns leftover quantity (0 if all added)
 export function addItem(inv, item) {
   let qty = item.qty;
   const key = itemKey(item);
-  const max = CONFIG.inventory.stack;
+  const max = stackMax(inv, item);
   if (stackable(item)) for (const s of inv.slots) {
     if (s && itemKey(s) === key && s.qty < max) { const take = Math.min(max - s.qty, qty); s.qty += take; qty -= take; if (!qty) return 0; }
   }

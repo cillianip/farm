@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
 import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, baySpots, BAY, TRUCK_SPOT, isTruckTile } from './world.js';
-import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood } from './items.js';
+import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood, stackMax } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
 import { makeCompost } from './fertiliser.js';
@@ -23,7 +23,7 @@ export function createState(seed = randomSeed()) {
     energy: CONFIG.energy.max, energyMax: CONFIG.energy.max, hunger: 100, thirst: 100, layout: CONFIG.layout,
     player: { x: PLAYER_START.x, y: PLAYER_START.y, dir: 'down' },
     world: createWorld(),
-    inventory: makeInventory(CONFIG.inventory.slots),
+    inventory: { ...makeInventory(CONFIG.inventory.slots), pocket: true, basket: 0 },   // pocket: small stacks for crops; basket: how big a basket you carry
     chest: makeInventory(CONFIG.chest.slots),
     species, discovered: Object.keys(species),
     upgrades: { can: 0 },                         // the can's reach (0: one bed, 1: three in a row, 2: a 3×3); everything else is a catalogue item
@@ -89,7 +89,8 @@ export function migrate(state) {
   for (const [x, y, kinds] of [[31, 24, ['board']], [30, 25, ['cstack']], [32, 25, ['truck']], [33, 25, ['truck']], [32, 26, ['truck']], [33, 26, ['truck']], [37, 29, ['truck']], [38, 29, ['truck']], [37, 30, ['truck']], [38, 30, ['truck']], [34, 29, ['board']]]) { const t = tileAt(state.world, x, y); if (t && kinds.includes(t.t)) t.t = 'grass'; }
   { const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'board' && !state.truck) bd.t = 'grass'; }
   state.bay = { level: 2 };
-  if (state.truck === true) state.truck = { level: 0, bed: [] };   // Build 76: the truck is a thing with a bed
+  state.inventory.pocket = true; if (state.inventory.basket === undefined) state.inventory.basket = 0;   // Build 85: pockets hold few crops; a stack over the cap spills into the chest
+  for (const sl of state.inventory.slots) if (sl && sl.qty > stackMax(state.inventory, sl)) { const over = sl.qty - stackMax(state.inventory, sl); sl.qty -= over; addItem(state.chest, { ...sl, qty: over }); }  if (state.truck === true) state.truck = { level: 0, bed: [] };   // Build 76: the truck is a thing with a bed
   if (state.truck) { parkTruck(state); for (const { t } of dcrateTiles(state)) { const o = t.obj, extra = dcrateCount(o) - CONFIG.truck.crateHolds; if (extra > 0) { let left = extra; for (let i = o.items.length - 1; i >= 0 && left > 0; i--) { const take = Math.min(left, o.items[i].qty); o.items[i].qty -= take; left -= take; if (!o.items[i].qty) o.items.splice(i, 1); } } } }   // older crates held 36
   for (const inv of [state.inventory, state.chest]) inv.slots.forEach((it, i) => { if (it?.kind === 'dcrate') inv.slots[i] = null; });   // crates are free now (Build 75): bought ones are just gone
   const ct = tileAt(state.world, BUILDINGS.chest.x, BUILDINGS.chest.y);
@@ -1234,6 +1235,27 @@ export function takeHeld(state, x, y) {
   return { ok: true, msg: '', float: `+${taken} ${isDryer(t) ? 'dried' : taken === 1 ? 'crop' : 'crops'}`, taken };
 }
 
+// ---------- the wheelbarrow ----------
+// A barrow stands where you leave it. Click it to take the handles: it trails behind you and you walk slower; click again to
+// let go. Crops, dried goods, seeds and fertiliser go in by the stack and stack high; E opens it like a chest.
+export const barrowInv = state => state.barrow?.slots || null;
+export function makeBarrow(x, y) { return { x, y, held: false, slots: { ...makeInventory(CONFIG.barrow.slots), stackCap: CONFIG.barrow.stack } }; }
+export function grabBarrow(state) {
+  const b = state.barrow; if (!b) return fail('No barrow');
+  if (b.held) { b.held = false; return { ok: true, msg: '', float: 'Let go' }; }
+  if (state.carrying) return fail('Hands full');
+  if (dist(state.player.x, state.player.y, b.x + 0.5, b.y + 0.5) > CONFIG.player.reach + 0.6) return fail('Too far');
+  b.held = true; return { ok: true, msg: '', float: 'Got it' };
+}
+export function putInBarrow(state, slotIndex, n = Infinity) {
+  const b = state.barrow, it = state.inventory.slots[slotIndex]; if (!b || !it) return fail('');
+  if (it.kind === 'tool') return fail('Tools hang on the rack');
+  if (!b.held && dist(state.player.x, state.player.y, b.x + 0.5, b.y + 0.5) > CONFIG.player.reach + 0.6) return fail('Too far');
+  const take = Math.min(n, it.qty), left = addItem(b.slots, { ...it, qty: take }), moved = take - left;
+  if (!moved) return fail('The barrow is full');
+  removeFromSlot(state.inventory, slotIndex, moved);
+  return { ok: true, msg: '', float: `+${moved} in the barrow`, moved };
+}
 // ---------- the model farm ----------
 // A farm with every machine set up and running, as a guide: a windmill on the pipe from the well, one block of carrots under a Sprinkler II with a Planter III and a
 // Picker III on the path through it, a belt to a splitter, one way to a dryer and on across the track to a hopper by the
@@ -1357,7 +1379,7 @@ export function claimLand(state, cx, cy) {
 export function moveSlot(state, from, fi, to, ti) {
   const a = from.slots[fi], b = to.slots[ti];
   if (!a) return;
-  if (b && itemKey(a) === itemKey(b) && a.kind !== 'tool') { const take = Math.min(CONFIG.inventory.stack - b.qty, a.qty); b.qty += take; a.qty -= take; if (!a.qty) from.slots[fi] = null; return; }
+  if (b && itemKey(a) === itemKey(b) && a.kind !== 'tool') { const take = Math.min(stackMax(to, b) - b.qty, a.qty); b.qty += take; a.qty -= take; if (!a.qty) from.slots[fi] = null; return; }
   from.slots[fi] = b; to.slots[ti] = a;
 }
 export function quickMove(state, from, fi, to) { const it = from.slots[fi]; if (!it || it.kind === 'tool') return; const left = addItem(to, it); from.slots[fi] = left ? { ...it, qty: left } : null; }

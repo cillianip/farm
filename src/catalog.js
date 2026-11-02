@@ -2,7 +2,8 @@
 // morning report lists what arrived. Each item removes one bottleneck and its price rises with each level.
 import { CONFIG } from './config.js';
 import * as W from './world.js';
-import { parkTruck } from './sim.js';
+import { BUILDINGS } from './world.js';
+import { parkTruck, makeBarrow } from './sim.js';
 import { makeSpecies, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { makeRng, hashString } from './rng.js';
 import { addItem } from './items.js';
@@ -51,6 +52,9 @@ export function catalog(state) {
       price: HOE_PRICES[hoeLvl] ?? 0, blocked: hoeLvl >= hoeMax ? 'Sharpest hoe' : null },
     { id: 'hands', group: 'Tools', name: 'Quick hands', effect: handsLvl < handsMax ? `${CONFIG.hands.dropSeconds[handsLvl]}s → ${CONFIG.hands.dropSeconds[handsLvl + 1]}s a crop into the crate` : `${CONFIG.hands.dropSeconds[handsLvl]}s a crop`, level: `${handsLvl + 1} / ${handsMax + 1}`,
       price: HANDS_PRICES[handsLvl] ?? 0, blocked: handsLvl >= handsMax ? 'Quickest hands' : null },
+    { id: 'basket', group: 'Tools', name: 'Basket', effect: (state.inventory.basket || 0) + pendingCount(state, 'basket') < 2 ? `Crops stack to ${CONFIG.inventory.cropStack[(state.inventory.basket || 0) + pendingCount(state, 'basket') + 1]} in your pockets instead of ${CONFIG.inventory.cropStack[(state.inventory.basket || 0) + pendingCount(state, 'basket')]}` : `Crops stack to ${CONFIG.inventory.cropStack[2]} in your pockets`, level: `${(state.inventory.basket || 0) + pendingCount(state, 'basket')} / 2`,
+      price: CONFIG.basket.prices[(state.inventory.basket || 0) + pendingCount(state, 'basket')] ?? 0, blocked: (state.inventory.basket || 0) + pendingCount(state, 'basket') >= 2 ? 'Biggest basket' : null },
+    { id: 'barrow', group: 'Tools', name: 'Wheelbarrow', effect: `Push it along behind you: ${CONFIG.barrow.slots} stacks of ${CONFIG.barrow.stack}. Click it to take the handles, click it with something in hand to load it, E opens it`, level: state.barrow || pendingCount(state, 'barrow') ? 'owned' : '', price: CONFIG.barrow.price, blocked: state.barrow || pendingCount(state, 'barrow') || state.parcels?.some(p => p.id === 'barrow') ? 'You have one' : null },
     { id: 'tray', group: 'Stations', name: 'Drying tray', effect: `Seed rack dries ${trays + 1} crops at once`, level: `${trays} / ${TRAY_MAX}`,
       price: r2(TRAY_BASE * Math.pow(TRAY_GROWTH, trays - 1)), blocked: trays >= TRAY_MAX ? 'All trays fitted' : null },
     { id: 'can', group: 'Tools', name: 'Bigger watering can', effect: canLvl < CAN_LEVELS.length - 1 ? `${CAN_LEVELS[canLvl]} → ${CAN_LEVELS[canLvl + 1]} pours per fill` : `${CAN_LEVELS[canLvl]} pours per fill`, level: `${canLvl + 1} / ${CAN_LEVELS.length}`,
@@ -190,6 +194,8 @@ export function collectParcels(state) {
     if (/^chest\d?$/.test(o.id)) { const lv = +o.id.slice(5) || 0, tier = CONFIG.chest.field.tiers[lv]; if (state.carrying) { keep.push(o); lines.push(`${tier.name}: put down what you carry first`); continue; } state.carrying = 'chest'; state.carriedChest = { kind: 'chest', level: lv, slots: new Array(tier.slots).fill(null) }; chest = true; lines.push(`${tier.name}: carry it and put it down`); }
     else
     if (o.id === 'tray') { state.seedRack.trays.push({ item: null, readyAt: null, startedAt: null }); lines.push(`Drying tray fitted: ${state.seedRack.trays.length} trays`); }
+    else if (o.id === 'basket') { state.inventory.basket = Math.min(2, (state.inventory.basket || 0) + 1); lines.push(`${state.inventory.basket === 2 ? 'Big basket' : 'Basket'}: crops stack to ${CONFIG.inventory.cropStack[state.inventory.basket]} in your pockets`); }
+    else if (o.id === 'barrow') { const C = CONFIG.chest, B = BUILDINGS; const spot = [[B.chest.x + 1, B.chest.y], [B.chest.x - 1, B.chest.y], [B.chest.x, B.chest.y + 1]].find(([x, y]) => { const t = state.world.tiles[y * state.world.w + x]; return t && t.t === 'grass' && !t.obj && !t.tilled; }) || [B.chest.x + 1, B.chest.y + 1]; state.barrow = makeBarrow(spot[0], spot[1]); lines.push('Wheelbarrow: it stands by the porch chest. Click it to take the handles'); }
     else if (o.id === 'bin') { state.compost.level = Math.min(CONFIG.fertiliser.compostTiers.length - 1, (state.compost.level || 0) + 1); lines.push(`Bigger bin: holds ${CONFIG.fertiliser.compostTiers[state.compost.level].max}`); }
     else if (o.id === 'glass') { state.breeder.level = 1; lines.push('Second glass fitted: the bench breeds two pairs a night'); }
     else if (o.id === 'hoe') { state.hoe = state.hoe || { level: 0 }; state.hoe.level = Math.min(CONFIG.hoe.seconds.length - 1, state.hoe.level + 1); lines.push(`Sharper hoe: ${CONFIG.hoe.seconds[state.hoe.level]}s a bed`); }
