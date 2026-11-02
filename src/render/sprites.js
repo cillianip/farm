@@ -539,7 +539,7 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' || kind === 'truck1' || kind === 'truck2' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' || kind === 'truck1' || kind === 'truck2' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'planter' ? fitIcon('planter', planterSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.
@@ -604,8 +604,9 @@ export function generatorSprite(frame = 0) {
   });
 }
 // The picker (16×20): a post with a jointed arm and a basket at its foot; frames swing the arm; `full` shows crops.
-export function pickerSprite(frame = 0, full = false) {
-  return sprite(`picker${frame}${full ? 'f' : ''}`, 16, 20, P => {
+const TIER_BAND = [null, PAL.metalLight, PAL.gold];   // II wears a bright band, III a gold one
+export function pickerSprite(frame = 0, full = false, level = 0) {
+  return sprite(`picker${frame}${full ? 'f' : ''}${level || ''}`, 16, 20, P => {
     P.rect(4, 18, 9, 2, 'rgba(30,20,10,0.28)');
     P.rect(7, 6, 2, 12, PAL.metalDark); P.rect(7, 6, 1, 12, PAL.metal);                               // the post
     P.rect(6, 5, 4, 2, PAL.metalDark); P.px(6, 5, PAL.metalLight);                                     // the joint
@@ -613,6 +614,20 @@ export function pickerSprite(frame = 0, full = false) {
     else { P.line(8, 6, 2, 9, PAL.metal); P.line(2, 9, 1, 13, PAL.metalDark); P.px(1, 14, PAL.outline); }             // arm down to a bed
     P.rect(9, 13, 6, 5, PAL.woodDark); P.rect(10, 14, 4, 3, PAL.wood);                                // the basket
     if (full) { P.px(10, 13, '#e86a6a'); P.px(12, 13, '#f6c453'); P.px(13, 13, '#8fd36a'); }
+    if (TIER_BAND[level]) P.rect(7, 10, 2, 2, TIER_BAND[level]);                                        // the tier band on the post
+  });
+}
+// The planter (16×20): a seed box on legs with a drill tube down the middle; frames nod the drill; `full` shows seeds in the box.
+export function planterSprite(frame = 0, full = false, level = 0) {
+  return sprite(`planter${frame}${full ? 'f' : ''}${level || ''}`, 16, 20, P => {
+    P.rect(3, 18, 10, 2, 'rgba(30,20,10,0.28)');
+    P.rect(2, 4, 12, 7, PAL.woodDark); P.rect(3, 5, 10, 5, PAL.wood); P.rect(3, 5, 10, 1, PAL.woodLight);   // the seed box
+    P.rect(2, 3, 12, 1, PAL.metalDark); P.px(2, 3, PAL.metal);                                            // its lid rail
+    P.rect(7, 11, 2, 6 + (frame ? 1 : 0), PAL.metalDark); P.px(7, 11, PAL.metal);                        // the drill tube
+    P.rect(3, 11, 1, 7, PAL.metalDark); P.rect(12, 11, 1, 7, PAL.metalDark);                              // legs
+    P.rect(5, 17, 6, 1, PAL.metalDark);                                                                 // the share at the foot
+    if (full) { P.px(5, 6, '#5e4a2a'); P.px(8, 7, '#8fd36a'); P.px(10, 6, '#5e4a2a'); P.px(6, 8, '#d9a84e'); }
+    if (TIER_BAND[level]) P.rect(11, 12, 2, 2, TIER_BAND[level]);
   });
 }
 // The hopper (16×20): a funnel on legs with a spout; `full` shows crops at the lip.

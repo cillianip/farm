@@ -70,7 +70,11 @@ export const CONFIG = {
   // else is a store you empty by hand. Tiers (faster, stronger) come later with a level like pumps.
   power: { generator: { price: 600, fuelPerDay: 1, power: 6 }, line: { packSize: 10, packPrice: 25 },
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
-    picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1 }, hopper: { price: 400, holds: 30, power: 2 },
+    picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1, tiers: [{ name: 'Picker', radius: 1, perHour: 1, holds: 6, power: 1, price: 250 }, { name: 'Picker II', radius: 2, perHour: 2, holds: 12, power: 2, price: 600 }, { name: 'Picker III', radius: 3, perHour: 3, holds: 18, power: 3, price: 1300 }] },   // tiers mirror the sprinklers' reach (Build 81)
+    // The planter (Build 81): on powered line like a picker; holds seeds and bags you load by hand; once an hour it plants the empty
+    // beds in its reach with the seed it holds, working a bag in first when it has one. Planting and fertilising in one machine.
+    planter: { seeds: 30, bags: 10, tiers: [{ name: 'Planter', radius: 1, perHour: 2, power: 1, price: 350 }, { name: 'Planter II', radius: 2, perHour: 4, power: 2, price: 800 }, { name: 'Planter III', radius: 3, perHour: 6, power: 3, price: 1700 }] },
+    hopper: { price: 400, holds: 30, power: 2 },
     // The dryer (Build 67): the first thing that turns a crop into a product. On powered line like a picker; belt run to it feeds
     // it (its motor drives that belt, like a hopper's) and it sets what it has dried on any running belt beside it that leads away.
     // It dries `batch` of one kind at a time, taking baseHours + skinHours × the skin gene; `holds` wait in the hopper on top, `output` on the tray.

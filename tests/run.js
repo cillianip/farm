@@ -1331,6 +1331,35 @@ await test('the bin: pumpkin makes the best uncommon bag, two stars; a rare pure
   assert.equal(F.starsFromQuality(eb.stats.quality).sure, 3, 'epic: three stars sure: ' + eb.stats.quality);
   const mixed = F.makeCompost([{ species: pk.id, qty: 6 }, { species: rare.id, qty: 6 }], species); assert.ok(mixed.stats.quality > 0.5 && mixed.stats.quality < rb.stats.quality, 'a mixed bin is a good bag but not the rare one: ' + mixed.stats.quality);
 });
+await test('field machines: picker tiers reach like the sprinklers and draw more power; the planter plants the empty beds around it with its seeds and works a bag in first; every machine has a switch, and an off hopper stops its belt', () => {
+  const s = arm(S.createState(1)); const W2 = s.world, tile = (x, y) => W2.tiles[y * W2.w + x], carrot = byName(s, 'Carrot'), T = CONFIG.power;
+  const y0 = Y + 6; for (let x = X; x <= X + 6; x++) tile(x, y0).line = true; tile(X + 1, y0 + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = 1;
+  // a planter II at X+3 with beds two tiles out
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dy !== 0) { const t = tile(X + 3 + dx, y0 + dy); if (t.t === 'grass' && !t.obj) { t.tilled = true; t.crop = null; t.fert = null; } }
+  tile(X + 3, y0).obj = { kind: 'planter', level: 1, seeds: [], bags: [] }; s.lineRev++;
+  assert.equal(S.machineTier(tile(X + 3, y0).obj).radius, 2); assert.equal(S.machinePower(tile(X + 3, y0).obj), T.planter.tiers[1].power); assert.ok(S.machinePowered(s, X + 3, y0));
+  s.player.x = X + 3.5; s.player.y = y0 + 1.5; addItem(s.inventory, { kind: 'seed', species: carrot.id, qty: 9 }); const si = s.inventory.slots.findIndex(i => i?.kind === 'seed' && i.species === carrot.id), nSeeds = s.inventory.slots[si].qty;
+  const bag = { name: 'Quality compost III', grade: 3, stats: { quality: 0.6 }, budget: 0.6, id: 'fq' }; addItem(s.inventory, { kind: 'fert', fert: bag, qty: 2 }); const fi = s.inventory.slots.findIndex(i => i?.kind === 'fert');
+  let r = S.loadPlanter(s, si, X + 3, y0); assert.ok(r.ok && r.count === nSeeds, JSON.stringify(r)); r = S.loadPlanter(s, fi, X + 3, y0); assert.ok(r.ok && r.count === 2); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2);
+  assert.equal(S.loadPlanter(s, 0, X + 3, y0).msg, 'It takes seeds and bags of fertiliser');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60 + 59; tickMinutes(s, 2);   // across 10:00
+  const planted = () => { let n = 0, fert = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const t = tile(X + 3 + dx, y0 + dy); if (t.crop && !t.crop.unknown) n++; if (t.fert) fert++; } return [n, fert]; };   // a bird may drop a seed in too: those are unknown sprouts, not the planter's
+  let [n, f] = planted(); assert.equal(n, T.planter.tiers[1].perHour, 'four beds an hour'); assert.equal(f, 2, 'the two bags went in first'); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2 - n - 2);
+  assert.ok(tile(X + 3, y0 - 1).crop && tile(X + 3, y0 + 1).crop, 'nearest beds first');
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 10 * 60 + 59; tickMinutes(s, 2); [n, f] = planted(); assert.equal(n, 8, 'another four the next hour');
+  // a switch: off, it draws nothing and plants nothing
+  r = S.toggleMachine(s, X + 3, y0); assert.ok(r.off); assert.ok(!S.machinePowered(s, X + 3, y0)); s.minutes = (S.dayOf(s) - 1) * 1440 + 11 * 60 + 59; tickMinutes(s, 2); assert.equal(planted()[0], 8, 'nothing more while off'); S.toggleMachine(s, X + 3, y0);
+  // take the rest back
+  s.inventory.slots[4] = null; r = S.unloadPlanter(s, X + 3, y0); assert.ok(r.ok && r.got === nSeeds - 8, JSON.stringify(r)); assert.equal(S.planterCount(tile(X + 3, y0).obj), 0); assert.equal(S.unloadPlanter(s, X + 3, y0).msg, 'Nothing in it');
+  // picker tiers: a Picker III reaches three tiles and costs three power; the generator's six is not enough for both planter II and picker III plus a hopper
+  tile(X + 6, y0).obj = { kind: 'picker', level: 2, held: [] }; s.lineRev++; assert.equal(S.machineTier(tile(X + 6, y0).obj).radius, 3); assert.equal(S.machinePower(tile(X + 6, y0).obj), 3);
+  assert.ok(S.machinePowered(s, X + 6, y0), 'planter 2 + picker 3 = 5 of 6');
+  tile(X + 5, y0).obj = { kind: 'hopper', held: [] }; s.lineRev++; assert.ok(!S.machinePowered(s, X + 6, y0) || !S.machinePowered(s, X + 5, y0), 'not enough for the hopper too: the farthest from the generator goes dark');
+  // an off hopper stops its belt
+  tile(X + 4, y0 + 2).line = true; tile(X + 4, y0 + 3).line = true; tile(X + 1, y0 + 2).line = true; tile(X + 2, y0 + 2).line = true; tile(X + 3, y0 + 2).line = true;
+  for (const t of [tile(X + 5, y0), tile(X + 6, y0)]) t.obj = null; tile(X + 4, y0 + 2).obj = { kind: 'hopper', held: [] }; tile(X + 3, y0 + 2).belt = true; tile(X + 3, y0 + 2).load = []; s.lineRev++; s.beltRev = (s.beltRev || 0) + 1;
+  assert.ok(S.beltRunning(s, X + 3, y0 + 2), 'the belt runs to the hopper'); assert.ok(S.toggleMachine(s, X + 4, y0 + 2).off); assert.ok(!S.beltRunning(s, X + 3, y0 + 2), 'off: the belt stands still');
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

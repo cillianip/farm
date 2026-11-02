@@ -51,7 +51,8 @@ export function itemName(it, species) {
   if (it.kind === 'line') return 'Power line';
   if (it.kind === 'fuel') return 'Fuel';
   if (it.kind === 'belt') return 'Belt';
-  if (it.kind === 'picker') return 'Picker';
+  if (it.kind === 'picker') return CONFIG.power.picker.tiers[Math.min(2, it.level || 0)].name;
+  if (it.kind === 'planter') return CONFIG.power.planter.tiers[Math.min(2, it.level || 0)].name;
   if (it.kind === 'hopper') return 'Hopper';
   if (it.kind === 'dryer') return 'Dryer';
   if (it.kind === 'chest') return CONFIG.chest.field.tiers[Math.min(CONFIG.chest.field.tiers.length - 1, it.level || 0)].name;

@@ -67,7 +67,7 @@ export function itemSprite(it, species) {
   if (it.kind === 'fuel') return fuelIcon();
   if (it.kind === 'sprinkler') return sprinklerSprite(it.level || 0, 0);
   if (it.kind === 'pump') return pumpIcon(it.level || 0);
-  if (['generator', 'picker', 'hopper', 'line', 'belt', 'dryer', 'splitter', 'filter', 'dcrate'].includes(it.kind)) return stationIcon(it.kind);
+  if (['generator', 'picker', 'hopper', 'line', 'belt', 'dryer', 'splitter', 'filter', 'dcrate', 'planter'].includes(it.kind)) return stationIcon(it.kind);
   if (it.kind === 'pipe') return pipeSprite(10);
   if (it.kind === 'chest') return chestSprite(false, false, it.level || 0);
   if (it.kind === 'withered') return witheredSprite();
