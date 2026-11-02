@@ -372,7 +372,7 @@ export function listPrice(it) {
   switch (it.kind) {
     case 'sprinkler': return C.sprinkler.tiers[it.level || 0].price;
     case 'pump': return C.pump.tiers[it.level || 0].price;
-    case 'generator': return C.power.generator.price;
+    case 'generator': return C.power.generator.tiers[Math.min(2, it.level || 0)].price;
     case 'picker': return C.power.picker.tiers[Math.min(2, it.level || 0)].price;
     case 'planter': return C.power.planter.tiers[Math.min(2, it.level || 0)].price;
     case 'hopper': return C.power.hopper.price;
@@ -577,7 +577,7 @@ export function useItem(state, slotIndex, x, y) {
     if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
-    t.tilled = false; t.fert = null; t.obj = { kind: 'generator' }; state.lineRev = (state.lineRev || 0) + 1;
+    t.tilled = false; t.fert = null; t.obj = { kind: 'generator', level: item.level || 0 }; state.lineRev = (state.lineRev || 0) + 1;
     return { ok: true, msg: generatorLive(state, x, y) ? '' : 'Lay line from it: pickers and hoppers stand on the line', float: 'Set' };
   }
   if (item.kind === 'chest') {   // a field chest still in a pocket (older deliveries): set it on open grass anywhere that is yours, yard or farm
@@ -588,7 +588,7 @@ export function useItem(state, slotIndex, x, y) {
     return { ok: true, msg: '', float: 'Set' };
   }
   if (item.kind === 'line') {   // on open ground, or under a bed
-    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Line goes on clear ground');
+    if (!isCleared(state.world, x, y) || t.t !== 'grass') return fail('Line goes on clear ground');
     if (t.line) return fail('Line is already laid here');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
@@ -603,7 +603,7 @@ export function useItem(state, slotIndex, x, y) {
     return { ok: true, msg: '', float: `+${n} fuel`, fuel: t.obj.fuel };
   }
   if (item.kind === 'belt') {
-    if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track) return fail('Belt goes on clear ground');
+    if (!isCleared(state.world, x, y) || t.t !== 'grass') return fail('Belt goes on clear ground');
     if (t.tilled || t.crop) return fail(t.crop ? 'A plant grows there' : 'Not through a bed: flatten it first');
     if (t.obj) return fail('Something stands there');
     if (t.belt) return fail('Belt is already laid here');
@@ -907,6 +907,7 @@ export function sprinklerPass(state, dtMinutes = CONFIG.sprinkler.sprayMinutes) 
 // ---------- power ----------
 const N4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 export const isGenerator = t => t?.obj?.kind === 'generator';
+export const generatorTier = o => CONFIG.power.generator.tiers[Math.min(2, o?.level || 0)];
 export const isChest = t => t?.obj?.kind === 'chest';
 export function chestTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isChest(t)) out.push({ x, y, t }); } return out; }
 export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper' || t?.obj?.kind === 'dryer' || t?.obj?.kind === 'planter';
@@ -944,8 +945,8 @@ export function lineNet(state) {
   const cap = new Array(nComp).fill(0), dist = new Map(), queue = [];
   for (const { x, y, t } of generatorTiles(state)) {
     if (t.obj.off || !fuelOf(t.obj)) continue;   // switched off or out of fuel: no power
-    const seen = new Set();
-    for (const [dx, dy] of [[0, 0], ...N4]) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (!t?.line) continue; const c = comp.get(k); if (!seen.has(c)) { seen.add(c); cap[c] += CONFIG.power.generator.power; } if (!dist.has(k)) { dist.set(k, 1); queue.push(k); } }
+    const seen = new Set(), gen = t.obj;
+    for (const [dx, dy] of [[0, 0], ...N4]) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (!t?.line) continue; const c = comp.get(k); if (!seen.has(c)) { seen.add(c); cap[c] += generatorTier(gen).power; } if (!dist.has(k)) { dist.set(k, 1); queue.push(k); } }
   }
   while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.line && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
   const used = new Array(nComp).fill(0), on = new Set();
@@ -1237,6 +1238,40 @@ export function takeHeld(state, x, y) {
   return { ok: true, msg: '', float: `+${taken} ${isDryer(t) ? 'dried' : taken === 1 ? 'crop' : 'crops'}`, taken };
 }
 
+// ---------- the model farm ----------
+// A farm with every machine set up and running, as a guide: a windmill on the pipe from the well, one block of carrots under a Sprinkler II with a Planter III and a
+// Picker III on the path through it, a belt to a splitter, one way to a dryer and on across the track to a hopper by the
+// truck's crates, the other way to a hopper by the porch crate. Opened with ?demo in the address; never saved.
+export function makeModelFarm() {
+  const state = createState(42); const w = state.world, tile = (x, y) => w.tiles[y * w.w + x];
+  for (const key of ['0,0', '1,0', '1,1']) if (!w.chunks.includes(key)) w.chunks.push(key);
+  takeTools(state); fillCan(state); state.money = 1200; state.crate.extensions = 3; state.crate.capacity = CONFIG.crate.capacity + 3 * 12;
+  state.truck = { level: 0, bed: [] }; parkTruck(state); state.hasBench = true; state.hasCompost = true;
+  const carrot = Object.values(state.species).find(sp => sp.name === 'Carrot');
+  // pipe from the well down to the block's path, and the path itself: line from the generator, pipe to the sprinkler
+  for (let y = BUILDINGS.well.y + 1; y <= 25; y++) tile(34, y).pipe = true;
+  for (let x = 29; x <= 34; x++) tile(x, 25).pipe = true;
+  tile(34, 21).obj = { kind: 'pump', level: 1 };   // a windmill on the way down: the well alone reaches six tiles, the block is fourteen away
+  for (let x = 26; x <= 35; x++) tile(x, 25).line = true;
+  tile(26, 25).obj = { kind: 'generator', level: 1, fuel: 7 };
+  // the block: beds two rows above and below the path, carrots at every stage
+  let k = 0; for (const y of [23, 24, 26, 27]) for (let x = 27; x <= 31; x++) { const t = tile(x, y); t.tilled = true; t.moisture = 55; t.crop = { speciesId: carrot.id, growth: (k * 23) % 100, health: 100, ripeAt: null, dead: false, plantedAt: state.minutes, harvests: 0, v: k % 4 }; if (t.crop.growth >= 100) t.crop.ripeAt = state.minutes; k++; }
+  tile(29, 25).obj = { kind: 'sprinkler', level: 1 }; tile(28, 25).obj = { kind: 'planter', level: 2, seeds: [{ species: carrot.id, qty: 30 }], bags: [] }; tile(30, 25).obj = { kind: 'picker', level: 2, held: [] };   // tier III: standing a tile off the block's centre, only a reach of three covers all five columns
+  // the belt: from beside the picker east along the path to a splitter; one way on to the dryer, the other down to a hopper by the porch crate
+  for (const x of [31, 32, 33]) { tile(x, 25).belt = true; tile(x, 25).load = []; }
+  tile(32, 25).obj = { kind: 'splitter', turn: 0 };
+  tile(32, 26).belt = true; tile(32, 26).load = []; tile(33, 26).line = true; tile(33, 26).obj = { kind: 'hopper', held: [] };
+  tile(34, 25).obj = { kind: 'dryer', held: [], out: [], doing: null };
+  // out of the dryer: belt east then south across the track to a hopper in the bay, beside the truck's crates
+  tile(35, 25).belt = true; tile(35, 25).load = []; for (let y = 26; y <= 28; y++) { tile(35, y).belt = true; tile(35, y).load = []; tile(35, y).line = true; }
+  tile(35, 29).line = true; tile(35, 29).obj = { kind: 'hopper', held: [] };
+  dropEmpties(state);
+  state.lineRev = 1; state.beltRev = 1; state.pipeRev = 1;
+  state.player.x = 29.5; state.player.y = 28.5; state.player.dir = 'up';
+  state.minutes = (dayOf(state) - 1) * 1440 + 9 * 60;
+  return state;
+}
+
 // ---------- sleep ----------
 export function sleep(state, opts = {}) {
   const report = { day: dayOf(state) + 1, forced: !!opts.forced, rain: false, breeder: null, compost: null, lines: [] };
@@ -1281,7 +1316,7 @@ export function sleep(state, opts = {}) {
   { let cans = 0, dry = 0;   // engines on fed pipe and generators that are switched on burn a can each; one that runs out stops
     const burn = (obj, n) => { if (!fuelOf(obj)) { dry++; return; } obj.fuel = Math.max(0, obj.fuel - n); cans += n; if (!obj.fuel) dry++; };
     for (const { x, y, t } of pumpTiles(state)) if (pumpTier(t.obj).fuelPerDay && pipeFed(state, x, y)) burn(t.obj, pumpTier(t.obj).fuelPerDay);
-    for (const { t } of generatorTiles(state)) if (!t.obj.off) burn(t.obj, CONFIG.power.generator.fuelPerDay);
+    for (const { t } of generatorTiles(state)) if (!t.obj.off) burn(t.obj, generatorTier(t.obj).fuelPerDay);
     if (cans || dry) { report.fuel = { cans, dry }; D.fuelCans = cans; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; } }
   if (state.loan) {   // the bank adds the night's interest to what you owe; it takes nothing
     const Lo = state.loan, add = Math.round(Lo.owed * CONFIG.loan.nightly * 100) / 100;

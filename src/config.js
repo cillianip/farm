@@ -68,7 +68,7 @@ export const CONFIG = {
   // toward the powered hopper it reaches (the hopper's motor drives the belt, which is why it draws more power),
   // each tile holding `holds` crops. A hopper beside the crate tips into it when the cart comes; a hopper anywhere
   // else is a store you empty by hand. Tiers (faster, stronger) come later with a level like pumps.
-  power: { generator: { price: 600, fuelPerDay: 1, power: 6 }, line: { packSize: 10, packPrice: 25 },
+  power: { generator: { price: 600, fuelPerDay: 1, power: 6, tiers: [{ name: 'Generator', power: 6, fuelPerDay: 1, price: 600 }, { name: 'Generator II', power: 12, fuelPerDay: 2, price: 1400 }, { name: 'Generator III', power: 20, fuelPerDay: 3, price: 3000 }] }, line: { packSize: 10, packPrice: 25 },   // generator tiers (Build 82): more power, more cans a night
     belt: { packSize: 10, packPrice: 40, holds: 4, stepMinutes: 6 },
     picker: { price: 250, radius: 1, perHour: 1, holds: 6, power: 1, tiers: [{ name: 'Picker', radius: 1, perHour: 1, holds: 6, power: 1, price: 250 }, { name: 'Picker II', radius: 2, perHour: 2, holds: 12, power: 2, price: 600 }, { name: 'Picker III', radius: 3, perHour: 3, holds: 18, power: 3, price: 1300 }] },   // tiers mirror the sprinklers' reach (Build 81)
     // The planter (Build 81): on powered line like a picker; holds seeds and bags you load by hand; once an hour it plants the empty

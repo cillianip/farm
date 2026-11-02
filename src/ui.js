@@ -703,6 +703,8 @@ export class UI {
       slider('Master', 'master'); slider('Effects', 'sfx'); slider('Music', 'music');
       const mute = el('label', 'set-row'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!P.muted; cb.onchange = () => snd.set('muted', cb.checked);
       mute.appendChild(cb); mute.appendChild(el('span', null, 'Mute everything')); body.appendChild(mute);
+      body.appendChild(el('div', 'pc-sec', 'The model farm'));
+      { const demo = el('button', 'primary', g.demo ? 'Back to my farm' : 'Visit the model farm'); demo.onclick = () => { location.search = g.demo ? '' : '?demo'; }; body.appendChild(demo); body.appendChild(el('div', 'pc-note', g.demo ? 'This is the guide farm. Nothing here is saved.' : 'A farm with every machine set up and running, to walk through and hover: the block of beds, the planter, the picker, the belt, the splitter, the dryer, the truck. Your own farm is untouched.')); }
       body.appendChild(el('div', 'pc-note', 'Most of what you hear is a recording (marked ●), pitched a little differently each time; the rest is synthesised until a recording is dropped into assets/sfx (see the README there). The interface stays quiet: only your hands make a sound. The theme loops while you farm.'));
       const aud = el('div', 'set-row'); aud.appendChild(el('span', null, 'Audition')); const grid = el('div', 'aud-grid');
       for (const name of Object.keys(g.sound.FX)) { const b = el('button', 'small', name + (g.sound.samples?.[name] ? ' ●' : '')); b.title = g.sound.samples?.[name] ? 'a recording' : 'synthesised'; b.onclick = () => { g.sound.unlock(); g.sound.play(name); }; grid.appendChild(b); }

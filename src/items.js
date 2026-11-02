@@ -47,7 +47,7 @@ export function itemName(it, species) {
   if (it.kind === 'sprinkler') return CONFIG.sprinkler.tiers[it.level || 0].name;
   if (it.kind === 'pipe') return 'Pipe';
   if (it.kind === 'pump') return CONFIG.pump.tiers[it.level || 0].name;
-  if (it.kind === 'generator') return 'Generator';
+  if (it.kind === 'generator') return CONFIG.power.generator.tiers[Math.min(2, it.level || 0)].name;
   if (it.kind === 'line') return 'Power line';
   if (it.kind === 'fuel') return 'Fuel';
   if (it.kind === 'belt') return 'Belt';

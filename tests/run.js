@@ -1360,6 +1360,24 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   for (const t of [tile(X + 5, y0), tile(X + 6, y0)]) t.obj = null; tile(X + 4, y0 + 2).obj = { kind: 'hopper', held: [] }; tile(X + 3, y0 + 2).belt = true; tile(X + 3, y0 + 2).load = []; s.lineRev++; s.beltRev = (s.beltRev || 0) + 1;
   assert.ok(S.beltRunning(s, X + 3, y0 + 2), 'the belt runs to the hopper'); assert.ok(S.toggleMachine(s, X + 4, y0 + 2).off); assert.ok(!S.beltRunning(s, X + 3, y0 + 2), 'off: the belt stands still');
 });
+await test('generator tiers: more power and more cans a night; belt and line may cross the track; the model farm builds, powers up, and runs a day', () => {
+  const s = S.makeModelFarm(); const W2 = s.world, tile = (x, y) => W2.tiles[y * W2.w + x], T = CONFIG.power;
+  assert.equal(S.generatorTier(tile(26, 25).obj).power, T.generator.tiers[1].power);
+  assert.ok(S.machinePowered(s, 28, 25) && S.machinePowered(s, 30, 25) && S.machinePowered(s, 34, 25) && S.machinePowered(s, 33, 26) && S.machinePowered(s, 35, 29), 'every machine on the path has power');
+  assert.ok(S.sprinklerFed(s, 29, 25), 'the sprinkler is fed from the well through the windmill'); assert.ok(S.pumpInFlow(s, 34, 21));
+  assert.ok(S.beltRunning(s, 31, 25) && S.beltRunning(s, 35, 28), 'the belts run, across the track too'); assert.ok(tile(35, 27).track && tile(35, 27).belt);
+  assert.equal(S.splitOutputs(s, 32, 25).length, 2, 'the splitter has two ways out');
+  assert.ok(S.bayCrates(s).length >= 3); assert.ok(S.hopperByCrate(35, 29, s), 'the bay hopper stands by a crate');
+  // a day passes: the picker picks, the splitter shares, the dryer dries, the hoppers fill
+  for (let i = 0; i < 9 * 60; i++) tickMinutes(s, 1);
+  const got = S.heldCount(tile(33, 26).obj.held) + S.heldCount(tile(35, 29).obj.held) + S.heldCount(tile(34, 25).obj.held) + S.heldCount(tile(34, 25).obj.out) + (tile(34, 25).obj.doing?.qty || 0);
+  assert.ok(got > 0, 'crops moved through the line: ' + got); assert.ok(S.ledger(s).today.picked > 0);
+  assert.ok(Object.values(W2.tiles).filter(t => t.crop && !t.crop.unknown).length >= 17, 'the planter keeps the block planted'); assert.ok(S.ledger(s).today.planted >= 8, 'it planted through the day: ' + S.ledger(s).today.planted);
+  // a line laid on the track by hand
+  s.player.x = 36.5; s.player.y = 26.5; addItem(s.inventory, { kind: 'line', qty: 2 }); const li = s.inventory.slots.findIndex(i => i?.kind === 'line'); assert.ok(li >= 0); const r = S.useItem(s, li, 36, 27); assert.ok(r.ok, r.msg); assert.ok(tile(36, 27).line && tile(36, 27).track);
+  // the fuel bill of a Generator II
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const f0 = tile(26, 25).obj.fuel; const rep = S.sleep(s); assert.equal(f0 - tile(26, 25).obj.fuel, T.generator.tiers[1].fuelPerDay);
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');
