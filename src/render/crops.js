@@ -16,25 +16,27 @@ export function cropSprite(species, stage, v = 0) {
   cache.set(key, c);
   return c;
 }
-// Produce icon alone (for inventory). Cached.
-export function produceSprite(species) {
-  const key = species.id + ':icon';
+// Produce icon alone. Cached. The inventory uses one fixed size so slots stay readable; sized (Build 87) draws it at the
+// size gene instead, a pea small and a giant pumpkin filling the sprite, for produce lying in the world (belts, crates, stalls).
+export function produceScale(g) { return 2.5 + g.size * 4.5; }
+export function produceSprite(species, sized = false) {
+  const key = species.id + (sized ? ':sz' : ':icon');
   if (cache.has(key)) return cache.get(key);
   const [c, ctx] = makeCanvas(16, 16);
   const P = pixelDrawer(ctx), g = species.genome;
-  drawProduce(P, g, 8, 8, 6, colours(g), 0, 16, true);
+  drawProduce(P, g, 8, 8, sized ? produceScale(g) : 6, colours(g), 0, 16, true);
   cache.set(key, c);
   return c;
 }
 
 // Dried: the same produce smaller, browner and duller, with a crease. Cached.
-export function driedSprite(species) {
-  const key = species.id + ':dried';
+export function driedSprite(species, sized = false) {
+  const key = species.id + (sized ? ':dsz' : ':dried');
   if (cache.has(key)) return cache.get(key);
   const [c, ctx] = makeCanvas(16, 16);
   const P = pixelDrawer(ctx), g = species.genome;
   const g2 = { ...g, hue1: g.hue1 - 10, sat1: g.sat1 * 0.55, light1: Math.max(0.18, g.light1 * 0.7), hue2: g.hue2 - 10, sat2: g.sat2 * 0.5, light2: Math.max(0.15, g.light2 * 0.7), traits: {} };
-  drawProduce(P, g2, 8, 9, 4.5, colours(g2), 0, 16, true);
+  drawProduce(P, g2, 8, 9, sized ? produceScale(g) * 0.75 : 4.5, colours(g2), 0, 16, true);
   P.px(7, 8, 'rgba(40,20,5,0.35)'); P.px(8, 10, 'rgba(40,20,5,0.35)'); P.px(9, 7, 'rgba(255,230,180,0.25)');
   cache.set(key, c);
   return c;
@@ -179,7 +181,8 @@ function drawProduceSet(P, g, C, r, anchors) {
 // Draw one produce item of pixel size `s` centred at (cx,cy). clipY: nothing below this row (roots). icon: drawn alone
 // in the inventory, so allow a bigger shape and add the decoration that makes it readable on its own.
 export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = false) {
-  const maxW = icon ? 6 : 4, maxH = icon ? 6 : 5;
+  const cap = icon ? Math.min(7, Math.max(6, Math.round(s))) : 0;   // icons may grow to 7 for giants
+  const maxW = icon ? cap : 4, maxH = icon ? cap : 5;
   const w = Math.min(maxW, Math.max(1, Math.round(s * (0.6 + g.width * 0.6))));
   const h = Math.min(maxH, Math.max(1, Math.round(s * (0.6 + g.elongation * 0.8))));
   const r = makeRng(hashString(canonical(g)) + Math.floor(seed * 1000));

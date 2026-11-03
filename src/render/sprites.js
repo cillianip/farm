@@ -181,9 +181,12 @@ export function cartSprite(frame = 0) {
 }
 // The loading bay's gravel (16×16): packed grey-brown with a painted edge on the sides given by mask (1 N, 2 E, 4 S, 8 W).
 export function bayTile(mask = 0, variant = 0) {
-  return sprite(`bay${mask}:${variant}`, 16, 16, P => {
+  return sprite(`bay2:${mask}:${variant}`, 16, 16, P => {
     P.rect(0, 0, 16, 16, '#a39a86'); const r = makeRng(1700 + variant);
     for (let i = 0; i < 18; i++) P.px(r.int(0, 15), r.int(0, 15), r.chance(0.5) ? '#8f8674' : '#b5ac98');
+    // Build 87: each tile is a marked crate spot, painted corners worn at the edges, and now and then an oil spot
+    const mark = 'rgba(232,210,138,0.55)'; for (const [x, y, dx, dy] of [[2, 2, 1, 1], [13, 2, -1, 1], [2, 13, 1, -1], [13, 13, -1, -1]]) { P.px(x, y, mark); P.px(x + dx, y, mark); P.px(x, y + dy, mark); }
+    if (variant % 5 === 3) { P.rect(6, 8, 3, 2, 'rgba(40,36,30,0.35)'); P.px(9, 9, 'rgba(40,36,30,0.25)'); P.px(7, 7, 'rgba(40,36,30,0.2)'); }
     const paint = '#e8d28a'; if (mask & 1) P.rect(0, 0, 16, 1, paint); if (mask & 4) P.rect(0, 15, 16, 1, paint); if (mask & 8) P.rect(0, 0, 1, 16, paint); if (mask & 2) P.rect(15, 0, 1, 16, paint);
   });
 }
@@ -539,21 +542,28 @@ export function fitIcon(key, img) {
   return sprite(`icon:${key}`, 16, 16, (P, ctx) => { const sc = 16 / img.height, w = Math.round(img.width * sc); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, Math.round((16 - w) / 2), 0, w, 16); });
 }
 export const pumpIcon = (level = 0) => fitIcon(`pump${level}`, pumpSprite(level, 0));
-export const stationIcon = kind => kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' || kind === 'truck1' || kind === 'truck2' ? fitIcon('truck', truckSprite(0)) : kind === 'generator' ? fitIcon('generator', generatorSprite(0)) : kind === 'picker' ? fitIcon('picker', pickerSprite(0)) : kind === 'planter' ? fitIcon('planter', planterSprite(0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
+export const stationIcon = kind =>   // a digit on a tiered machine (picker2) picks its tier
+  kind === 'splitter' ? splitterSprite() : kind === 'filter' ? filterSprite() : kind === 'dcrate' ? fitIcon('dcrate', crateSprite(0, true)) : kind === 'truck' || kind === 'truck1' || kind === 'truck2' ? fitIcon('truck', truckSprite(0)) : /^generator\d?$/.test(kind) ? fitIcon(kind, generatorSprite(0, +kind.slice(9) || 0)) : /^picker\d?$/.test(kind) ? fitIcon(kind, pickerSprite(0, false, +kind.slice(6) || 0)) : /^planter\d?$/.test(kind) ? fitIcon(kind, planterSprite(0, false, +kind.slice(7) || 0)) : kind === 'hopper' ? fitIcon('hopper', hopperSprite(false)) : kind === 'dryer' ? fitIcon('dryer', dryerSprite(0)) : kind === 'belt' ? beltSprite(10, 1, 0) : lineSprite(10, false);
 // Belt: a dark rubber band on a frame, 8 wide, running to each neighbour in `mask` (1 up, 2 right, 4 down, 8 left),
 // drawn over pipe and line. `dir` is the way it carries (0 up, 1 right, 2 down, 3 left; -1 still): chevrons point
 // that way and `frame` (0–3) slides them along. A still belt shows plain treads.
-// A splitter (16×16) over a belt: a steel plate with arrows out both ways. A filter: the plate with a brown dot (dried) and a green one.
+// A splitter (16×16) over a belt: a steel plate with a fork drawn on it, one way in and two out. A filter: the plate
+// with a sieve in the middle, a brown dot on the side dried goods leave by and a green one for fresh (swap flips them).
+const SIGN = '#eef0e2';
+function plate(P) { P.rect(2, 2, 12, 12, PAL.metalDark); P.rect(3, 3, 10, 10, PAL.metal); P.rect(3, 3, 10, 1, PAL.metalLight); P.px(3, 12, PAL.metalDark); P.px(12, 12, PAL.metalDark); }
 export function splitterSprite() {
-  return sprite('splitter', 16, 16, P => {
-    P.rect(3, 3, 10, 10, PAL.metalDark); P.rect(4, 4, 8, 8, PAL.metal); P.rect(4, 4, 8, 1, PAL.metalLight);
-    P.px(6, 7, PAL.outline); P.px(5, 8, PAL.outline); P.px(6, 9, PAL.outline); P.px(9, 7, PAL.outline); P.px(10, 8, PAL.outline); P.px(9, 9, PAL.outline);   // < >
+  return sprite('splitter3', 16, 16, P => {
+    plate(P);
+    P.rect(7, 8, 2, 4, SIGN); P.rect(4, 7, 8, 1, SIGN);                                                  // the stem and the bar
+    for (const [x, d] of [[3, 1], [12, -1]]) { P.px(x, 7, SIGN); P.px(x + d, 6, SIGN); P.px(x + d, 8, SIGN); P.px(x + 2 * d, 5, SIGN); P.px(x + 2 * d, 9, SIGN); }   // arrowheads
   });
 }
 export function filterSprite(swap = false) {
-  return sprite(`filter${swap ? 's' : ''}`, 16, 16, P => {
-    P.rect(3, 3, 10, 10, PAL.metalDark); P.rect(4, 4, 8, 8, PAL.metal); P.rect(4, 4, 8, 1, PAL.metalLight);
-    P.rect(swap ? 9 : 5, 7, 2, 2, '#8a5a2b'); P.rect(swap ? 5 : 9, 7, 2, 2, '#5fa14a');
+  return sprite(`filter3${swap ? 's' : ''}`, 16, 16, P => {
+    plate(P);
+    P.rect(5, 5, 6, 6, '#2c2d36');
+    for (let i = 5; i <= 10; i += 2) { P.rect(i, 5, 1, 6, PAL.metalLight); P.rect(5, i, 6, 1, PAL.metalLight); }   // the sieve
+    P.rect(swap ? 11 : 3, 7, 2, 2, '#8a5a2b'); P.rect(swap ? 3 : 11, 7, 2, 2, '#5fa14a');
   });
 }
 export function beltSprite(mask = 0, dir = -1, frame = 0) {
@@ -591,43 +601,86 @@ export function lineSprite(mask = 0, powered = false) {
     if (powered) { P.px(8, 9, PAL.gold); P.px(7, 9, '#fff1b8'); }
   });
 }
-// The generator (16×20): a boxed motor in red iron on skids, a coil window, a stack; frames puff.
-export function generatorSprite(frame = 0) {
-  return sprite(`generator${frame}`, 16, 20, P => {
-    P.rect(2, 18, 13, 2, 'rgba(30,20,10,0.28)');
-    P.rect(2, 9, 12, 9, PAL.roofDark); P.rect(3, 10, 10, 7, PAL.roof); P.rect(3, 10, 10, 1, '#d9736a');   // the block
-    P.rect(4, 12, 4, 4, PAL.metalDark); P.rect(5, 13, 2, 2, frame ? PAL.gold : PAL.metal);          // the coil window
-    P.rect(9, 12, 3, 1, PAL.metalDark); P.rect(9, 14, 3, 1, PAL.metalDark);                           // vents
-    P.rect(12, 3, 2, 7, PAL.metalDark); P.px(12, 3, PAL.metal); P.rect(11, 2, 4, 1, PAL.metalDark);   // the stack
-    P.rect(1, 15, 1, 3, PAL.woodDark); P.rect(14, 15, 1, 3, PAL.woodDark);                           // the skids
-    if (frame) { const y = frame === 1 ? 0 : 1; P.px(13, y, 'rgba(120,120,130,0.8)'); P.px(14, y, 'rgba(120,120,130,0.5)'); }   // a puff
+// The generator (16×20): a boxed motor in red iron on skids, a coil window, a stack; frames puff. Tiers change the
+// shape (Build 87): II bolts a flywheel on the side, III is a longer block with a gold rim, two windows and two stacks.
+export function generatorSprite(frame = 0, level = 0) {
+  return sprite(`generator${frame}:${level}`, 16, 20, P => {
+    P.rect(1, 18, 14, 2, 'rgba(30,20,10,0.28)');
+    const lit = frame ? PAL.gold : PAL.metal;
+    if (level < 2) {
+      P.rect(2, 9, 12, 9, PAL.roofDark); P.rect(3, 10, 10, 7, PAL.roof); P.rect(3, 10, 10, 1, '#d9736a');
+      P.rect(4, 12, 4, 4, PAL.metalDark); P.rect(5, 13, 2, 2, lit);
+      P.rect(9, 12, 3, 1, PAL.metalDark); P.rect(9, 14, 3, 1, PAL.metalDark);
+      P.rect(12, 3, 2, 7, PAL.metalDark); P.px(12, 3, PAL.metal); P.rect(11, 2, 4, 1, PAL.metalDark);
+    } else {
+      P.rect(1, 8, 14, 10, PAL.roofDark); P.rect(2, 9, 12, 8, PAL.roof); P.rect(1, 8, 14, 1, PAL.gold); P.rect(2, 9, 12, 1, '#d9736a');
+      for (const x of [3, 9]) { P.rect(x, 11, 4, 4, PAL.metalDark); P.rect(x + 1, 12, 2, 2, lit); }
+      for (const x of [4, 11]) { P.rect(x, 2, 2, 6, PAL.metalDark); P.px(x, 2, PAL.metal); P.rect(x - 1, 1, 4, 1, PAL.metalDark); }
+    }
+    if (level === 1) {   // the flywheel, its spoke turning with the frame
+      P.rect(0, 11, 5, 5, PAL.metalDark); P.rect(1, 12, 3, 3, PAL.metal); P.px(2, 13, PAL.outline);
+      if (frame === 1) P.px(2, 12, PAL.metalLight); else if (frame === 2) P.px(3, 13, PAL.metalLight); else P.px(2, 14, PAL.metalLight);
+    }
+    P.rect(1, 16, 1, 2, PAL.woodDark); P.rect(14, 16, 1, 2, PAL.woodDark);
+    if (frame) { const y = frame === 1 ? 0 : 1, xs = level === 2 ? [5, 12] : [13]; for (const x of xs) { P.px(x, y, 'rgba(120,120,130,0.8)'); P.px(x + 1, y, 'rgba(120,120,130,0.5)'); } }
   });
 }
 // The picker (16×20): a post with a jointed arm and a basket at its foot; frames swing the arm; `full` shows crops.
-const TIER_BAND = [null, PAL.metalLight, PAL.gold];   // II wears a bright band, III a gold one
+// Tiers change the shape (Build 87): I is a wooden post, one arm and a wicker basket; II a steel post, an arm with a claw
+// and a banded crate; III two arms working opposite ways, a steel bin with a gold rim and a lamp on top.
+const CROPS3 = ['#e86a6a', '#f6c453', '#8fd36a'];
 export function pickerSprite(frame = 0, full = false, level = 0) {
-  return sprite(`picker${frame}${full ? 'f' : ''}${level || ''}`, 16, 20, P => {
-    P.rect(4, 18, 9, 2, 'rgba(30,20,10,0.28)');
-    P.rect(7, 6, 2, 12, PAL.metalDark); P.rect(7, 6, 1, 12, PAL.metal);                               // the post
-    P.rect(6, 5, 4, 2, PAL.metalDark); P.px(6, 5, PAL.metalLight);                                     // the joint
-    if (frame === 1) { P.line(8, 6, 13, 2, PAL.metal); P.line(13, 2, 15, 4, PAL.metalDark); P.px(15, 5, PAL.outline); }   // arm up and out
-    else { P.line(8, 6, 2, 9, PAL.metal); P.line(2, 9, 1, 13, PAL.metalDark); P.px(1, 14, PAL.outline); }             // arm down to a bed
-    P.rect(9, 13, 6, 5, PAL.woodDark); P.rect(10, 14, 4, 3, PAL.wood);                                // the basket
-    if (full) { P.px(10, 13, '#e86a6a'); P.px(12, 13, '#f6c453'); P.px(13, 13, '#8fd36a'); }
-    if (TIER_BAND[level]) P.rect(7, 10, 2, 2, TIER_BAND[level]);                                        // the tier band on the post
+  return sprite(`picker2:${frame}${full ? 'f' : ''}${level}`, 16, 20, P => {
+    P.rect(3, 18, 11, 2, 'rgba(30,20,10,0.28)');
+    const claw = (x, y) => { P.px(x - 1, y, PAL.outline); P.px(x + 1, y, PAL.outline); P.px(x, y - 1, PAL.metalDark); };
+    if (level === 0) {
+      P.rect(7, 7, 2, 11, PAL.woodDark); P.rect(7, 7, 1, 11, PAL.wood);
+      P.rect(6, 6, 4, 2, PAL.metalDark); P.px(6, 6, PAL.metalLight);
+      if (frame === 1) { P.line(8, 7, 13, 3, PAL.wood); P.line(13, 3, 15, 5, PAL.woodDark); P.px(15, 6, PAL.outline); }
+      else { P.line(8, 7, 2, 10, PAL.wood); P.line(2, 10, 1, 14, PAL.woodDark); P.px(1, 15, PAL.outline); }
+      P.rect(9, 14, 6, 4, '#8a6230'); P.rect(10, 15, 4, 2, '#c9a35a'); P.px(11, 15, '#a57f3c'); P.px(13, 16, '#a57f3c');   // wicker
+      if (full) CROPS3.forEach((c, i) => P.px(10 + i * 2, 14, c));
+      return;
+    }
+    P.rect(7, 4, 2, 14, PAL.metalDark); P.rect(7, 4, 1, 14, PAL.metal); P.rect(4, 17, 7, 1, PAL.metalDark);   // steel post on a plate
+    P.rect(6, 3, 4, 2, PAL.metalDark); P.px(6, 3, PAL.metalLight);
+    const down = () => { P.line(8, 4, 3, 7, PAL.metal); P.line(3, 7, 2, 11, PAL.metalDark); claw(2, 12); };
+    const up = () => { P.line(8, 4, 13, 1, PAL.metal); P.line(13, 1, 14, 4, PAL.metalDark); claw(14, 5); };
+    const upL = () => { P.line(8, 4, 3, 1, PAL.metal); P.line(3, 1, 1, 3, PAL.metalDark); claw(1, 4); };
+    const downR = () => { P.line(8, 4, 12, 7, PAL.metal); P.line(12, 7, 12, 10, PAL.metalDark); claw(12, 11); };
+    if (level === 1) { if (frame === 1) up(); else down(); }
+    else { if (frame === 1) { upL(); downR(); } else { down(); up(); } P.px(7, 1, '#ffe680'); P.px(8, 1, PAL.gold); P.rect(7, 2, 2, 1, PAL.metalDark); }   // the lamp
+    if (level === 1) { P.rect(9, 12, 7, 6, PAL.woodDark); P.rect(10, 13, 5, 4, PAL.wood); P.rect(9, 14, 7, 1, PAL.metalDark); }
+    else { P.rect(9, 12, 7, 6, PAL.metalDark); P.rect(10, 13, 5, 4, PAL.metal); P.rect(9, 12, 7, 1, PAL.gold); }
+    if (full) CROPS3.forEach((c, i) => P.px(10 + i * 2, 12, c));
   });
 }
-// The planter (16×20): a seed box on legs with a drill tube down the middle; frames nod the drill; `full` shows seeds in the box.
+// The planter (16×20): a seed drill. A funnel of seed over a tube down to a coulter disc that cuts the bed; frames drop a
+// seed; `full` shows seed at the lip. Tiers (Build 87): I a wooden funnel on two legs; II a wider steel funnel, two tubes,
+// two discs on a bar; III twin funnels, three discs, a gold band and a lamp.
 export function planterSprite(frame = 0, full = false, level = 0) {
-  return sprite(`planter${frame}${full ? 'f' : ''}${level || ''}`, 16, 20, P => {
-    P.rect(3, 18, 10, 2, 'rgba(30,20,10,0.28)');
-    P.rect(2, 4, 12, 7, PAL.woodDark); P.rect(3, 5, 10, 5, PAL.wood); P.rect(3, 5, 10, 1, PAL.woodLight);   // the seed box
-    P.rect(2, 3, 12, 1, PAL.metalDark); P.px(2, 3, PAL.metal);                                            // its lid rail
-    P.rect(7, 11, 2, 6 + (frame ? 1 : 0), PAL.metalDark); P.px(7, 11, PAL.metal);                        // the drill tube
-    P.rect(3, 11, 1, 7, PAL.metalDark); P.rect(12, 11, 1, 7, PAL.metalDark);                              // legs
-    P.rect(5, 17, 6, 1, PAL.metalDark);                                                                 // the share at the foot
-    if (full) { P.px(5, 6, '#5e4a2a'); P.px(8, 7, '#8fd36a'); P.px(10, 6, '#5e4a2a'); P.px(6, 8, '#d9a84e'); }
-    if (TIER_BAND[level]) P.rect(11, 12, 2, 2, TIER_BAND[level]);
+  return sprite(`planter3:${frame}${full ? 'f' : ''}${level}`, 16, 20, P => {
+    P.rect(2, 18, 12, 2, 'rgba(30,20,10,0.28)');
+    const steel = level > 0, edge = steel ? PAL.metalDark : PAL.woodDark, fill = steel ? PAL.metal : PAL.wood, rim = steel ? PAL.metalLight : PAL.woodLight;
+    const funnel = (x0, w, y0, rows) => { for (let r = 0; r < rows; r++) { const ww = Math.max(2, w - r * 2); P.rect(x0 + (w - ww) / 2, y0 + r, ww, 1, edge); if (ww > 2) P.rect(x0 + (w - ww) / 2 + 1, y0 + r, ww - 2, 1, fill); } P.rect(x0, y0, w, 1, rim); };
+    const disc = x => { P.rect(x - 1, 15, 3, 3, PAL.metalDark); P.px(x, 16, PAL.metalLight); };
+    const seedC = '#d9a84e', soil = '#5e4a2a';
+    if (level === 0) {
+      P.line(3, 5, 2, 17, PAL.woodDark); P.line(12, 5, 13, 17, PAL.woodDark);   // legs
+      funnel(2, 12, 3, 6); P.rect(7, 9, 2, 6, PAL.metalDark); P.px(7, 9, PAL.metal); disc(8);
+      if (full) { P.px(5, 4, soil); P.px(8, 4, seedC); P.px(10, 4, soil); }
+      if (frame) P.px(8, 14, seedC);
+      return;
+    }
+    P.rect(1, 6, 1, 12, edge); P.rect(14, 6, 1, 12, edge); P.rect(1, 14, 14, 1, edge);   // the frame and its bar
+    if (level === 1) { funnel(2, 12, 2, 4); P.rect(3, 6, 10, 2, PAL.metalDark); P.rect(4, 6, 8, 1, PAL.metal); P.rect(4, 8, 1, 6, PAL.metalDark); P.rect(11, 8, 1, 6, PAL.metalDark); disc(4); disc(11); }   // a trough under the funnel, two drop tubes
+    else {
+      funnel(1, 7, 2, 4); funnel(8, 7, 2, 4); P.rect(1, 2, 14, 1, PAL.gold);
+      P.line(4, 6, 3, 13, PAL.metalDark); P.line(11, 6, 12, 13, PAL.metalDark); P.rect(7, 6, 2, 8, PAL.metalDark);
+      disc(3); disc(8); disc(12); P.px(7, 0, '#ffe680'); P.px(8, 0, PAL.gold); P.rect(7, 1, 2, 1, PAL.metalDark);
+    }
+    if (full) { P.px(4, 3, soil); P.px(7, 3, seedC); P.px(11, 3, soil); }
+    if (frame) for (const x of level === 1 ? [4, 11] : [3, 8, 12]) P.px(x, 14, seedC);
   });
 }
 // The hopper (16×20): a funnel on legs with a spout; `full` shows crops at the lip.

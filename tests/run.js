@@ -1507,5 +1507,23 @@ await test('the market: dried goods go on the counter, a shopper who wants somet
   const n = m.npcs.find(x => x.id === 991); assert.ok(n.bubble && n.bubble.product === 'dried' && n.bubble.match, JSON.stringify(n.bubble));
 });
 
+await test('machine lamps: a full picker or hopper and a full chest at a belt end show stop; an empty planter or an idle dryer wait; off, unpowered or fine show nothing', async () => {
+  const s = S.makeModelFarm(), w = s.world, at = (x, y) => w.tiles[y * w.w + x].obj, sp = Object.keys(s.species)[0];
+  const find = k => { for (let y = 20; y < 32; y++) for (let x = 24; x < 40; x++) if (at(x, y)?.kind === k) return [x, y]; };
+  const [px, py] = find('picker'), [lx, ly] = find('planter'), [dx, dy] = find('dryer'), [hx, hy] = find('hopper'), [cx, cy] = find('chest');
+  assert.equal(S.machineStatus(s, px, py), null);
+  at(px, py).held = [{ species: sp, q: 0, qty: S.machineTier(at(px, py)).holds }]; assert.equal(S.machineStatus(s, px, py), 'stop');
+  at(px, py).off = true; assert.equal(S.machineStatus(s, px, py), null, 'switched off shows its own dot instead');
+  at(lx, ly).seeds = []; assert.equal(S.machineStatus(s, lx, ly), 'wait');
+  at(lx, ly).seeds = [{ species: sp, qty: 3 }]; assert.equal(S.machineStatus(s, lx, ly), null);
+  Object.assign(at(dx, dy), { held: [], out: [], doing: null }); assert.equal(S.machineStatus(s, dx, dy), 'wait');
+  at(dx, dy).out = [{ species: sp, q: 0, qty: CONFIG.power.dryer.output, product: 'dried' }]; assert.equal(S.machineStatus(s, dx, dy), 'stop');
+  at(hx, hy).held = [{ species: sp, q: 0, qty: CONFIG.power.hopper.holds }]; assert.equal(S.machineStatus(s, hx, hy), 'stop');
+  assert.equal(S.machineStatus(s, cx, cy), null);
+  at(cx, cy).slots = at(cx, cy).slots.map(() => ({ kind: 'crop', species: sp, q: 0, qty: 99 })); assert.equal(S.machineStatus(s, cx, cy), 'stop');
+  const { produceScale } = await import('../src/render/crops.js').catch(() => ({}));
+  if (produceScale) assert.ok(produceScale({ size: 0.95 }) > produceScale({ size: 0.1 }) + 3, 'giants draw bigger');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

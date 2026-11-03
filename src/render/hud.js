@@ -57,17 +57,17 @@ export function hotbarRects(vw, vh) {
   const slots = []; for (let i = 0; i < n; i++) slots.push({ x: hx + 4 * U + i * (slot + gap), y: hy + 4 * U, w: slot, h: slot });
   return { x: hx, y: hy, w: hw, h: 24 * U, slots };
 }
-export function itemSprite(it, species) {
+export function itemSprite(it, species, sized = false) {   // sized: drawn at the size gene, for produce held or lying in the world
   if (!it) return null;
   if (it.kind === 'tool') return toolIcon(it.tool);
   if (it.kind === 'seed') { const g = species[it.species]?.genome; return g ? seedIcon(Math.round(g.hue1), g.sat1, g.light1) : null; }
-  if (it.kind === 'crop') { const sp = species[it.species]; return sp ? produceSprite(sp) : null; }
-  if (it.kind === 'product') { const sp = species[it.species]; return sp ? driedSprite(sp) : null; }
+  if (it.kind === 'crop') { const sp = species[it.species]; return sp ? produceSprite(sp, sized) : null; }
+  if (it.kind === 'product') { const sp = species[it.species]; return sp ? driedSprite(sp, sized) : null; }
   if (it.kind === 'fert') return fertIcon(fertLook(it.fert));
   if (it.kind === 'fuel') return fuelIcon();
   if (it.kind === 'sprinkler') return sprinklerSprite(it.level || 0, 0);
   if (it.kind === 'pump') return pumpIcon(it.level || 0);
-  if (['generator', 'picker', 'hopper', 'line', 'belt', 'dryer', 'splitter', 'filter', 'dcrate', 'planter'].includes(it.kind)) return stationIcon(it.kind);
+  if (['generator', 'picker', 'hopper', 'line', 'belt', 'dryer', 'splitter', 'filter', 'dcrate', 'planter'].includes(it.kind)) return stationIcon(it.level && ['generator', 'picker', 'planter'].includes(it.kind) ? it.kind + it.level : it.kind);
   if (it.kind === 'pipe') return pipeSprite(10);
   if (it.kind === 'chest') return chestSprite(false, false, it.level || 0);
   if (it.kind === 'withered') return witheredSprite();

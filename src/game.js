@@ -21,6 +21,10 @@ import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
 
+// Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
+function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
+const FLY_SECS = 0.45;   // how long a crate takes to fly onto the truck
+
 export class Game {
   constructor(canvas) {
     this.canvas = canvas;
@@ -29,6 +33,8 @@ export class Game {
     this.mouse = { x: 0, y: 0, tx: -1, ty: -1, inside: false };
     this.selected = 0;
     this.floats = [];
+    this.flying = [];
+    this.fullSince = new Map();   // belt tile -> game minute it filled up; full for two steps means jammed   // crates in the air between your hands (or the forks) and the truck bed: {idx, x0, y0, t}
     this.landMode = false;
     this.cam = { x: 0, y: 0 };
     this.walkT = 0; this.moving = false; this.prints = []; this.lastFrame = 0; this.leftFoot = false;
@@ -120,7 +126,7 @@ export class Game {
   }
   placeCarried() {
     const s = this.state, { tx, ty } = this.mouse;
-    if (s.carrying === 'dcrate' && s.truck && isTruckTile(tx, ty)) { const r = S.loadTruck(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, TRUCK_SPOT.x + 1, TRUCK_SPOT.y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return; }
+    if (s.carrying === 'dcrate' && s.truck && isTruckTile(tx, ty)) { const r = S.loadTruck(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.flyToTruck(1); this.addFloat(r.float, TRUCK_SPOT.x + 1, TRUCK_SPOT.y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return; }
     const r = S.placeObject(s, tx, ty); if (!r.ok) this.ui.toast(r.msg === 'Not here' ? 'Put it on open grass within reach' : r.msg);
   }
   // E: open the UI of the station you are standing by (the seed rack for now), or close an open panel.
@@ -289,7 +295,7 @@ export class Game {
       case 'forklift': { const r = S.mountForklift(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.player.x, s.player.y - 1.4, '#ffffff'); this.sound.play(r.float === 'On' ? 'switch' : 'drop'); this.save(); } return true; }
       case 'barrow': { if (it && it.kind !== 'tool') { const r = S.putInBarrow(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#f6c453'); this.sound.play('drop'); this.save(); } return true; } const r = S.grabBarrow(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#ffffff'); this.sound.play('pickup'); } return true; }
       case 'board': { this.ui.openCrate(); return true; }
-      case 'truck': { if (s.forklift?.mounted && s.forklift.crates.length) { const r = S.forkLoad(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, TRUCK_SPOT.x + 1.5, TRUCK_SPOT.y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return true; } this.ui.openCrate(); return true; }
+      case 'truck': { if (s.forklift?.mounted && s.forklift.crates.length) { const r = S.forkLoad(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.flyToTruck(r.n || 1); this.addFloat(r.float, TRUCK_SPOT.x + 1.5, TRUCK_SPOT.y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return true; } this.ui.openCrate(); return true; }
       case 'bayspot': { const r = s.forklift?.mounted && s.forklift.crates.length ? S.forkDrop(s, o.x, o.y) : S.setCrate(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y, '#ffffff'); this.sound.play('stake'); this.save(); } return true; }
       case 'mstore': { const ch = s.market.store; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.near.x + 0.5, o.near.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'fountain': { if (it) { this.ui.toast('Empty hands to drink'); return true; } this.startAction('drink', MARKET.fountain.x, MARKET.fountain.y, CONFIG.actions.drinkSeconds); return true; }
@@ -437,6 +443,7 @@ export class Game {
     if (this.mouse.inside && !this.ui.openPanel && hbSlot >= 0 && s.inventory.slots[hbSlot] && !this.drag?.moved) this.ui.hoverItem(s.inventory.slots[hbSlot], this.mouse.x, this.mouse.y);
     else if (this.mouse.inside && !this.ui.openPanel && hbSlot < 0) this.ui.hover(tileAt(s.world, this.mouse.tx, this.mouse.ty), this.mouse.tx, this.mouse.ty, this.mouse.x, this.mouse.y); else if (!this.ui.panelHover) this.ui.hideHover();
     for (const f of this.floats) f.t += dt; this.floats = this.floats.filter(f => f.t < 2.2);
+    for (const f of this.flying) f.t += dt; this.flying = this.flying.filter(f => f.t < FLY_SECS);
     { // a footfall when a foot lands in the walk animation (frames 1 and 3): the sound, and a print left behind
       const frame = this.moving && !this.action ? Math.floor(this.walkT * 7) % 4 : 0;
       if (frame !== this.lastFrame && (frame === 1 || frame === 3)) { const p = s.player; let surf = 'grass'; if (s.market?.at) surf = M.paved(p.x, p.y) ? 'track' : 'grass'; else { const t = tileAt(s.world, Math.floor(p.x), Math.floor(p.y)); surf = t?.track ? 'track' : t?.tilled ? 'soil' : 'grass'; } this.sound.footfall(surf); }
@@ -467,15 +474,23 @@ export class Game {
     const p = this.state.player, k = this.keys;
     let dx = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     let dy = (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0);
-    if (!dx && !dy) { this.walkT = 0; return; }
+    this.jolt = Math.max(0, (this.jolt || 0) - dt);
+    const fork = this.state.forklift?.mounted, wheels = fork || this.state.barrow?.held;
+    if (!dx && !dy) { this.walkT = 0; this.rollV = 0; return; }
     const len = Math.hypot(dx, dy); dx /= len; dy /= len;
     p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-    const wf = S.walkFactor(this.state), sp = CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * (this.state.barrow?.held ? CONFIG.barrow.speed : 1) * (this.state.forklift?.mounted ? CONFIG.forklift.speed : 1) * wf;
+    if (fork && dx) this.state.forklift.face = dx < 0 ? 'left' : 'right';   // the forks point the way you last drove sideways
+    // Build 87: wheels take a moment to get going, the forklift longer than the barrow; feet don't
+    this.rollV = wheels ? Math.min(1, (this.rollV || 0) + dt / (fork ? 0.5 : 0.3)) : 1;
+    const wf = S.walkFactor(this.state), sp = (0.3 + 0.7 * this.rollV) * CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * (this.state.barrow?.held ? CONFIG.barrow.speed : 1) * (this.state.forklift?.mounted ? CONFIG.forklift.speed : 1) * wf;
     const w = this.state.world, rad = 0.3;
     const free = this.state.market?.at ? ((x, y) => M.walkable(x, y)) : (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
     const x0 = p.x, y0 = p.y;
     if (free(p.x + dx * sp, p.y)) p.x += dx * sp;
     if (free(p.x, p.y + dy * sp)) p.y += dy * sp;
+    if (wheels && this.rollV > 0.5 && Math.hypot(p.x - x0, p.y - y0) < sp * 0.15) {   // ran into something: a thud, a jolt, start again
+      this.rollV = 0; if (!this.jolt) { this.jolt = 0.18; this.sound.play('drop'); }
+    }
     if (this.state.forklift?.mounted) { this.state.forklift.x = p.x - 0.5; this.state.forklift.y = p.y - 0.5; }   // the forklift is under you
     if (this.state.barrow?.held) { const b = this.state.barrow, ahead = { up: [0, -0.9], down: [0, 0.9], left: [-0.9, 0], right: [0.9, 0] }[p.dir]; const tx = p.x + ahead[0] - 0.5, ty = p.y + ahead[1] - 0.5; b.x += (tx - b.x) * Math.min(1, dt * 6); b.y += (ty - b.y) * Math.min(1, dt * 6); }   // the barrow is pushed a step ahead of you
     this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
@@ -497,11 +512,14 @@ export class Game {
       for (const { x, y } of S.generatorTiles(s)) if (S.generatorLive(s, x, y)) gen.push([x, y]);
       for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && S.beltDir(s, x, y) >= 0) belt.push([x, y]); }
       lv.sprinkler = near(spr, 5); lv.windmill = near(wind, 9); lv.engine = near(eng, 9); lv.generator = near(gen, 8); lv.belt = near(belt, 6);
+      if (s.forklift?.mounted) lv.engine = Math.max(lv.engine, this.rollV > 0 ? 0.3 + 0.3 * this.rollV : 0.25);   // the forklift ticking over, louder as it goes
     }
     if (this.sleeping || this.travelling) for (const k in lv) lv[k] = 0;
     for (const [k, v] of Object.entries(lv)) snd.setLoop(k, v);
   }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
+  // Crates just loaded fly from where you stand to their places on the bed, one after another (Build 87)
+  flyToTruck(n) { const bed = this.state.truck?.bed || [], p = this.state.player; for (let k = 0; k < n; k++) this.flying.push({ idx: bed.length - n + k, x0: p.x - 0.45, y0: p.y - 1.1, t: -k * 0.14 }); }
   // footprints: small dark marks where each foot landed, fading over a few seconds; drawn on the ground under everything
   pushPrints(ctx, cx, cy, drawables) {
     if (!this.prints.length) return;
@@ -560,6 +578,8 @@ export class Game {
     const fed = S.fedPipes(s), wellB = BUILDINGS.well, pipeOrWell = (x, y) => { const t = tileAt(w, x, y); return !!t?.pipe || (x === wellB.x && y === wellB.y); };
     const net = S.lineNet(s), lineOrGen = (x, y) => { const t = tileAt(w, x, y); return !!t?.line || S.isGenerator(t); };
     const buriedMask = (x, y, has) => { let m = 0, sf = 0; for (const [b, nx, ny] of [[1, x, y - 1], [2, x + 1, y], [4, x, y + 1], [8, x - 1, y]]) if (has(nx, ny)) { m |= b; if (!tileAt(w, nx, ny)?.tilled) sf |= b; } return [m, sf]; };
+    // A machine's lamp (Build 87): amber steady while it waits for something to work on, red blinking while it is blocked
+    const lamp = (sx, sy, st, top = 19) => { if (!st || (st === 'stop' && Math.floor(now / 450) % 2)) return; const u = CONFIG.scale; ctx.fillStyle = '#3b2314'; ctx.fillRect(sx + T - 5 * u, sy + T - top * u, 4 * u, 4 * u); ctx.fillStyle = st === 'stop' ? '#ff5a4a' : '#f2b33d'; ctx.fillRect(sx + T - 4 * u, sy + T - (top - 1) * u, 2 * u, 2 * u); };
     const offDot = (sx, sy) => { const u = CONFIG.scale; ctx.fillStyle = '#3b2314'; ctx.fillRect(sx + T - 5 * u, sy + T - 19 * u, 4 * u, 4 * u); ctx.fillStyle = '#d9453d'; ctx.fillRect(sx + T - 4 * u, sy + T - 18 * u, 2 * u, 2 * u); };   // a red dot on a machine that is switched off
     const beltOrMachine = (x, y) => { const t = tileAt(w, x, y); return !!t?.belt || S.isMachine(t) || S.isChest(t) || t?.t === 'compost'; }, beltFrame = Math.floor(now / 150) % 4;
     // ground + flat things
@@ -588,24 +608,31 @@ export class Game {
       if (t.pipe && !t.tilled) ctx.drawImage(pipeSprite((pipeOrWell(x, y - 1) ? 1 : 0) | (pipeOrWell(x + 1, y) ? 2 : 0) | (pipeOrWell(x, y + 1) ? 4 : 0) | (pipeOrWell(x - 1, y) ? 8 : 0), fed.has(y * w.w + x)), sx, sy, T, T);
       if (t.line && !t.tilled) ctx.drawImage(lineSprite((lineOrGen(x, y - 1) ? 1 : 0) | (lineOrGen(x + 1, y) ? 2 : 0) | (lineOrGen(x, y + 1) ? 4 : 0) | (lineOrGen(x - 1, y) ? 8 : 0), net.dist.has(y * w.w + x)), sx, sy, T, T);
       if (t.belt) {   // the belt over pipe and line, its chevrons sliding toward the hopper; the crops ride on top
-        const dir = S.beltDir(s, x, y);
-        ctx.drawImage(beltSprite((beltOrMachine(x, y - 1) ? 1 : 0) | (beltOrMachine(x + 1, y) ? 2 : 0) | (beltOrMachine(x, y + 1) ? 4 : 0) | (beltOrMachine(x - 1, y) ? 8 : 0), dir, dir >= 0 ? beltFrame : 0), sx, sy, T, T);
+        const dir = S.beltDir(s, x, y), bk = y * w.w + x, bfull = S.heldCount(t.load) >= CONFIG.power.belt.holds;
+        if (bfull) { if (!this.fullSince.has(bk)) this.fullSince.set(bk, s.minutes); } else this.fullSince.delete(bk);
+        const stuck = bfull && dir >= 0 && s.minutes - this.fullSince.get(bk) >= CONFIG.power.belt.stepMinutes * 2;   // jammed: the chevrons stop
+        if (stuck) { const D4 = [[0, -1], [1, 0], [0, 1], [-1, 0]], nx = tileAt(w, x + D4[dir][0], y + D4[dir][1]); if (!(nx?.belt && S.heldCount(nx.load) >= CONFIG.power.belt.holds)) drawables.push({ y: y + 0.6, draw: () => lamp(sx, sy, 'stop', 16) }); }   // the lamp at the front of the jam
+        ctx.drawImage(beltSprite((beltOrMachine(x, y - 1) ? 1 : 0) | (beltOrMachine(x + 1, y) ? 2 : 0) | (beltOrMachine(x, y + 1) ? 4 : 0) | (beltOrMachine(x - 1, y) ? 8 : 0), dir, dir >= 0 && !stuck ? beltFrame : 0), sx, sy, T, T);
         if (t.obj?.kind === 'splitter') ctx.drawImage(splitterSprite(), sx, sy, T, T); else if (t.obj?.kind === 'filter') { ctx.drawImage(filterSprite(!!t.obj.swap), sx, sy, T, T); const fsp = t.obj.rule === 'species' && s.species[t.obj.species]; if (fsp) ctx.drawImage(produceSprite(fsp), sx + 4 * CONFIG.scale, sy + 4 * CONFIG.scale, 8 * CONFIG.scale, 8 * CONFIG.scale); }
         if (t.load?.length) {   // the crops glide toward the next tile over the step, unless that tile is full or this is a splitter
           let gx = 0, gy = 0;
           if (dir >= 0 && !t.obj) { const D4 = [[0, -1], [1, 0], [0, 1], [-1, 0]], n = tileAt(w, x + D4[dir][0], y + D4[dir][1]); const room = n?.belt ? S.heldCount(n.load) < CONFIG.power.belt.holds : true; if (room) { const p = Math.min(1, (s.beltClock || 0) / CONFIG.power.belt.stepMinutes); gx = D4[dir][0] * p * T; gy = D4[dir][1] * p * T; } }
-          const spots = [[4, 4], [8, 4], [4, 8], [8, 8]]; let k = 0; for (const it of t.load) { const sp = s.species[it.species]; if (!sp) continue; for (let i = 0; i < it.qty && k < 4; i++, k++) ctx.drawImage(it.product ? driedSprite(sp) : produceSprite(sp), Math.round(sx + spots[k][0] * CONFIG.scale + gx), Math.round(sy + spots[k][1] * CONFIG.scale + gy), 8 * CONFIG.scale, 8 * CONFIG.scale); }
+          // Build 87: a lone crop rides big enough to show its size gene; more share the tile smaller
+          const n = Math.min(4, S.heldCount(t.load)), d = n <= 1 ? 12 : n === 2 ? 10 : 8;
+          const spots = n <= 1 ? [[2, 1]] : n === 2 ? [[0, 2], [6, 2]] : [[0, 0], [8, 0], [0, 7], [8, 7]];
+          // drawn with the standing things, so a big crop gliding over the next tile isn't painted over by it
+          const load = t.load; drawables.push({ y: y + 0.5, draw: () => { let k = 0; for (const it of load) { const sp = s.species[it.species]; if (!sp) continue; for (let i = 0; i < it.qty && k < 4; i++, k++) ctx.drawImage(it.product ? driedSprite(sp, true) : produceSprite(sp, true), Math.round(sx + spots[k][0] * CONFIG.scale + gx), Math.round(sy + spots[k][1] * CONFIG.scale + gy), d * CONFIG.scale, d * CONFIG.scale); } } });
         }
       }
       if (tree) drawables.push({ y: y + 1 + t.jy / 16, draw: () => ctx.drawImage(treeSprite(t.v), sx - 2 * CONFIG.scale + t.jx * CONFIG.scale, sy - T + t.jy * CONFIG.scale, 20 * CONFIG.scale, 32 * CONFIG.scale) });
       if (t.obj?.kind === 'sprinkler') { const on = (t.obj.sprayUntil || 0) > s.minutes; ctx.drawImage(sprinklerSprite(t.obj.level || 0, on ? 1 + Math.floor(now / 160) % 2 : 0), sx, sy, T, T); if (on) sprays.push([sx, sy, S.sprinklerTier(t.obj).radius]); }
-      if (t.obj?.kind === 'generator') { const live = S.generatorLive(s, x, y); drawables.push({ y: y + 1, draw: () => ctx.drawImage(generatorSprite(live ? 1 + Math.floor(now / 200) % 2 : 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
-      if (t.obj?.kind === 'picker') { const on = S.machinePowered(s, x, y), full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(pickerSprite(on ? Math.floor(now / 700) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); } }); }
-      if (t.obj?.kind === 'planter') { const on = S.machinePowered(s, x, y) && S.planterCount(t.obj) > 0, full = !!t.obj.seeds?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(planterSprite(on ? Math.floor(now / 900) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); } }); }
+      if (t.obj?.kind === 'generator') { const live = S.generatorLive(s, x, y); drawables.push({ y: y + 1, draw: () => ctx.drawImage(generatorSprite(live ? 1 + Math.floor(now / 200) % 2 : 0, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
+      if (t.obj?.kind === 'picker') { const on = S.machinePowered(s, x, y), full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(pickerSprite(on ? Math.floor(now / 700) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
+      if (t.obj?.kind === 'planter') { const on = S.machinePowered(s, x, y) && S.planterCount(t.obj) > 0, full = !!t.obj.seeds?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(planterSprite(on ? Math.floor(now / 900) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'dcrate') { const u = CONFIG.scale, n = S.dcrateCount(t.obj), lv = n >= CONFIG.truck.crateHolds ? 2 : n > 0 ? 1 : 0; drawables.push({ y: y + 1, draw: () => ctx.drawImage(crateSprite(lv, true), sx + u, sy + T - 12 * u, 14 * u, 13 * u) }); }   // a crate: smaller than the porch crate, a box you can lift
-      if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u) }); }
-      if (t.obj?.kind === 'hopper') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(hopperSprite(full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); } }); }
-      if (t.obj?.kind === 'dryer') { const on = !!t.obj.doing && S.machinePowered(s, x, y), full = !!t.obj.out?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(dryerSprite(on ? 1 + Math.floor(now / 450) % 2 : 0, full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); } }); }
+      if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u); lamp(sx, sy, S.machineStatus(s, x, y), 16); } }); }
+      if (t.obj?.kind === 'hopper') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(hopperSprite(full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
+      if (t.obj?.kind === 'dryer') { const on = !!t.obj.doing && S.machinePowered(s, x, y), full = !!t.obj.out?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(dryerSprite(on ? 1 + Math.floor(now / 450) % 2 : 0, full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'pump') { const lv = t.obj.level || 0, run = fed.has(y * w.w + x) && S.pumpRunning(s, t), H = lv === 1 ? 32 : lv === 2 ? 20 : 16; drawables.push({ y: y + 1, draw: () => ctx.drawImage(pumpSprite(lv, run ? 1 + Math.floor(now / (lv === 1 ? 240 : 180)) % 2 : 0), sx, sy + T - H * CONFIG.scale, T, H * CONFIG.scale) }); }
       if (t.crop) {
         const sp = s.species[t.crop.speciesId]; if (!sp) continue;
@@ -636,7 +663,14 @@ export class Game {
     if (s.truck) { const Ts = TRUCK_SPOT, u = CONFIG.scale, bed = s.truck.bed || [], slots = S.truckSlots(s); drawables.push({ y: Ts.y + Ts.h, draw: () => {
       ctx.drawImage(parkedTruckSprite(), Ts.x * T - cx, Ts.y * T - cy, 48 * u, 32 * u);
       const cols = slots <= 4 ? 4 : slots <= 8 ? 4 : 6, rows = Math.ceil(slots / cols), cw = 30 / cols, chh = 11 / rows;   // crates on the bed, in rows
-      for (let i = 0; i < bed.length; i++) { const r = Math.floor(i / cols), c = i % cols; ctx.drawImage(crateSprite(1, true), Ts.x * T - cx + (2 + c * cw) * u, Ts.y * T - cy + (10 + r * chh - 1) * u, Math.round(cw * u), Math.round((chh + 1) * u)); }
+      const slotAt = i => { const r = Math.floor(i / cols), c = i % cols; return [Ts.x * T - cx + (2 + c * cw) * u, Ts.y * T - cy + (10 + r * chh - 1) * u]; };
+      const inAir = new Set(this.flying.map(f => f.idx));
+      for (let i = 0; i < bed.length; i++) { if (inAir.has(i)) continue; const [bx, by] = slotAt(i); ctx.drawImage(crateSprite(1, true), bx, by, Math.round(cw * u), Math.round((chh + 1) * u)); }
+      for (const f of this.flying) {   // an arc from the hands to the slot, shrinking from carried size to bed size
+        const k = Math.max(0, Math.min(1, f.t / (FLY_SECS - 0.05))), e = k * k * (3 - 2 * k), [tx, ty] = slotAt(f.idx);
+        const fx = f.x0 * T - cx + (tx - (f.x0 * T - cx)) * e, fy = f.y0 * T - cy + (ty - (f.y0 * T - cy)) * e - Math.sin(Math.PI * e) * 0.7 * T;
+        const w = 14 + (cw - 14) * e, h = 13 + (chh + 1 - 13) * e; ctx.drawImage(crateSprite(1, true), Math.round(fx), Math.round(fy), Math.round(w * u), Math.round(h * u));
+      }
     } }); }
     if (s.truck) { const Bd = BUILDINGS.board, u = CONFIG.scale, bb = S.bayBoard(s); drawables.push({ y: Bd.y + 1, draw: () => {   // the bay's board: tonight's count and money in chalk
       const bx = Bd.x * T - cx - 10 * u, by = (Bd.y + 1) * T - cy - 24 * u + 2 * u; ctx.drawImage(boardSprite(), bx, by, 36 * u, 24 * u);
@@ -660,7 +694,7 @@ export class Game {
     { const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') { const st = s.breeder.running ? 2 : s.breeder.a || s.breeder.b ? 1 : 0; drawables.push({ y: BP.y + 1, draw: () => { ctx.drawImage(benchSprite(st, Math.floor(now / 350) % 2), BP.x * T - cx, (BP.y + 1) * T - cy - 28 * CONFIG.scale, T, 28 * CONFIG.scale); if ((s.breeder.result || s.breeder.result2)) { const sp = s.species[(s.breeder.result || s.breeder.result2).species], u = CONFIG.scale; if (sp) ctx.drawImage(seedIcon(Math.round(sp.genome.hue1), sp.genome.sat1, sp.genome.light1), BP.x * T - cx + 3 * u, (BP.y + 1) * T - cy - 24 * u, 10 * u, 8 * u); } } }); } }
     { const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') { const lv = S.compostLevel(s); drawables.push({ y: CP.y + 1, draw: () => ctx.drawImage(compostSprite(lv), CP.x * T - cx, (CP.y + 1) * T - cy - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); } }
     if (s.barrow) { const b = s.barrow, u = CONFIG.scale, full = b.slots.slots.some(Boolean); drawables.push({ y: b.y + 1, draw: () => ctx.drawImage(barrowSprite(full), Math.round(b.x * T) - cx - u, Math.round((b.y + 1) * T) - cy - 14 * u, 18 * u, 14 * u) }); }
-    if (s.forklift && !s.forklift.mounted) { const F = s.forklift, u = CONFIG.scale; drawables.push({ y: F.y + 1, draw: () => { ctx.drawImage(forkliftSprite(), Math.round(F.x * T) - cx, Math.round((F.y + 1) * T) - cy - 20 * u, T, 20 * u); for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), Math.round(F.x * T) - cx + 11 * u, Math.round((F.y + 1) * T) - cy - 8 * u - i * 6 * u, 9 * u, 8 * u); } }); }
+    if (s.forklift && !s.forklift.mounted) { const F = s.forklift, u = CONFIG.scale; drawables.push({ y: F.y + 1, draw: () => { const left = F.face === 'left'; drawFacing(ctx, forkliftSprite(), Math.round(F.x * T) - cx, Math.round((F.y + 1) * T) - cy - 20 * u, T, 20 * u, left); for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), Math.round(F.x * T) - cx + (left ? -4 : 11) * u, Math.round((F.y + 1) * T) - cy - 8 * u - i * 6 * u, 9 * u, 8 * u); } }); }
     { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
     const Cr = BUILDINGS.crate, crateLevel = S.crateCount(s) >= s.crate.capacity ? 2 : S.crateCount(s) > 0 ? 1 : 0;
     if (s.truck && s.parcels?.length) { const Sg = BUILDINGS.sign, u = CONFIG.scale; drawables.push({ y: Sg.y + 1.02, draw: () => ctx.drawImage(parcelSprite(), Sg.x * T - cx + 2 * u, (Sg.y + 1) * T - cy - 10 * u + Math.round(Math.sin(now / 300)) * u, 12 * u, 10 * u) }); }   // parcels wait at the foot of the sign once the crate is gone
@@ -671,7 +705,7 @@ export class Game {
       // what is inside sits in the hole: clipped to the opening, then the front boards are drawn back over it
       ctx.save(); ctx.beginPath(); ctx.rect(ox + 3 * u, oy - 6 * u, 14 * u, 11 * u); ctx.clip();
       const kinds = s.crate.items.slice(0, 6);
-      kinds.forEach((it, i) => { const sp = s.species[it.species]; if (!sp) return; const col = i % 3, row = Math.floor(i / 3); ctx.drawImage(produceSprite(sp), ox + (3 + col * 4) * u, oy + (crateLevel === 2 ? 0 : 2) * u - row * 2 * u, 6 * u, 6 * u); });
+      kinds.forEach((it, i) => { const sp = s.species[it.species]; if (!sp) return; const col = i % 3, row = Math.floor(i / 3); ctx.drawImage(produceSprite(sp, true), ox + (3 + col * 4) * u, oy + (crateLevel === 2 ? 0 : 2) * u - row * 2 * u, 6 * u, 6 * u); });
       if (s.parcels?.length) ctx.drawImage(parcelSprite(), ox + 4 * u, oy - 2 * u + Math.round(Math.sin(now / 300)) * u, 12 * u, 10 * u);
       ctx.restore();
       ctx.drawImage(cs, 0, 5, 20, 13, ox, oy + 5 * u, 20 * u, 13 * u);
@@ -749,9 +783,10 @@ export class Game {
       const pose = s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
       const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
       if (s.forklift?.mounted) {   // on the forklift: the truck under you, the crates stacked on the forks, you sat up on it
-        const F = s.forklift; ctx.drawImage(forkliftSprite(), px, py + 2 * u0, T, 20 * u0);
-        for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), px + 11 * u0, py + 12 * u0 - i * 6 * u0, 9 * u0, 8 * u0);
-        ctx.drawImage(spr, 0, 0, 16, 14, px - 2 * u0, py - 2 * u0, T, 14 * u0); return;
+        const F = s.forklift, left = F.face === 'left', jx = this.jolt ? Math.round(Math.sin(this.jolt * 90) * u0) : 0, fx = px + jx;
+        drawFacing(ctx, forkliftSprite(), fx, py + 2 * u0, T, 20 * u0, left);
+        for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), fx + (left ? -4 : 11) * u0, py + 12 * u0 - i * 6 * u0, 9 * u0, 8 * u0);
+        ctx.drawImage(spr, 0, 0, 16, 14, fx + (left ? 2 : -2) * u0, py - 2 * u0, T, 14 * u0); return;
       }
       if (S.isTired(s) && !s.carrying) {   // worn out: the head sinks a pixel into the shoulders, and a drop of sweat
         ctx.drawImage(spr, 0, 10, 16, PLAYER_H - 10, px, py + 10 * u0, T, (PLAYER_H - 10) * u0);
@@ -768,7 +803,7 @@ export class Game {
       const held = heldNow;
       if (!this.action && !s.carrying && held?.kind === 'tool') ctx.drawImage(heldOverlay(held.tool, p.dir), px, py + bobPx, T, PLAYER_H * CONFIG.scale);
       else if (!this.action && !s.carrying && held && held.kind !== 'tool' && p.dir !== 'up') {   // in the extended hand
-        const img = itemSprite(held, s.species);
+        const img = itemSprite(held, s.species, true);
         if (img) { const u = CONFIG.scale; if (p.dir === 'down') { ctx.drawImage(img, px + 4 * u, py + 12 * u + bobPx, 8 * u, 8 * u); ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 4 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillRect(px + 10 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillStyle = '#d9a784'; ctx.fillRect(px + 4 * u, py + 18 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 18 * u + bobPx, 2 * u, u); } else { const hx = p.dir === 'left' ? px - 4 * u : px + 12 * u; ctx.drawImage(img, hx, py + 9 * u + bobPx, 8 * u, 8 * u); } }
       }
       if (act === 'drink' || act === 'eat') {   // sips: little drops / crumbs at the mouth
@@ -907,7 +942,7 @@ export class Game {
         drawables.push({ y: st.y - 0.1, draw: () => ctx.drawImage(tentBackSprite(), sx, (st.y - 1) * T - cy, 64 * u, 32 * u) });   // the roof and back wall: you stand in front of them
         drawables.push({ y: st.y + 2, draw: () => {
           ctx.drawImage(tentFrontSprite(), sx, (st.y + 1) * T - cy, 64 * u, 16 * u);
-          let k = 0; for (const it of m.counter.slots) { if (!it || k >= 6) continue; const sp = s.species[it.species]; if (!sp) continue; ctx.drawImage(it.kind === 'product' ? driedSprite(sp) : produceSprite(sp), sx + (3 + k * 10) * u, (st.y + 1) * T - cy - 3 * u, 8 * u, 8 * u); k++; }
+          let k = 0; for (const it of m.counter.slots) { if (!it || k >= 6) continue; const sp = s.species[it.species]; if (!sp) continue; ctx.drawImage(it.kind === 'product' ? driedSprite(sp, true) : produceSprite(sp, true), sx + (3 + k * 10) * u, (st.y + 1) * T - cy - 3 * u, 8 * u, 8 * u); k++; }
         } });
       } else {
         const v = st.key === 'seeds' ? 1 : 2, sy = st.y * T - cy - 12 * u;
@@ -926,7 +961,7 @@ export class Game {
         if (n.bubble) {   // what they think: the thing they bought, what they wanted, or nothing
           const bx = nx + 10 * u, by = ny - 12 * u; ctx.fillStyle = '#3b2314'; ctx.fillRect(bx - u, by - u, 12 * u, 12 * u); ctx.fillStyle = '#f5e6c3'; ctx.fillRect(bx, by, 10 * u, 10 * u); ctx.fillRect(bx + 2 * u, by + 10 * u, 2 * u, u);
           const b = n.bubble;
-          if (b.kind === 'bought') { const sp = s.species[b.species]; if (sp) ctx.drawImage(b.product ? driedSprite(sp) : produceSprite(sp), bx + u, by + u, 8 * u, 8 * u); if (b.match) { ctx.fillStyle = '#f6c453'; ctx.fillRect(bx + 8 * u, by - u, 2 * u, 2 * u); } }
+          if (b.kind === 'bought') { const sp = s.species[b.species]; if (sp) ctx.drawImage(b.product ? driedSprite(sp, true) : produceSprite(sp, true), bx + u, by + u, 8 * u, 8 * u); if (b.match) { ctx.fillStyle = '#f6c453'; ctx.fillRect(bx + 8 * u, by - u, 2 * u, 2 * u); } }
           else { ctx.fillStyle = '#8a6a44'; ctx.fillRect(bx + 2 * u, by + 5 * u, u, u); ctx.fillRect(bx + 4.5 * u, by + 5 * u, u, u); ctx.fillRect(bx + 7 * u, by + 5 * u, u, u); }
         }
       } });

@@ -1184,6 +1184,18 @@ function planterPass(state, net) {
   if (planted) { const D = today(state); D.autoPlanted = (D.autoPlanted || 0) + planted; }
   return planted;
 }
+// What a machine's lamp shows (Build 87): 'stop' when it is blocked (full and can't get rid of what it holds), 'wait' when it
+// is powered but has nothing to work on, null when it is fine, off or unpowered (those show already). Chests only as belt sinks.
+export function machineStatus(state, x, y) {
+  const w = state.world, o = tileAt(w, x, y)?.obj; if (!o) return null;
+  if (o.kind === 'chest') return beltNet(state).sinks.has(y * w.w + x) && o.slots.every(Boolean) ? 'stop' : null;
+  if (o.off || !['picker', 'hopper', 'planter', 'dryer'].includes(o.kind) || !machinePowered(state, x, y)) return null;
+  if (o.kind === 'picker') return heldCount(o.held) >= machineTier(o).holds ? 'stop' : null;
+  if (o.kind === 'hopper') return heldCount(o.held) >= CONFIG.power.hopper.holds ? 'stop' : null;
+  if (o.kind === 'planter') return heldCount(o.seeds) ? null : 'wait';
+  if (heldCount(o.out) >= CONFIG.power.dryer.output) return 'stop';
+  return o.doing || heldCount(o.held) ? null : 'wait';
+}
 export const planterCount = o => (o.seeds || []).reduce((n, s) => n + s.qty, 0) + (o.bags || []).reduce((n, b) => n + b.qty, 0);
 // Seeds or bags in hand onto a planter: as much of the stack as fits.
 export function loadPlanter(state, slotIndex, x, y, n = Infinity) {
