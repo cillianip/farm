@@ -200,9 +200,21 @@ export function boardSprite() {
 }
 // The truck parked in the bay (32×32, two tiles wide, facing the track): cab on the right, a flatbed with low slatted sides on
 // the left; the game sets the loaded crates on the bed.
+// Build 90: the parked truck in two layers so crates sit IN its cargo box. The back layer is the open box seen from above
+// (its plank floor and far rim), the cab, chassis and wheels; the front layer is the near slatted wall and the tailgate
+// hanging open at the rear, drawn over the crates so only their tops show above the wall.
+export const TRUCK_BOX = { x0: 5, x1: 32, wallTop: 12 };   // the box's inside, in sprite pixels
+export function truckFrontSprite() {
+  return sprite('truckFront', 48, 32, P => {
+    P.rect(4, 12, 29, 11, PAL.woodDark); P.rect(5, 13, 27, 9, PAL.wood); P.rect(5, 13, 27, 1, PAL.woodLight); for (let x = 9; x < 32; x += 5) P.rect(x, 13, 1, 9, PAL.woodDark);   // the near wall
+    P.rect(4, 3, 1, 10, PAL.woodDark); P.rect(32, 3, 1, 10, PAL.woodDark);                                                  // corner posts
+    P.rect(0, 14, 4, 10, PAL.woodDark); P.rect(1, 15, 2, 8, PAL.wood); P.px(1, 15, PAL.woodLight); P.px(3, 13, PAL.metalDark); P.px(2, 12, PAL.metalDark);   // the tailgate, open, on its chain
+  }, 'rgba(40,25,15,0.9)');
+}
 export function parkedTruckSprite() {
-  return sprite('parkedTruck', 48, 32, P => {
-    P.rect(1, 9, 32, 14, PAL.woodDark); P.rect(2, 10, 30, 12, PAL.wood); for (let x = 5; x < 32; x += 5) P.rect(x, 10, 1, 12, PAL.woodDark); P.rect(2, 10, 30, 1, PAL.woodLight); P.rect(2, 21, 30, 1, PAL.woodDark);   // the bed: long, low slatted sides
+  return sprite('parkedTruck2', 48, 32, P => {
+    P.rect(4, 3, 29, 2, PAL.woodDark); P.rect(5, 3, 27, 1, PAL.woodLight);                                                   // the far rim
+    P.rect(5, 5, 27, 8, '#4a3220'); for (let y = 6; y < 13; y += 2) P.rect(5, y, 27, 1, '#3d2a1a'); P.rect(5, 5, 27, 1, '#2e2014');   // the floor, from above
     P.rect(33, 4, 14, 19, '#4f8fcf'); P.rect(33, 4, 14, 1, '#7fb4e6'); P.rect(34, 6, 11, 7, PAL.window); P.rect(34, 6, 11, 1, '#dff3ff'); P.rect(33, 22, 14, 1, '#3f72a8'); P.rect(45, 15, 2, 3, PAL.gold); P.rect(33, 14, 14, 1, '#3f72a8');   // the cab, windscreen, a lamp
     P.rect(0, 23, 48, 3, PAL.metalDark); P.rect(0, 25, 48, 1, '#2a2a2a');                                                                                                           // the chassis
     for (const wx of [8, 20, 40]) { P.disc(wx, 28, 4, '#2a2a2a'); P.disc(wx, 28, 3, '#444'); P.disc(wx, 28, 1, PAL.metalLight); }                                                     // three wheels a side
@@ -883,12 +895,12 @@ export function towerSprite(pk = -1, pl = -1, pkFull = false, plFull = false, ar
     }
   });
 }
-// The key cap over the station E opens (9×9): a cream face, a darker side below it, an E on it.
+// The key cap over the station E opens (7×8): a cream face, a darker side below it, an E filling the face.
 export function keyCapSprite() {
-  return sprite('keycap2', 9, 9, P => {
-    P.rect(1, 0, 7, 9, '#3b2314'); P.rect(0, 1, 9, 7, '#3b2314');                                  // the outline, corners clipped
-    P.rect(1, 1, 7, 6, '#f5e6c3'); P.rect(1, 1, 7, 1, '#fffaf0'); P.rect(1, 7, 7, 1, '#c9a878');   // face, its lit edge, the side
-    const ink = '#3b2314'; P.rect(3, 2, 1, 5, ink); P.rect(4, 2, 2, 1, ink); P.rect(4, 4, 1, 1, ink); P.rect(4, 6, 2, 1, ink);   // E
+  return sprite('keycap3', 7, 8, P => {
+    P.rect(1, 0, 5, 8, '#3b2314'); P.rect(0, 1, 7, 6, '#3b2314');                                  // the outline, corners clipped
+    P.rect(1, 1, 5, 5, '#f5e6c3'); P.rect(1, 6, 5, 1, '#c9a878');                                   // face and the side below it
+    const ink = '#3b2314'; P.rect(2, 1, 1, 5, ink); P.rect(3, 1, 2, 1, ink); P.px(3, 3, ink); P.rect(3, 5, 2, 1, ink);   // E
   });
 }
 export function fertIcon(look = null) {

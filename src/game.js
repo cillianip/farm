@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile , isCleared } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, planterSprite, barrowSprite, forkliftSprite } from './render/sprites.js';
+import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, planterSprite, barrowSprite, forkliftSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -23,7 +23,7 @@ const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
 
 // Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
 function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
-const FLY_SECS = 0.45;   // how long a crate takes to fly onto the truck
+const FLY_SECS = 0.65;   // how long a crate takes to fly onto the truck
 
 export class Game {
   constructor(canvas) {
@@ -647,10 +647,11 @@ export class Game {
           let gx = 0, gy = 0;
           if (dir >= 0 && !t.obj) { const D4 = [[0, -1], [1, 0], [0, 1], [-1, 0]], n = tileAt(w, x + D4[dir][0], y + D4[dir][1]); const room = n?.belt ? S.heldCount(n.load) < CONFIG.power.belt.holds : true; if (room) { const p = Math.min(1, (s.beltClock || 0) / CONFIG.power.belt.stepMinutes); gx = D4[dir][0] * p * T; gy = D4[dir][1] * p * T; } }
           // Build 87: a lone crop rides big enough to show its size gene; more share the tile smaller
-          const n = Math.min(4, S.heldCount(t.load)), d = n <= 1 ? 12 : n === 2 ? 10 : 8;
-          const spots = n <= 1 ? [[2, 1]] : n === 2 ? [[0, 2], [6, 2]] : [[0, 0], [8, 0], [0, 7], [8, 7]];
+          // Build 90: smaller, and squashed to lie flat on the belt rather than stand up on it
+          const n = Math.min(4, S.heldCount(t.load)), d = n <= 1 ? 9 : n === 2 ? 8 : 7, dh = Math.round(d * 0.7);
+          const spots = n <= 1 ? [[4, 5]] : n === 2 ? [[0, 5], [8, 5]] : [[1, 2], [8, 2], [1, 8], [8, 8]];
           // drawn with the standing things, so a big crop gliding over the next tile isn't painted over by it
-          const load = t.load; drawables.push({ y: y + 0.5, draw: () => { let k = 0; for (const it of load) { const sp = s.species[it.species]; if (!sp) continue; for (let i = 0; i < it.qty && k < 4; i++, k++) ctx.drawImage(it.product ? driedSprite(sp, true) : produceSprite(sp, true), Math.round(sx + spots[k][0] * CONFIG.scale + gx), Math.round(sy + spots[k][1] * CONFIG.scale + gy), d * CONFIG.scale, d * CONFIG.scale); } } });
+          const load = t.load; drawables.push({ y: y + 0.5, draw: () => { let k = 0; for (const it of load) { const sp = s.species[it.species]; if (!sp) continue; for (let i = 0; i < it.qty && k < 4; i++, k++) ctx.drawImage(it.product ? driedSprite(sp, true) : produceSprite(sp, true), Math.round(sx + spots[k][0] * CONFIG.scale + gx), Math.round(sy + spots[k][1] * CONFIG.scale + gy), d * CONFIG.scale, dh * CONFIG.scale); } } });
         }
       }
       if (tree) drawables.push({ y: y + 1 + t.jy / 16, draw: () => ctx.drawImage(treeSprite(t.v), sx - 2 * CONFIG.scale + t.jx * CONFIG.scale, sy - T + t.jy * CONFIG.scale, 20 * CONFIG.scale, 32 * CONFIG.scale) });
@@ -701,15 +702,23 @@ export class Game {
     const Wl = BUILDINGS.well, Sg = BUILDINGS.sign;
     drawables.push({ y: Sg.y + 1, draw: () => ctx.drawImage(signSprite(this.flag), Sg.x * T - cx - 10 * CONFIG.scale, (Sg.y + 1) * T - cy - 24 * CONFIG.scale + 2 * CONFIG.scale, 36 * CONFIG.scale, 24 * CONFIG.scale) });
     if (s.truck) { const Ts = TRUCK_SPOT, u = CONFIG.scale, bed = s.truck.bed || [], slots = S.truckSlots(s); drawables.push({ y: Ts.y + Ts.h, draw: () => {
-      ctx.drawImage(parkedTruckSprite(), Ts.x * T - cx, Ts.y * T - cy, 48 * u, 32 * u);
-      const cols = slots <= 4 ? 4 : slots <= 8 ? 4 : 6, rows = Math.ceil(slots / cols), cw = 30 / cols, chh = 11 / rows;   // crates on the bed, in rows
-      const slotAt = i => { const r = Math.floor(i / cols), c = i % cols; return [Ts.x * T - cx + (2 + c * cw) * u, Ts.y * T - cy + (10 + r * chh - 1) * u]; };
-      const inAir = new Set(this.flying.map(f => f.idx));
-      for (let i = 0; i < bed.length; i++) { if (inAir.has(i)) continue; const [bx, by] = slotAt(i); ctx.drawImage(crateSprite(1, true), bx, by, Math.round(cw * u), Math.round((chh + 1) * u)); }
-      for (const f of this.flying) {   // an arc from the hands to the slot, shrinking from carried size to bed size
-        const k = Math.max(0, Math.min(1, f.t / (FLY_SECS - 0.05))), e = k * k * (3 - 2 * k), [tx, ty] = slotAt(f.idx);
-        const fx = f.x0 * T - cx + (tx - (f.x0 * T - cx)) * e, fy = f.y0 * T - cy + (ty - (f.y0 * T - cy)) * e - Math.sin(Math.PI * e) * 0.7 * T;
-        const w = 14 + (cw - 14) * e, h = 13 + (chh + 1 - 13) * e; ctx.drawImage(crateSprite(1, true), Math.round(fx), Math.round(fy), Math.round(w * u), Math.round(h * u));
+      const ox = Ts.x * T - cx, oy = Ts.y * T - cy, B = TRUCK_BOX;
+      ctx.drawImage(parkedTruckSprite(), ox, oy, 48 * u, 32 * u);
+      // Build 90: crates stand in the box in rows, front row nearest the wall; the near wall hides their lower part.
+      // The far row fills first, each row from the cab back, so the open tailgate end fills last and new crates land in view.
+      const cols = slots <= 8 ? 4 : 6, rows = Math.ceil(slots / cols), cw = (B.x1 - B.x0) / cols, ch = Math.min(8, cw + 1);
+      const slotAt = i => { const r = Math.floor(i / cols), c = cols - 1 - i % cols; return [ox + (B.x0 + c * cw) * u, oy + (rows === 1 ? 7 : r === 0 ? 4 : 8) * u, r]; };
+      const crate = (x, y, w, h) => ctx.drawImage(crateSprite(1, true), Math.round(x), Math.round(y), Math.round(w * u), Math.round(h * u));
+      const mouth = [ox + 1 * u, oy + 4 * u], SLIDE = 0.55;   // the crates go in over the open tailgate, then slide along the floor
+      const phase = f => { const k = Math.max(0, Math.min(1, f.t / (FLY_SECS - 0.05))); return k; };
+      const inAir = new Set(this.flying.filter(f => phase(f) < 1).map(f => f.idx));
+      const order = [...bed.keys()].filter(i => !inAir.has(i)).sort((a, b) => slotAt(a)[1] - slotAt(b)[1]);   // the back row first
+      for (const i of order) { const [bx, by] = slotAt(i); crate(bx, by, cw - 0.5, ch); }
+      for (const f of this.flying) { const k = phase(f); if (k < SLIDE || k >= 1) continue; const e = (k - SLIDE) / (1 - SLIDE), [tx, ty] = slotAt(f.idx); crate(mouth[0] + (tx - mouth[0]) * e, mouth[1] + (ty - mouth[1]) * e, cw - 0.5, ch); }
+      ctx.drawImage(truckFrontSprite(), ox, oy, 48 * u, 32 * u);
+      for (const f of this.flying) {   // the arc up to the tailgate, shrinking from carried size to bed size
+        const k = phase(f); if (k >= SLIDE) continue; const e0 = k / SLIDE, e = e0 * e0 * (3 - 2 * e0), sx0 = f.x0 * T - cx, sy0 = f.y0 * T - cy;
+        crate(sx0 + (mouth[0] - sx0) * e, sy0 + (mouth[1] - sy0) * e - Math.sin(Math.PI * e) * 0.6 * T, 14 + (cw - 0.5 - 14) * e, 13 + (ch - 13) * e);
       }
     } }); }
     if (s.truck) { const Bd = BUILDINGS.board, u = CONFIG.scale, bb = S.bayBoard(s); drawables.push({ y: Bd.y + 1, draw: () => {   // the bay's board: tonight's count and money in chalk
@@ -765,7 +774,7 @@ export class Game {
       const M = this.eMark = this.eMark || { x: 0, y: 0, a: 0 }, dt = Math.min(0.1, (now - (M.t || now)) / 1000); M.t = now;
       if (show) { const gx = t.b.x + t.b.w / 2, gy = t.b.y - 0.02; if (M.a < 0.05) { M.x = gx; M.y = gy; } else { const k = Math.min(1, dt * 14); M.x += (gx - M.x) * k; M.y += (gy - M.y) * k; } }
       M.a = Math.max(0, Math.min(1, M.a + (show ? 6 : -6) * dt));
-      if (M.a > 0) { const bob = Math.round(Math.sin(now / 380)) * u; ctx.globalAlpha = M.a; ctx.drawImage(keyCapSprite(), Math.round((M.x * T - cx) / u - 4.5) * u, Math.round((M.y * T - cy) / u - 9) * u + bob, 9 * u, 9 * u); ctx.globalAlpha = 1; }
+      if (M.a > 0) { const bob = Math.round(Math.sin(now / 380)) * u; ctx.globalAlpha = M.a; ctx.drawImage(keyCapSprite(), Math.round((M.x * T - cx) / u - 3.5) * u, Math.round((M.y * T - cy) / u - 8) * u + bob, 7 * u, 8 * u); ctx.globalAlpha = 1; }
     }
     if (this.netView) this.drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1);
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
