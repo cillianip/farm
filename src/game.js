@@ -243,7 +243,7 @@ export class Game {
     for (const { x, y, t } of S.machineTiles(s)) if (t.obj.kind !== 'dryer' && t.obj.kind !== 'planter' && t.obj.held?.length) { const n = S.heldCount(t.obj.held); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - towerH(x, y), 16, towerH(x, y)], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); }
     { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.belt && t.load?.length && !t.obj) { const n = S.heldCount(t.load); out.push({ kind: 'machine', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it ? `Empty hands to take ${n} ${n === 1 ? 'crop' : 'crops'}` : `Take ${n} ${n === 1 ? 'crop' : 'crops'}` }); } } }
     { const Rs = B.roadsign, late = S.hourOf(s) >= CONFIG.market.close - 1; out.push({ kind: 'roadsign', near: { x: Rs.x, y: Rs.y, w: 1, h: 1 }, rect: [Rs.x * 16 - 10, (Rs.y + 1) * 16 - 24, 36, 24], label: s.carrying ? 'Put down what you carry first' : late ? 'Too late to go to the market today' : 'Go to the market  (an hour\'s walk)' }); }
-    if (!it && s.truck) { const w = s.world, forks = s.forklift?.mounted && s.forklift.crates.length; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { if (!(forks ? isCleared(w, x, y) && Math.abs(x + 0.5 - s.player.x) < 3 && Math.abs(y + 0.5 - s.player.y) < 3 : S.inBayOf(s, x, y))) continue; const t = w.tiles[y * w.w + x]; if (t.t === 'grass' && !t.track && !t.tilled && !t.obj && !isTruckTile(x, y)) out.push({ kind: 'bayspot', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: forks ? 'Set a crate down' : 'Set a crate here' }); } }
+    if ((!it || it.kind === 'tool') && s.truck) { const w = s.world, forks = s.forklift?.mounted && s.forklift.crates.length; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { if (!(forks ? isCleared(w, x, y) && Math.abs(x + 0.5 - s.player.x) < 3 && Math.abs(y + 0.5 - s.player.y) < 3 : S.inBayOf(s, x, y))) continue; const t = w.tiles[y * w.w + x]; if (t.t === 'grass' && !t.track && !t.tilled && !t.obj && !isTruckTile(x, y)) out.push({ kind: 'bayspot', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: forks ? 'Set a crate down' : 'Set a free crate here' }); } }
     if (s.truck) { const Bd = B.board; out.push({ kind: 'board', near: { ...Bd, w: 1, h: 1 }, rect: [Bd.x * 16 - 10, (Bd.y + 1) * 16 - 24, 36, 14], label: `Loading bay · ${S.bayBoard(s).count} tonight  (E: open)` }); }
     const Sg = B.sign; if (s.truck && parcels) out.push({ kind: 'sign', near: null, rect: [Sg.x * 16 - 10, (Sg.y + 1) * 16 - 22, 36, 12], label: `Collect ${parcels === 1 ? 'the parcel' : parcels + ' parcels'}` }); else out.push({ kind: 'sign', near: null, rect: [Sg.x * 16 - 10, (Sg.y + 1) * 16 - 22, 36, 12], label: s.orders.length ? `Catalogue  (${s.orders.length} ordered)` : this.flag ? 'Catalogue  (new: you can afford something)' : 'Catalogue' });
     return out;
@@ -503,7 +503,10 @@ export class Game {
       this.rollV = 0; if (!this.jolt) { this.jolt = 0.18; this.sound.play('drop'); }
     }
     if (this.state.forklift?.mounted) { this.state.forklift.x = p.x - 0.5; this.state.forklift.y = p.y - 0.5; }   // the forklift is under you
-    if (this.state.barrow?.held) placeBarrow(this.state.barrow, p);   // Build 92: in your hands, the way you face
+    if (this.state.barrow?.held) {   // Build 92: in your hands, the way you face; Build 93: its wheel leaves a track
+      const b = this.state.barrow; placeBarrow(b, p); this.trackDist = (this.trackDist || 0) + Math.hypot(p.x - x0, p.y - y0);
+      if (this.trackDist >= 0.22) { this.trackDist = 0; const f = b.face, wx = f === 'right' ? b.dx + 16.5 / 16 : f === 'left' ? b.dx + 3.5 / 16 : b.dx + 0.5, wy = f === 'up' ? b.dy + 3 / 16 : b.dy + 14 / 16; this.prints.push({ x: wx, y: wy, t: 0, wheel: f === 'left' || f === 'right' ? 'h' : 'v' }); if (this.prints.length > 96) this.prints.shift(); }
+    }
     this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
     if (this.printDist >= 0.55) { this.printDist = 0; const side = p.dir === 'left' || p.dir === 'right'; this.leftFoot = !this.leftFoot; this.prints.push({ x: p.x + (this.leftFoot ? -0.14 : 0.14) * (side ? 0.4 : 1), y: p.y + (side ? (this.leftFoot ? -0.06 : 0.06) : 0), t: 0 }); if (this.prints.length > 64) this.prints.shift(); }
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
@@ -562,7 +565,7 @@ export class Game {
   pushPrints(ctx, cx, cy, drawables) {
     if (!this.prints.length) return;
     const u = CONFIG.scale;
-    drawables.push({ y: -1e9, draw: () => { for (const f of this.prints) { const a = 0.42 * Math.max(0, 1 - f.t / 9); if (a <= 0) continue; ctx.fillStyle = `rgba(40,25,15,${a.toFixed(3)})`; const x = Math.round(f.x * T) - cx, y = Math.round(f.y * T) - cy; ctx.fillRect(x - u, y - 3 * u, 2 * u, 3 * u); ctx.fillRect(x - 1.5 * u, y - 2 * u, 3 * u, u); } } });
+    drawables.push({ y: -1e9, draw: () => { for (const f of this.prints) { const a = 0.42 * Math.max(0, 1 - f.t / 9); if (a <= 0) continue; ctx.fillStyle = `rgba(40,25,15,${a.toFixed(3)})`; const x = Math.round(f.x * T) - cx, y = Math.round(f.y * T) - cy; if (f.wheel) { if (f.wheel === 'h') ctx.fillRect(x - 2 * u, y - u, 4 * u, u); else ctx.fillRect(x - Math.round(u / 2), y - 3 * u, u, 4 * u); continue; } ctx.fillRect(x - u, y - 3 * u, 2 * u, 3 * u); ctx.fillRect(x - 1.5 * u, y - 2 * u, 3 * u, u); } } });
   }
   // the "come and get it" arrow: ripe crops, dried seeds
   // The network view (N): the scene dims and every pipe, line and belt shows its state, with a number on each source
@@ -755,7 +758,7 @@ export class Game {
       const b = s.barrow, u = CONFIG.scale, full = b.slots.slots.some(Boolean), face = b.face || 'right', side = face === 'left' || face === 'right', view = side ? 'side' : face;
       if (b.dx == null) { b.dx = b.x + 0.5 - BARROW_W[view] / 32; b.dy = b.y + 1 - BARROW_H[view] / 16; }
       const sortY = b.held ? s.player.y + (face === 'down' ? 0.001 : -0.001) : b.dy + (BARROW_H[view] - 3) / 16;
-      drawables.push({ y: sortY, draw: () => drawFacing(ctx, barrowViewSprite(view, !!b.held, full), Math.round(b.dx * T) - cx, Math.round(b.dy * T) - cy, BARROW_W[view] * u, BARROW_H[view] * u, face === 'left') });
+      drawables.push({ y: sortY, draw: () => drawFacing(ctx, barrowViewSprite(view, !!b.held, full), Math.round(b.dx * T) - cx - u, Math.round(b.dy * T) - cy - u, (BARROW_W[view] + 2) * u, (BARROW_H[view] + 2) * u, face === 'left') });
     }
     if (s.forklift && !s.forklift.mounted) { const F = s.forklift, u = CONFIG.scale; drawables.push({ y: F.y + 1, draw: () => { const left = F.face === 'left'; drawFacing(ctx, forkliftSprite(), Math.round(F.x * T) - cx, Math.round((F.y + 1) * T) - cy - 20 * u, T, 20 * u, left); for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), Math.round(F.x * T) - cx + (left ? -4 : 11) * u, Math.round((F.y + 1) * T) - cy - 8 * u - i * 6 * u, 9 * u, 8 * u); } }); }
     { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
@@ -926,9 +929,11 @@ export class Game {
         ctx.fillStyle = 'rgba(230,240,255,0.55)'; for (let i = 0; i < 40; i++) { const gx = ((i * 97 + 13) % 101) / 101 * (w.w * T), gy = ((i * 61 + 7) % 103) / 103 * (w.h * T); if ((Math.floor(now / 400) + i) % 3 === 0) ctx.fillRect(Math.round(gx - cx), Math.round(gy - cy), 3, 3); }   // glints on wet ground
         ctx.strokeStyle = 'rgba(205,225,255,0.5)'; ctx.lineWidth = 2; ctx.beginPath();   // the rain itself: thin slanted streaks falling across the screen
         const n = 140, H = this.vh + 40, Wd = this.vw + 80;
-        for (let i = 0; i < n; i++) { const sp = 380 + (i % 5) * 40, x = ((i * 137 + 29) % Wd) - 40 - ((now * 0.06 + i * 7) % Wd) * 0.12, y = ((i * 89 + 11) % H) + (now * sp / 1000) % H; const yy = y % H - 20; ctx.moveTo(x, yy); ctx.lineTo(x - 2, yy + 9); }
+        // Build 93: the drops live in the world: the camera's offset is taken off like the ground's, so walking doesn't drag them about
+        const mod = (a, m) => ((a % m) + m) % m;
+        for (let i = 0; i < n; i++) { const sp = 380 + (i % 5) * 40, x = mod((i * 137 + 29) - cx - now * 0.0072, Wd) - 40, yy = mod((i * 89 + 11) + now * sp / 1000 - cy, H) - 20; ctx.moveTo(x, yy); ctx.lineTo(x - 2, yy + 9); }
         ctx.stroke();
-        ctx.fillStyle = 'rgba(220,235,255,0.35)'; for (let i = 0; i < 24; i++) { const t = (now / 500 + i * 0.37) % 1, gx = ((i * 211 + 5) % 97) / 97 * this.vw, gy = ((i * 53 + 3) % 89) / 89 * this.vh; if (t < 0.3) { const r = Math.round(t * 10); ctx.fillRect(gx - r, gy, 2 * r + 1, 1); } }   // splashes
+        ctx.fillStyle = 'rgba(220,235,255,0.35)'; for (let i = 0; i < 24; i++) { const t = (now / 500 + i * 0.37) % 1, gx = (((((i * 211 + 5) % 97) / 97 * this.vw - cx) % this.vw) + this.vw) % this.vw, gy = (((((i * 53 + 3) % 89) / 89 * this.vh - cy) % this.vh) + this.vh) % this.vh; if (t < 0.3) { const r = Math.round(t * 10); ctx.fillRect(gx - r, gy, 2 * r + 1, 1); } }   // splashes
       }
       else if (hum > 60) { ctx.fillStyle = `rgba(200,210,230,${((hum - 60) / 40 * 0.1).toFixed(3)})`; ctx.fillRect(0, 0, this.vw, this.vh); } }
     ctx.font = '11px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';

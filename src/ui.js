@@ -518,8 +518,8 @@ export class UI {
         const sl = this.pslot(it, s.species, { hint: hintWord ? `${hintWord} ${i + 1}` : '', cls: it?.kind === 'tool' ? 'locked' : '', hover: true });
         sl.dataset.inv = key; sl.dataset.i = i;
         if (it) {
-          sl.onclick = () => { if (dragged) { dragged = false; return; } const r = S.moveSome(s, inv, i, other, Infinity); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
-          sl.oncontextmenu = e => { e.preventDefault(); const r = S.moveSome(s, inv, i, other, 1); if (r.msg) this.toast(r.msg); else this.game.sound.play('move'); this.refresh(); };
+          sl.onclick = () => { if (dragged) { dragged = false; return; } const r = S.moveSome(s, inv, i, other, Infinity); if (r.msg) this.toast(r.msg); else this.game.sound.play(barrow && other === chest ? 'drop' : 'move'); this.refresh(); };
+          sl.oncontextmenu = e => { e.preventDefault(); const r = S.moveSome(s, inv, i, other, 1); if (r.msg) this.toast(r.msg); else this.game.sound.play(barrow && other === chest ? 'drop' : 'move'); this.refresh(); };
           if (it.kind !== 'tool') sl.onmousedown = e => { if (e.button !== 0) return; e.preventDefault(); drag = { inv, i, sl, x0: e.clientX, y0: e.clientY, ghost: null, live: false }; };
         }
         g.appendChild(sl);
@@ -539,7 +539,7 @@ export class UI {
       if (!drag.live) { drag = null; return; }
       const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pslot');
       const { inv, i } = drag; endDrag();
-      if (over && over.dataset.inv && !over.classList.contains('locked')) { const to = invs[over.dataset.inv], ti = +over.dataset.i; if (!(to === inv && ti === i)) { S.moveSlot(s, inv, i, to, ti); this.game.sound.play('move'); } }
+      if (over && over.dataset.inv && !over.classList.contains('locked')) { const to = invs[over.dataset.inv], ti = +over.dataset.i; if (!(to === inv && ti === i)) { S.moveSlot(s, inv, i, to, ti); this.game.sound.play(barrow && to === chest && inv !== chest ? 'drop' : 'move'); } }
       this.refresh();
     };
     this.show(barrow ? 'Wheelbarrow' : field ? 'Field chest' : 'Chest', body => {

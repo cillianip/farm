@@ -7,7 +7,7 @@ import * as S from '../src/sim.js';
 import { serialize, deserialize, applyOffline } from '../src/save.js';
 import { formatMoney, titleFor, salePrice } from '../src/economy.js';
 import { makeCompost } from '../src/fertiliser.js';
-import { addItem, makeInventory, itemKey } from '../src/items.js';
+import { addItem, makeInventory, itemKey, roomFor } from '../src/items.js';
 import { FARM_ORIGIN } from '../src/world.js';
 import * as W from '../src/world.js';
 const WB = W.BUILDINGS;
@@ -1569,6 +1569,19 @@ await test('the tower: a picker and a planter stack on a sprinkler with line und
   const hoe = s.inventory.slots.findIndex(i => i?.kind === 'tool' && i.tool === 'hoe');
   assert.ok(hoe >= 0); { s.inventory.slots = s.inventory.slots.map((i, k) => k === hoe ? i : null); r = S.useItem(s, hoe, x0, y0); assert.ok(r.ok, r.msg); assert.deepEqual(t.stack.map(o => o.kind), ['planter'], 'the hoe takes the top off first'); }
   const bare = tile(x0 + 1, y0); bare.line = false; bare.obj = { kind: 'sprinkler', level: 0 }; s.inventory.slots = s.inventory.slots.map((i, k) => k === hoe ? i : null); addItem(s.inventory, { kind: 'planter', qty: 1 }); r = S.useItem(s, slot('planter'), x0 + 1, y0); assert.ok(!r.ok && /line/.test(r.msg), 'no line under it: ' + r.msg);
+});
+
+await test('harvest is all or nothing: a harvest that does not fit stays on the plant with a reason; what your pockets cannot take goes into the barrow you are pushing; nothing is thrown away', () => {
+  const s = arm(S.createState(1)), w = s.world, tile = (x, y) => w.tiles[y * w.w + x], carrot = byName(s, 'Carrot'), turnip = byName(s, 'Turnip');
+  s.player.x = X + 0.5; s.player.y = Y + 1.5; const t = tile(X, Y); t.tilled = true; t.moisture = 50;
+  const ripe = () => { t.crop = { speciesId: carrot.id, growth: 100, health: 100, harvests: 0, ripeAt: s.minutes, planted: s.minutes }; };
+  const sl = s.inventory.slots; for (let i = 0; i < sl.length; i++) if (sl[i]?.kind !== 'tool') sl[i] = null;
+  const free = sl.map((it, i) => it ? -1 : i).filter(i => i >= 0); for (const i of free) sl[i] = { kind: 'crop', species: turnip.id, q: 0, qty: 1 };   // every pocket taken by another kind
+  ripe(); let r = S.harvest(s, t, X, Y); assert.ok(!r.ok && /no pocket for/.test(r.msg), r.msg); assert.ok(t.crop && t.crop.growth >= 100, 'it stays on the plant');
+  s.barrow = S.makeBarrow(X + 1, Y); s.barrow.held = true;
+  r = S.harvest(s, t, X, Y); assert.ok(r.ok, r.msg); assert.ok(/in the barrow/.test(r.float), r.float);
+  const inB = s.barrow.slots.slots.filter(Boolean).reduce((n, i) => n + i.qty, 0); assert.equal(inB, r.count, 'all of it went in the barrow');
+  assert.equal(roomFor({ slots: [null, { kind: 'crop', species: 'a', q: 0, qty: 10 }], pocket: true, basket: 0 }, { kind: 'crop', species: 'a', q: 0, qty: 1 }), 12 + 2);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

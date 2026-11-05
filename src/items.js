@@ -12,6 +12,8 @@ export const stackable = it => it.kind !== 'tool';
 export const stackMax = (inv, item) => { if (inv?.pocket) { if (item.kind === 'crop' || item.kind === 'product') return CONFIG.inventory.cropStack[Math.min(CONFIG.inventory.cropStack.length - 1, inv.basket || 0)]; if (item.kind === 'fert') return CONFIG.inventory.fertStack; } return inv?.stackCap || CONFIG.inventory.stack; };
 export const hasRoom = (inv, item) => { const key = itemKey(item); return inv.slots.some(s => !s || (stackable(item) && itemKey(s) === key && s.qty + item.qty <= stackMax(inv, item))); };
 
+// how many of this item would fit (Build 93)
+export function roomFor(inv, item) { const key = itemKey(item), max = stackMax(inv, item); if (!stackable(item)) return inv.slots.filter(s => !s).length; let n = 0; for (const s of inv.slots) { if (!s) n += max; else if (itemKey(s) === key) n += Math.max(0, max - s.qty); } return n; }
 // returns leftover quantity (0 if all added)
 export function addItem(inv, item) {
   let qty = item.qty;

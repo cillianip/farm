@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
 import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, baySpots, BAY, TRUCK_SPOT, isTruckTile } from './world.js';
-import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood, stackMax } from './items.js';
+import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood, stackMax, roomFor } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
 import { makeCompost } from './fertiliser.js';
@@ -696,13 +696,15 @@ export function harvest(state, t, x, y) {
   if (!spend(state, CONFIG.energy.harvest)) return fail('Too tired');
   today(state).harvested++;
   const produce = harvestYield(state, t, x, y), count = produce.qty;
-  const leftP = addItem(state.inventory, produce);
-  if (leftP === count && count) { state.energy += CONFIG.energy.harvest; return fail('Pockets full'); }
+  // Build 93: all of it or none of it, so nothing is lost; what doesn't fit your pockets goes in the barrow you're pushing
+  const B = state.barrow?.held ? state.barrow.slots : null, fitP = roomFor(state.inventory, produce), fitB = B ? roomFor(B, produce) : 0;
+  if (count && fitP + fitB < count) { state.energy += CONFIG.energy.harvest; return fail(fitP + fitB ? `Pockets full: room for ${fitP + fitB} of the ${count}` : `Pockets full: no pocket for ${sp.name}${produce.q ? ' of that grade' : ''}. Each kind and grade takes its own`); }
+  const toP = Math.min(count, fitP), leftP = count - toP; if (toP) addItem(state.inventory, { ...produce, qty: toP }); if (leftP) addItem(B, { ...produce, qty: leftP });
   state.stats.harvests++;
   c.harvests++;
   clearReaped(t, sp.genome);
   const got = count - leftP;
-  return { ok: true, msg: '', float: `+${got} ${sp.name}`, species: sp.id, count: got };
+  return { ok: true, msg: '', float: `+${count} ${sp.name}${leftP ? ' (' + leftP + ' in the barrow)' : ''}`, species: sp.id, count };
 }
 
 // ---------- carrying objects ----------

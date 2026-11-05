@@ -730,9 +730,12 @@ export function dryerSprite(frame = 0, full = false) {
 // legs off the ground), sloping down to rest when parked. 'down' (16×14): pushed toward you, the wheel nearest, the
 // handles rising behind the tub to the hands at its top row. 'up' (16×14): pushed away, the handles nearest at its
 // bottom row in the hands, the tub beyond, the wheel peeping over the far rim.
-export const BARROW_W = { side: 20, down: 16, up: 16 }, BARROW_H = { side: 14, down: 14, up: 26 };   // pushed away, the long handles carry the tub past your hat
+export const BARROW_W = { side: 20, down: 16, up: 16 }, BARROW_H = { side: 14, down: 14, up: 23 };   // pushed away, the long handles carry the tub past your hat
 export function barrowViewSprite(view = 'side', lifted = false, full = false) {
-  return sprite(`barrow4:${view}:${lifted ? 1 : 0}${full ? 1 : 0}`, BARROW_W[view], BARROW_H[view], P => {
+  // Build 93: drawn with a pixel's border all round (the game draws it one pixel up and left) so the outline closes under
+  // the tyre and the handle ends instead of being cut off at the sprite's edge
+  return sprite(`barrow5:${view}:${lifted ? 1 : 0}${full ? 1 : 0}`, BARROW_W[view] + 2, BARROW_H[view] + 2, P0 => {
+    const P = { px: (x, y, c) => P0.px(x + 1, y + 1, c), rect: (x, y, w, h, c) => P0.rect(x + 1, y + 1, w, h, c), line: (a, b, c2, d, col) => P0.line(a + 1, b + 1, c2 + 1, d + 1, col) };
     const tubE = PAL.metalDark, tubF = '#6f7a8a', inside = '#3e4450', crops = ['#e86a6a', '#f6c453', '#8fd36a', '#e8a23b'];
     const handle = (x0, y0, x1, y1) => { P.line(x0, y0, x1, y1, PAL.woodDark); P.line(x0, y0 - 1, x1, y1 - 1, PAL.wood); };
     if (view === 'side') {
@@ -742,7 +745,7 @@ export function barrowViewSprite(view = 'side', lifted = false, full = false) {
       for (let r = 0; r < 6; r++) { const y = 3 + r, xl = 5 + Math.round(r * 0.8), xr = 17 - Math.round(r * 0.6); P.rect(xl, y, xr - xl + 1, 1, tubE); if (r > 0 && r < 5) P.rect(xl + 1, y, xr - xl - 1, 1, tubF); }
       P.rect(5, 3, 13, 1, PAL.metalLight);
       P.line(13, 8, 16, 11, tubE);                                                              // the wheel's strut
-      P.disc(16, 11, 2, '#2a2a2a'); P.px(16, 11, PAL.metalLight); P.px(16, 13, '#1c1c1c');     // the tyre on the ground
+      P.rect(15, 9, 3, 1, '#2a2a2a'); P.rect(14, 10, 5, 3, '#2a2a2a'); P.rect(15, 13, 3, 1, '#2a2a2a'); P.rect(15, 10, 3, 3, '#444'); P.px(16, 11, PAL.metalLight);   // the tyre, round, on the ground
       if (full) crops.forEach((c, i) => P.px(8 + i * 2, 2 + (i % 2), c));
     } else if (view === 'down') {
       P.rect(3, 13, 10, 1, 'rgba(30,20,10,0.3)');
@@ -758,7 +761,7 @@ export function barrowViewSprite(view = 'side', lifted = false, full = false) {
       for (let r = 0; r < 7; r++) { const y = 2 + r, xl = 4 - Math.round(r * 0.5), xr = 11 + Math.round(r * 0.5); P.rect(xl, y, xr - xl + 1, 1, tubE); if (r > 0 && r < 6) P.rect(xl + 1, y, xr - xl - 1, 1, r < 4 ? inside : tubF); }
       P.rect(4, 2, 8, 1, PAL.metalLight);
       P.rect(4, 9, 1, lifted ? 1 : 3, tubE); P.rect(11, 9, 1, lifted ? 1 : 3, tubE);
-      handle(4, 9, 3, 25); handle(11, 9, 12, 25);                                                // toward you, into the hands
+      handle(4, 9, 3, 22); handle(11, 9, 12, 22);                                                // toward you, into the hands
       if (full) crops.forEach((c, i) => P.px(5 + i * 2, 4 + (i % 2), c));
     }
   }, 'rgba(40,25,15,0.9)');
