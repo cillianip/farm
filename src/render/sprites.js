@@ -895,12 +895,14 @@ export function towerSprite(pk = -1, pl = -1, pkFull = false, plFull = false, ar
     }
   });
 }
-// The key cap over the station E opens (7×8): a cream face, a darker side below it, an E filling the face.
+// The key cap over the station E opens (11×11, drawn at half a world pixel): a cream face with a margin all round the E,
+// a lit top edge, and the key's darker side below it.
 export function keyCapSprite() {
-  return sprite('keycap3', 7, 8, P => {
-    P.rect(1, 0, 5, 8, '#3b2314'); P.rect(0, 1, 7, 6, '#3b2314');                                  // the outline, corners clipped
-    P.rect(1, 1, 5, 5, '#f5e6c3'); P.rect(1, 6, 5, 1, '#c9a878');                                   // face and the side below it
-    const ink = '#3b2314'; P.rect(2, 1, 1, 5, ink); P.rect(3, 1, 2, 1, ink); P.px(3, 3, ink); P.rect(3, 5, 2, 1, ink);   // E
+  return sprite('keycap4', 11, 11, P => {
+    const ink = '#3b2314';
+    P.rect(1, 0, 9, 11, ink); P.rect(0, 1, 11, 9, ink);                                            // the outline, corners clipped
+    P.rect(1, 1, 9, 7, '#f5e6c3'); P.rect(2, 1, 7, 1, '#fffaf0'); P.rect(1, 8, 9, 2, '#c9a878'); P.rect(1, 8, 9, 1, '#b8956a');   // face, lit edge, the side
+    P.rect(3, 2, 2, 5, ink); P.rect(5, 2, 3, 1, ink); P.rect(5, 4, 2, 1, ink); P.rect(5, 6, 3, 1, ink);   // E: a two-wide stem, three arms
   });
 }
 export function fertIcon(look = null) {

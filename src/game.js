@@ -768,13 +768,14 @@ export class Game {
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();
-    { // the E marker (Build 88): a key cap over the station E opens. It fades in and out, slides when the station changes and
-      // bobs a whole pixel at a time, drawn on the world's pixel grid
+    { // the E marker (Build 88): a key cap over the station E opens. It fades in and out and slides when the station changes
       const t = !this.ui.openPanel && !this.action ? this.eTarget() : null, show = t && !(this.hit && this.hit.kind === t.key), u = CONFIG.scale;
       const M = this.eMark = this.eMark || { x: 0, y: 0, a: 0 }, dt = Math.min(0.1, (now - (M.t || now)) / 1000); M.t = now;
       if (show) { const gx = t.b.x + t.b.w / 2, gy = t.b.y - 0.02; if (M.a < 0.05) { M.x = gx; M.y = gy; } else { const k = Math.min(1, dt * 14); M.x += (gx - M.x) * k; M.y += (gy - M.y) * k; } }
       M.a = Math.max(0, Math.min(1, M.a + (show ? 6 : -6) * dt));
-      if (M.a > 0) { const bob = Math.round(Math.sin(now / 380)) * u; ctx.globalAlpha = M.a; ctx.drawImage(keyCapSprite(), Math.round((M.x * T - cx) / u - 3.5) * u, Math.round((M.y * T - cy) / u - 8) * u + bob, 7 * u, 8 * u); ctx.globalAlpha = 1; }
+      // Build 91: placed in the world like the ground under it (snapped to half a world pixel, then the same camera offset),
+      // so it moves exactly with the map when you walk; no bob. Drawn at half-pixel detail, 11×11, so the E has a margin.
+      if (M.a > 0) { const h = u / 2; ctx.globalAlpha = M.a; ctx.drawImage(keyCapSprite(), Math.round(M.x * 32 - 5.5) * h - cx, Math.round(M.y * 32 - 11) * h - cy, 11 * h, 11 * h); ctx.globalAlpha = 1; }
     }
     if (this.netView) this.drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1);
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
