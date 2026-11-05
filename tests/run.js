@@ -1584,5 +1584,18 @@ await test('harvest is all or nothing: a harvest that does not fit stays on the 
   assert.equal(roomFor({ slots: [null, { kind: 'crop', species: 'a', q: 0, qty: 10 }], pocket: true, basket: 0 }, { kind: 'crop', species: 'a', q: 0, qty: 1 }), 12 + 2);
 });
 
+await test('truck sizes: each tier parks nose to the road, a tile longer than the last; an upgrade gives back a belt laid where the longer truck now parks and moves you out of the way', () => {
+  const s = S.createState(1), w = s.world, tile = (x, y) => w.tiles[y * w.w + x];
+  s.truck = { level: 0, bed: [] }; S.parkTruck(s);
+  const spots = [0, 1, 2].map(l => W.truckSpot(l)); assert.deepEqual(spots.map(t => t.w), [3, 4, 5]); assert.ok(spots.every(t => t.x + t.w === spots[0].x + spots[0].w), 'the nose stays at the road');
+  const bx = spots[2].x, by = spots[2].y; assert.ok(tile(bx, by).t !== 'truck', 'the small truck leaves the track free');
+  tile(bx, by).belt = true; tile(bx, by).load = [{ species: Object.keys(s.species)[0], q: 0, qty: 2 }]; s.player.x = bx + 0.5; s.player.y = by + 0.5;
+  const belts = () => s.chest.slots.filter(i => i?.kind === 'belt').reduce((n, i) => n + i.qty, 0), b0 = belts();
+  s.truck.level = 2; S.parkTruck(s);
+  assert.equal(tile(bx, by).t, 'truck'); assert.ok(!tile(bx, by).belt); assert.equal(belts(), b0 + 1, 'the belt went back to the chest');
+  assert.ok(s.player.y >= by + 2, 'moved out from under the truck');
+  assert.ok(W.isTruckTile(bx, by, 2) && !W.isTruckTile(bx, by, 0));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

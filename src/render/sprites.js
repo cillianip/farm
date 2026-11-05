@@ -203,22 +203,34 @@ export function boardSprite() {
 // Build 90: the parked truck in two layers so crates sit IN its cargo box. The back layer is the open box seen from above
 // (its plank floor and far rim), the cab, chassis and wheels; the front layer is the near slatted wall and the tailgate
 // hanging open at the rear, drawn over the crates so only their tops show above the wall.
-export const TRUCK_BOX = { x0: 5, x1: 32, wallTop: 12 };   // the box's inside, in sprite pixels
-export function truckFrontSprite() {
-  return sprite('truckFront', 48, 32, P => {
-    P.rect(4, 12, 29, 11, PAL.woodDark); P.rect(5, 13, 27, 9, PAL.wood); P.rect(5, 13, 27, 1, PAL.woodLight); for (let x = 9; x < 32; x += 5) P.rect(x, 13, 1, 9, PAL.woodDark);   // the near wall
-    P.rect(4, 3, 1, 10, PAL.woodDark); P.rect(32, 3, 1, 10, PAL.woodDark);                                                  // corner posts
-    P.rect(0, 14, 4, 10, PAL.woodDark); P.rect(1, 15, 2, 8, PAL.wood); P.px(1, 15, PAL.woodLight); P.px(3, 13, PAL.metalDark); P.px(2, 12, PAL.metalDark);   // the tailgate, open, on its chain
+// Build 94: one size per tier, crates the same size in each: Small 4 in one row (3 tiles), Medium 8 in two rows (4 tiles,
+// a deeper, taller box and cab), Large 12 in two rows of six (5 tiles, three axles). bx1: the box's inside ends there;
+// wallTop: the near wall's top; rowY: each row's top; o: how much taller than the small one, everything below shifts down.
+export const TRUCK_ART = [
+  { w: 48, h: 32, bx1: 32, wallTop: 12, cab: [33, 14, 4], wheels: [8, 20, 40], cols: 4, rowY: [7] },
+  { w: 52, h: 36, bx1: 35, wallTop: 16, cab: [36, 16, 3], wheels: [9, 22, 44], cols: 4, rowY: [5, 10] },
+  { w: 70, h: 36, bx1: 50, wallTop: 16, cab: [51, 18, 3], wheels: [9, 19, 29, 61], cols: 6, rowY: [5, 10] },
+];
+export const truckArt = level => TRUCK_ART[Math.max(0, Math.min(TRUCK_ART.length - 1, level || 0))];
+export const TRUCK_BOX = { x0: 5, x1: 32, wallTop: 12 };   // the small truck's, kept for older callers
+export function truckFrontSprite(level = 0) {
+  const A = truckArt(level), o = A.h - 32, wt = A.wallTop, bot = 23 + o;
+  return sprite(`truckFront${level}`, A.w, A.h, P => {
+    P.rect(4, wt, A.bx1 - 3, bot - wt, PAL.woodDark); P.rect(5, wt + 1, A.bx1 - 5, bot - wt - 2, PAL.wood); P.rect(5, wt + 1, A.bx1 - 5, 1, PAL.woodLight); for (let x = 9; x < A.bx1; x += 5) P.rect(x, wt + 1, 1, bot - wt - 2, PAL.woodDark);   // the near wall
+    P.rect(4, 3, 1, wt - 2, PAL.woodDark); P.rect(A.bx1, 3, 1, wt - 2, PAL.woodDark);                                                                            // corner posts
+    const gh = bot + 1 - (wt + 2); P.rect(0, wt + 2, 4, gh, PAL.woodDark); P.rect(1, wt + 3, 2, gh - 2, PAL.wood); P.px(1, wt + 3, PAL.woodLight); P.px(3, wt + 1, PAL.metalDark); P.px(2, wt, PAL.metalDark);   // the tailgate, open, on its chain
   }, 'rgba(40,25,15,0.9)');
 }
-export function parkedTruckSprite() {
-  return sprite('parkedTruck2', 48, 32, P => {
-    P.rect(4, 3, 29, 2, PAL.woodDark); P.rect(5, 3, 27, 1, PAL.woodLight);                                                   // the far rim
-    P.rect(5, 5, 27, 8, '#4a3220'); for (let y = 6; y < 13; y += 2) P.rect(5, y, 27, 1, '#3d2a1a'); P.rect(5, 5, 27, 1, '#2e2014');   // the floor, from above
-    P.rect(33, 4, 14, 19, '#4f8fcf'); P.rect(33, 4, 14, 1, '#7fb4e6'); P.rect(34, 6, 11, 7, PAL.window); P.rect(34, 6, 11, 1, '#dff3ff'); P.rect(33, 22, 14, 1, '#3f72a8'); P.rect(45, 15, 2, 3, PAL.gold); P.rect(33, 14, 14, 1, '#3f72a8');   // the cab, windscreen, a lamp
-    P.rect(0, 23, 48, 3, PAL.metalDark); P.rect(0, 25, 48, 1, '#2a2a2a');                                                                                                           // the chassis
-    for (const wx of [8, 20, 40]) { P.disc(wx, 28, 4, '#2a2a2a'); P.disc(wx, 28, 3, '#444'); P.disc(wx, 28, 1, PAL.metalLight); }                                                     // three wheels a side
-    P.rect(1, 30, 46, 2, 'rgba(30,20,10,0.25)');
+export function parkedTruckSprite(level = 0) {
+  const A = truckArt(level), o = A.h - 32, wt = A.wallTop, [cx, cw, ct] = A.cab, bot = 22 + o;
+  return sprite(`parkedTruck3:${level}`, A.w, A.h, P => {
+    P.rect(4, 3, A.bx1 - 3, 2, PAL.woodDark); P.rect(5, 3, A.bx1 - 5, 1, PAL.woodLight);                                                   // the far rim
+    P.rect(5, 5, A.bx1 - 5, wt - 4, '#4a3220'); for (let y = 6; y < wt + 1; y += 2) P.rect(5, y, A.bx1 - 5, 1, '#3d2a1a'); P.rect(5, 5, A.bx1 - 5, 1, '#2e2014');   // the floor, from above
+    P.rect(cx, ct, cw, bot - ct + 1, '#4f8fcf'); P.rect(cx, ct, cw, 1, '#7fb4e6'); P.rect(cx + 1, ct + 2, cw - 3, 7 + (o ? 2 : 0), PAL.window); P.rect(cx + 1, ct + 2, cw - 3, 1, '#dff3ff');   // the cab and its window
+    P.rect(cx, bot, cw, 1, '#3f72a8'); P.rect(cx + cw - 2, 15 + o, 2, 3, PAL.gold); P.rect(cx, 14 + o, cw, 1, '#3f72a8');                                    // its trim and lamp
+    P.rect(0, 23 + o, A.w, 3, PAL.metalDark); P.rect(0, 25 + o, A.w, 1, '#2a2a2a');                                                         // the chassis
+    for (const wx of A.wheels) { P.disc(wx, 28 + o, 4, '#2a2a2a'); P.disc(wx, 28 + o, 3, '#444'); P.disc(wx, 28 + o, 1, PAL.metalLight); }    // the wheels
+    P.rect(1, 30 + o, A.w - 2, 2, 'rgba(30,20,10,0.25)');
   }, 'rgba(40,25,15,0.9)');
 }
 // The truck (28×20): a cab, a flatbed with slatted sides, two wheels; frames roll the wheels.
@@ -770,7 +782,27 @@ export function barrowSprite(full = false) {   // the catalogue's picture
   return barrowViewSprite('side', false, full);
 }
 // The forklift (16×20): a small yellow lift truck seen from the front-left: a mast, two forks at the foot, a seat and a roll cage.
-export function forkliftSprite() {
+// Build 94: the forklift faces the way you drive. 'down' (toward you): the body, cage and wheels; the mast and forks are
+// forkliftMastSprite, drawn over the driver. 'up' (away): the counterweight and tail lights nearest, the seat back, the
+// mast's top beyond the cage. 'side' is the original, facing right (the game mirrors it).
+const FK = { y: '#e8c13a', yl: '#f6dd6a', yd: '#b8921f' };
+export function forkliftSprite(view = 'side') {
+  if (view === 'down') return sprite('forkliftD', 16, 20, P => {
+    P.rect(1, 18, 14, 2, 'rgba(30,20,10,0.28)');
+    P.rect(2, 2, 12, 1, PAL.metalDark); P.rect(2, 2, 1, 12, PAL.metalDark); P.rect(13, 2, 1, 12, PAL.metalDark);   // the roll cage
+    P.rect(3, 4, 10, 4, '#3b2314'); P.rect(4, 5, 8, 2, '#5a4a2a');                                             // the seat back behind the driver
+    P.rect(2, 9, 12, 7, FK.y); P.rect(2, 9, 12, 1, FK.yl); P.rect(2, 15, 12, 1, FK.yd);                        // the body
+    P.rect(0, 14, 2, 5, '#2a2a2a'); P.rect(14, 14, 2, 5, '#2a2a2a'); P.px(0, 15, '#444'); P.px(15, 15, '#444');   // front wheels, head on
+  }, 'rgba(40,25,15,0.9)');
+  if (view === 'up') return sprite('forkliftU', 16, 20, P => {
+    P.rect(1, 18, 14, 2, 'rgba(30,20,10,0.28)');
+    P.rect(5, 0, 1, 4, PAL.metalDark); P.rect(10, 0, 1, 4, PAL.metalDark); P.rect(5, 0, 6, 1, PAL.metalDark);   // the mast's top, beyond
+    P.rect(2, 2, 12, 1, PAL.metalDark); P.rect(2, 2, 1, 13, PAL.metalDark); P.rect(13, 2, 1, 13, PAL.metalDark);   // the roll cage
+    P.rect(4, 7, 8, 4, '#3b2314'); P.rect(5, 8, 6, 2, '#5a4a2a');                                              // the seat back
+    P.rect(2, 11, 12, 6, FK.y); P.rect(2, 11, 12, 1, FK.yl); P.rect(3, 13, 10, 3, FK.yd); P.rect(4, 14, 8, 1, '#8a6a14');   // the body and its counterweight
+    P.px(3, 12, '#d9453d'); P.px(12, 12, '#d9453d');                                                          // tail lights
+    P.rect(0, 14, 2, 5, '#2a2a2a'); P.rect(14, 14, 2, 5, '#2a2a2a');                                           // rear wheels
+  }, 'rgba(40,25,15,0.9)');
   return sprite('forklift', 16, 20, P => {
     P.rect(3, 18, 11, 2, 'rgba(30,20,10,0.28)');
     P.rect(3, 9, 9, 7, '#e8c13a'); P.rect(3, 9, 9, 1, '#f6dd6a'); P.rect(3, 15, 9, 1, '#b8921f');       // the body
@@ -779,6 +811,14 @@ export function forkliftSprite() {
     P.rect(12, 2, 2, 15, PAL.metalDark); P.px(12, 2, PAL.metal); P.rect(12, 10, 1, 7, PAL.metal);       // the mast
     P.rect(12, 16, 4, 1, PAL.metalLight); P.rect(12, 17, 4, 1, PAL.metalDark);                           // the forks
     P.disc(5, 17, 2, '#2a2a2a'); P.disc(10, 17, 2, '#2a2a2a'); P.px(5, 17, PAL.metalLight); P.px(10, 17, PAL.metalLight);   // wheels
+  }, 'rgba(40,25,15,0.9)');
+}
+// The forklift's mast and forks seen from the front, drawn over the driver
+export function forkliftMastSprite() {
+  return sprite('forkliftM', 16, 20, P => {
+    P.rect(4, 1, 1, 16, PAL.metalDark); P.rect(11, 1, 1, 16, PAL.metalDark); P.px(4, 1, PAL.metal); P.px(11, 1, PAL.metal);   // the mast rails
+    P.rect(4, 15, 8, 2, PAL.metalDark); P.rect(5, 15, 6, 1, PAL.metal);                                        // the carriage
+    P.rect(5, 17, 2, 3, PAL.metalLight); P.rect(9, 17, 2, 3, PAL.metalLight); P.px(5, 19, PAL.metalDark); P.px(9, 19, PAL.metalDark);   // the forks, pointing at you
   }, 'rgba(40,25,15,0.9)');
 }
 // A basket (16×16): woven, with a handle.

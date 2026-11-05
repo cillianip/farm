@@ -1,7 +1,7 @@
 // The rules of the game: time, growth, actions, the crate and the cart, sleep, breeding, compost. Pure JS, testable in Node.
 import { CONFIG } from './config.js';
 import { makeRng, randomSeed, hashString } from './rng.js';
-import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, baySpots, BAY, TRUCK_SPOT, isTruckTile } from './world.js';
+import { createWorld, tileAt, isOwnedFarmland, chunkKey, chunkOrigin, buyableChunks, chunkInRange, ownsChunk, PLAYER_START, BUILDINGS, MOVABLE, isCleared , inBay, baySpots, BAY, TRUCK_SPOT, isTruckTile, truckSpot } from './world.js';
 import { makeInventory, addItem, removeFromSlot, removeByKey, itemKey, growInventory, countItem, hasRoom, itemName, isFood, stackMax, roomFor } from './items.js';
 import { starterSpecies, makeSpecies, cross, STARTER_KEYS, variantWord, baseName, wildSpecies, blendName, growRealMinutes, WILD_BASES, WILD_NAMES } from './genetics.js';
 import { salePrice, breedCost, seedBookBonus, formatMoney, dryHours } from './economy.js';
@@ -412,8 +412,17 @@ export const bayLevel = state => 2;
 export const truckTier = state => CONFIG.truck.tiers[Math.min(CONFIG.truck.tiers.length - 1, state.truck?.level || 0)];
 export const truckSlots = state => state.truck ? truckTier(state).slots : 0;
 // the truck's tiles: solid ground it stands on
+export const truckSpotOf = state => truckSpot(state.truck?.level || 0);
 export function parkTruck(state) {
-  for (let y = TRUCK_SPOT.y; y < TRUCK_SPOT.y + TRUCK_SPOT.h; y++) for (let x = TRUCK_SPOT.x; x < TRUCK_SPOT.x + TRUCK_SPOT.w; x++) { const t = tileAt(state.world, x, y); if (t && (t.t === 'grass' || t.t === 'truck')) { t.t = 'truck'; t.tilled = false; t.crop = null; t.obj = null; t.belt = false; t.load = null; } }
+  // Build 94: the spot grows with the truck. Anything you laid where the longer truck now parks goes back to the farm chest.
+  const T = truckSpotOf(state), back = it => addItem(state.chest, it);
+  for (let y = T.y; y < T.y + T.h; y++) for (let x = T.x; x < T.x + T.w; x++) { const t = tileAt(state.world, x, y); if (t && (t.t === 'grass' || t.t === 'truck')) {
+    if (t.belt) { back({ kind: 'belt', qty: 1 }); for (const it of t.load || []) back(pileItem(it)); state.beltRev = (state.beltRev || 0) + 1; }
+    if (t.obj && t.t === 'grass') { const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; back(it); }
+    t.t = 'truck'; t.tilled = false; t.crop = null; t.obj = null; t.belt = false; t.load = null; } }
+  const inSpot = (x, y) => x >= T.x - 0.3 && x < T.x + T.w + 0.3 && y >= T.y - 0.3 && y < T.y + T.h + 0.3;   // nobody left standing where it parks
+  if (state.player && inSpot(state.player.x, state.player.y)) state.player.y = T.y + T.h + 0.6;
+  for (const v of [state.forklift, state.barrow]) if (v && !v.mounted && !v.held && inSpot(v.x + 0.5, v.y + 0.5)) { v.y = T.y + T.h + 0.1; v.dx = v.dy = undefined; }
   const bd = tileAt(state.world, BUILDINGS.board.x, BUILDINGS.board.y); if (bd && bd.t === 'grass') { bd.t = 'board'; bd.tilled = false; bd.crop = null; bd.obj = null; }   // and the board goes up
   const cr = tileAt(state.world, BUILDINGS.crate.x, BUILDINGS.crate.y); if (cr && cr.t === 'crate') { cr.t = 'grass'; state.crate.items = []; }   // the porch crate is gone: the truck takes crates from the bay
 }
@@ -428,7 +437,7 @@ export function pickUpCrate(state, x, y) {
 export function loadTruck(state) {
   if (state.carrying !== 'dcrate' || !state.carriedCrate) return fail('Carry a crate to the truck');
   if (!state.truck) return fail('No truck');
-  const p = state.player, cx = Math.min(Math.max(p.x, TRUCK_SPOT.x), TRUCK_SPOT.x + TRUCK_SPOT.w), cy = Math.min(Math.max(p.y, TRUCK_SPOT.y), TRUCK_SPOT.y + TRUCK_SPOT.h);
+  const TS = truckSpotOf(state), p = state.player, cx = Math.min(Math.max(p.x, TS.x), TS.x + TS.w), cy = Math.min(Math.max(p.y, TS.y), TS.y + TS.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.3) return fail('Too far');
   if (!dcrateCount(state.carriedCrate)) return fail('That crate is empty: put something in it first');
   const bed = state.truck.bed = state.truck.bed || []; if (bed.length >= truckSlots(state)) return fail(`The truck is full: ${truckSlots(state)} crates`);
@@ -1354,14 +1363,14 @@ export function forkLift(state, x, y) {
 export function forkDrop(state, x, y) {
   const f = state.forklift; if (!f?.mounted) return fail(''); if (!f.crates.length) return fail('Nothing on the forks');
   const t = tileAt(state.world, x, y); if (!t) return fail('');
-  if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.obj || isTruckTile(x, y)) return fail(t?.obj ? 'Something stands there' : 'Not here');
+  if (!isCleared(state.world, x, y) || t.t !== 'grass' || t.track || t.tilled || t.obj || isTruckTile(x, y, state.truck?.level)) return fail(t?.obj ? 'Something stands there' : 'Not here');
   if (!inReach(state, x, y)) return fail('Too far');
   t.obj = { kind: 'dcrate', items: f.crates.pop().items }; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '', float: 'Set down' };
 }
 export function forkLoad(state) {
   const f = state.forklift; if (!f?.mounted) return fail(''); if (!state.truck) return fail('No truck');
-  const p = state.player, cx = Math.min(Math.max(p.x, TRUCK_SPOT.x), TRUCK_SPOT.x + TRUCK_SPOT.w), cy = Math.min(Math.max(p.y, TRUCK_SPOT.y), TRUCK_SPOT.y + TRUCK_SPOT.h);
+  const TS = truckSpotOf(state), p = state.player, cx = Math.min(Math.max(p.x, TS.x), TS.x + TS.w), cy = Math.min(Math.max(p.y, TS.y), TS.y + TS.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.6) return fail('Too far');
   const bed = state.truck.bed = state.truck.bed || []; let n = 0;
   for (let i = f.crates.length - 1; i >= 0; i--) { const c = f.crates[i]; if (!dcrateCount(c)) continue; if (bed.length >= truckSlots(state)) break; bed.push({ items: c.items }); f.crates.splice(i, 1); n++; }

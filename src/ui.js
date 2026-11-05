@@ -554,6 +554,22 @@ export class UI {
     this.onClosePanel = () => { endDrag(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }
   // Delivery crate: what is inside and what it pays tonight, your produce as slots to add.
+  // Build 94: how the truck works, shown once when it first parks and from its panel after
+  openTruckGuide() {
+    const s = this.state, n = S.truckSlots(s), holds = CONFIG.truck.crateHolds;
+    this.show('How the truck works', body => {
+      const steps = [
+        ['1 · Crates are free', 'Click any open gravel in the loading bay, beside the truck, to set a crate down. Set as many as you like; nothing to buy.'],
+        ['2 · Fill a crate', `A crate holds ${holds}. Click it with crops or dried goods in hand. A hopper standing beside a crate tips into it as the belt runs, and a belt can end at a crate.`],
+        ['3 · Lift it', 'Hold the click on a crate to pick it up. You walk slower carrying it. Any crate with something in it can go on the truck.'],
+        ['4 · Load the truck', `Carry it over and click the truck: it goes in over the tailgate. Your ${S.truckTier(s).name.toLowerCase()} takes ${n} crates.`],
+        ['5 · It leaves at night', 'The truck drives off overnight with what is on its bed and pays for it; you see it under Sold last night. The board by the bay shows tonight\'s count and money. Crates left on the gravel wait for tomorrow.'],
+        ['6 · Later', 'The forklift lifts three crates at a time and loads them all with one click. A bigger truck carries more.'],
+      ];
+      for (const [h, t] of steps) { body.appendChild(el('div', 'pc-sec', h)); body.appendChild(el('div', 'pc-note', t)); }
+      const ok = el('button', 'primary', 'Got it'); ok.onclick = () => this.closePanel(); body.appendChild(ok);
+    });
+  }
   openCrate() {
     const s = this.state, g = this.game;
     this.show(s.truck ? S.truckTier(s).name : 'Delivery crate', body => {
@@ -568,6 +584,7 @@ export class UI {
       const sum = () => { const P = S.priceCrate(s, S.allCrateItems(s)); return `<div class="pc-row"><span>Tonight</span><span><b>+${formatMoney(P.total)}</b></span></div>` + P.lines.map(l => `<div class="pc-row"><span>${esc(l.name)} ×${l.qty}</span><span>${formatMoney(l.total)}</span></div>` + (l.cut ? `<div class="pc-row muted"><span>&nbsp;&nbsp;${l.full} at the buyer's price, ${l.cut} sold on cheaper</span><span></span></div>` : '')).join('') + (P.lines.some(l => l.cut) ? `<div class="pc-note">The buyer takes ${CONFIG.demand.full} of a kind at full price. The cart sells the rest on cheaper: mix your crops.</div>` : '') + (s.crate.lastSale ? `<div class="pc-note">Last pickup: ${s.crate.lastSale.count} crops for ${formatMoney(s.crate.lastSale.total)}.</div>` : ''); };
       setDetails(details, sum());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
+      if (s.truck) { const gb = el('button', 'small', 'How the truck works'); gb.onclick = () => this.openTruckGuide(); body.appendChild(gb); }
       const amt = this.crateAmount || 1;
       const amtRow = el('div', 'pc-sec amt-row'); amtRow.appendChild(el('span', null, 'Your produce and loose machines · click adds '));
       for (const n of [1, 5, 'all']) { const bb = el('button', n === amt ? 'primary small' : 'small', String(n)); bb.onclick = () => { this.crateAmount = n; this.refresh(); }; amtRow.appendChild(bb); }
