@@ -1340,7 +1340,7 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   // a planter II at X+3 with beds two tiles out
   for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dy !== 0) { const t = tile(X + 3 + dx, y0 + dy); if (t.t === 'grass' && !t.obj) { t.tilled = true; t.crop = null; t.fert = null; } }
   tile(X + 3, y0).obj = { kind: 'planter', level: 1, seeds: [], bags: [] }; s.lineRev++;
-  assert.equal(S.machineTier(tile(X + 3, y0).obj).radius, 3, 'a Planter II reaches three: one more than its sprinkler, to work the block from beside it'); assert.equal(S.machinePower(tile(X + 3, y0).obj), T.planter.tiers[1].power); assert.ok(S.machinePowered(s, X + 3, y0));
+  assert.equal(S.machineTier(tile(X + 3, y0).obj).radius, 2, 'a Planter II reaches two, like a Sprinkler II: stacked on it they work the same square'); assert.equal(S.machinePower(tile(X + 3, y0).obj), T.planter.tiers[1].power); assert.ok(S.machinePowered(s, X + 3, y0));
   s.player.x = X + 3.5; s.player.y = y0 + 1.5; addItem(s.inventory, { kind: 'seed', species: carrot.id, qty: 9 }); const si = s.inventory.slots.findIndex(i => i?.kind === 'seed' && i.species === carrot.id), nSeeds = s.inventory.slots[si].qty;
   const bag = { name: 'Quality compost III', grade: 3, stats: { quality: 0.6 }, budget: 0.6, id: 'fq' }; addItem(s.inventory, { kind: 'fert', fert: bag, qty: 2 }); const fi = s.inventory.slots.findIndex(i => i?.kind === 'fert');
   let r = S.loadPlanter(s, si, X + 3, y0); assert.ok(r.ok && r.count === nSeeds, JSON.stringify(r)); r = S.loadPlanter(s, fi, X + 3, y0); assert.ok(r.ok && r.count === 2); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2);
@@ -1355,7 +1355,7 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   // take the rest back
   s.inventory.slots[4] = null; r = S.unloadPlanter(s, X + 3, y0); assert.ok(r.ok && r.got === nSeeds - 8, JSON.stringify(r)); assert.equal(S.planterCount(tile(X + 3, y0).obj), 0); assert.equal(S.unloadPlanter(s, X + 3, y0).msg, 'Nothing in it');
   // picker tiers: a Picker III reaches three tiles and costs three power; the generator's six is not enough for both planter II and picker III plus a hopper
-  tile(X + 6, y0).obj = { kind: 'picker', level: 2, held: [] }; s.lineRev++; assert.equal(S.machineTier(tile(X + 6, y0).obj).radius, 4); assert.equal(S.machinePower(tile(X + 6, y0).obj), 3);
+  tile(X + 6, y0).obj = { kind: 'picker', level: 2, held: [] }; s.lineRev++; assert.equal(S.machineTier(tile(X + 6, y0).obj).radius, 3); assert.equal(S.machinePower(tile(X + 6, y0).obj), 3);
   assert.ok(S.machinePowered(s, X + 6, y0), 'planter 2 + picker 3 = 5 of 6');
   tile(X + 5, y0).obj = { kind: 'hopper', held: [] }; s.lineRev++; assert.ok(!S.machinePowered(s, X + 6, y0) || !S.machinePowered(s, X + 5, y0), 'not enough for the hopper too: the farthest from the generator goes dark');
   // an off hopper stops its belt
@@ -1366,7 +1366,8 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
 await test('generator tiers: more power and more cans a night; belt and line may cross the track; the model farm builds, powers up, and runs a day', () => {
   const s = S.makeModelFarm(); const W2 = s.world, tile = (x, y) => W2.tiles[y * W2.w + x], T = CONFIG.power; let Wd2 = null;
   assert.equal(S.generatorTier(tile(26, 25).obj).power, T.generator.tiers[1].power);
-  assert.ok(S.machinePowered(s, 28, 25) && S.machinePowered(s, 30, 25) && S.machinePowered(s, 34, 25) && S.machinePowered(s, 35, 29), 'every machine on the path has power'); assert.ok(S.isChest(tile(33, 26)), 'a chest ends the short branch'); assert.ok(W.isCleared(Wd2 = Wd2 || s.world, 36, 24), 'the clearing runs east');
+  assert.ok(S.isTower(tile(29, 25)) && S.stackedOf(tile(29, 25), 'picker') && S.stackedOf(tile(29, 25), 'planter'), 'the block is worked by one tower');
+  assert.ok(S.machinePowered(s, 29, 25) && S.machinePowered(s, 34, 25) && S.machinePowered(s, 35, 29), 'every machine on the path has power'); assert.ok(S.isChest(tile(33, 26)), 'a chest ends the short branch'); assert.ok(W.isCleared(Wd2 = Wd2 || s.world, 36, 24), 'the clearing runs east');
   assert.ok(S.sprinklerFed(s, 29, 25), 'the sprinkler is fed from the well through the windmill'); assert.ok(S.pumpInFlow(s, 34, 21));
   assert.ok(S.beltRunning(s, 31, 25) && S.beltRunning(s, 35, 28), 'the belts run, across the track too'); assert.ok(tile(35, 27).track && tile(35, 27).belt);
   assert.equal(S.splitOutputs(s, 32, 25).length, 2, 'the splitter has two ways out');
@@ -1515,12 +1516,13 @@ await test('the market: dried goods go on the counter, a shopper who wants somet
 await test('machine lamps: a full picker or hopper and a full chest at a belt end show stop; an empty planter or an idle dryer wait; off, unpowered or fine show nothing', async () => {
   const s = S.makeModelFarm(), w = s.world, at = (x, y) => w.tiles[y * w.w + x].obj, sp = Object.keys(s.species)[0];
   const find = k => { for (let y = 20; y < 32; y++) for (let x = 24; x < 40; x++) if (at(x, y)?.kind === k) return [x, y]; };
-  const [px, py] = find('picker'), [lx, ly] = find('planter'), [dx, dy] = find('dryer'), [hx, hy] = find('hopper'), [cx, cy] = find('chest');
+  const ob = k => S.machineTiles(s, k)[0].t.obj, mfind = k => { const m = S.machineTiles(s, k)[0]; return m ? [m.x, m.y] : find(k); };
+  const [px, py] = mfind('picker'), [lx, ly] = mfind('planter'), [dx, dy] = find('dryer'), [hx, hy] = find('hopper'), [cx, cy] = find('chest');
   assert.equal(S.machineStatus(s, px, py), null);
-  at(px, py).held = [{ species: sp, q: 0, qty: S.machineTier(at(px, py)).holds }]; assert.equal(S.machineStatus(s, px, py), 'stop');
-  at(px, py).off = true; assert.equal(S.machineStatus(s, px, py), null, 'switched off shows its own dot instead');
-  at(lx, ly).seeds = []; assert.equal(S.machineStatus(s, lx, ly), 'wait');
-  at(lx, ly).seeds = [{ species: sp, qty: 3 }]; assert.equal(S.machineStatus(s, lx, ly), null);
+  ob('picker').held = [{ species: sp, q: 0, qty: S.machineTier(ob('picker')).holds }]; assert.equal(S.machineStatus(s, px, py), 'stop');
+  ob('picker').off = true; assert.equal(S.machineStatus(s, px, py), null, 'switched off shows its own dot instead');
+  ob('planter').seeds = []; assert.equal(S.machineStatus(s, lx, ly), 'wait');
+  ob('planter').seeds = [{ species: sp, qty: 3 }]; assert.equal(S.machineStatus(s, lx, ly), null);
   Object.assign(at(dx, dy), { held: [], out: [], doing: null }); assert.equal(S.machineStatus(s, dx, dy), 'wait');
   at(dx, dy).out = [{ species: sp, q: 0, qty: CONFIG.power.dryer.output, product: 'dried' }]; assert.equal(S.machineStatus(s, dx, dy), 'stop');
   at(hx, hy).held = [{ species: sp, q: 0, qty: CONFIG.power.hopper.holds }]; assert.equal(S.machineStatus(s, hx, hy), 'stop');
@@ -1532,8 +1534,8 @@ await test('machine lamps: a full picker or hopper and a full chest at a belt en
 
 await test('picker trips: the boom fetches one crop at a time at 60 / perHour minutes a trip; two pickers never reach for the same crop; a long tick catches up its trips; unpowered it folds back', () => {
   const s = S.makeModelFarm(), w = s.world, at = (x, y) => w.tiles[y * w.w + x];
-  let px, py; for (let y = 20; y < 32; y++) for (let x = 24; x < 40; x++) if (at(x, y).obj?.kind === 'picker') { px = x; py = y; }
-  const pk = at(px, py).obj, P = S.machineTier(pk), ripe = [];
+  const pm = S.machineTiles(s, 'picker')[0], px = pm.x, py = pm.y;
+  const pk = pm.t.obj, P = S.machineTier(pk), ripe = [];
   for (let dy = -P.radius; dy <= P.radius; dy++) for (let dx = -P.radius; dx <= P.radius; dx++) { const c = at(px + dx, py + dy).crop; if (c) { c.growth = 100; c.dead = false; c.health = 100; c.ripeAt = s.minutes - 10; ripe.push([px + dx, py + dy]); } }
   assert.ok(ripe.length >= 4, 'beds in reach: ' + ripe.length);
   s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; pk.held = [];
@@ -1546,6 +1548,27 @@ await test('picker trips: the boom fetches one crop at a time at 60 / perHour mi
   assert.ok(S.heldCount(pk.held) >= 2, 'three trips in a long tick bring back at least two crops: ' + S.heldCount(pk.held));
   assert.ok(!at(first[0], first[1]).crop || at(first[0], first[1]).crop.growth < 100, 'the first crop was cut');
   S.toggleMachine(s, px, py); S.pickerTick(s, 1); assert.ok(!pk.job || pk.job.taken, 'switched off: the boom folds back');
+});
+
+await test('the tower: a picker and a planter stack on a sprinkler with line under it and work its square from its centre; they draw power together, switch together, and the hoe takes the top off first', () => {
+  const s = arm(S.createState(1)); const w = s.world, tile = (x, y) => w.tiles[y * w.w + x], T = CONFIG.power;
+  const x0 = X + 3, y0 = Y + 6; for (let x = X; x <= x0; x++) tile(x, y0).line = true; tile(X, y0 + 1).obj = { kind: 'generator', fuel: 9 }; s.lineRev = 1;
+  s.player.x = x0 + 0.5; s.player.y = y0 + 1.5; s.inventory.slots = s.inventory.slots.map(i => i?.tool === 'hoe' ? i : null);
+  addItem(s.inventory, { kind: 'picker', level: 1, qty: 1 }); addItem(s.inventory, { kind: 'planter', level: 1, qty: 1 }); addItem(s.inventory, { kind: 'sprinkler', level: 1, qty: 1 });
+  const slot = k => s.inventory.slots.findIndex(i => i?.kind === k);
+  let r = S.useItem(s, slot('planter'), x0, y0); assert.ok(r.ok, r.msg);                               // a lone planter first
+  r = S.useItem(s, slot('sprinkler'), x0, y0); assert.ok(r.ok, r.msg); assert.ok(S.isTower(tile(x0, y0)), 'the sprinkler takes the planter onto its post');
+  r = S.useItem(s, slot('picker'), x0, y0); assert.ok(r.ok, r.msg); assert.equal(r.float, 'Stacked');
+  const t = tile(x0, y0); assert.equal(t.obj.kind, 'sprinkler'); assert.deepEqual(t.stack.map(o => o.kind), ['planter', 'picker']);
+  assert.equal(S.machineTier(S.stackedOf(t, 'picker')).radius, S.sprinklerTier(t.obj).radius, 'same reach as the sprinkler');
+  assert.equal(S.machineTier(S.stackedOf(t, 'planter')).radius, S.sprinklerTier(t.obj).radius);
+  assert.equal(S.machineTiles(s).filter(m => m.x === x0 && m.y === y0).length, 2, 'both machines work from the one tile');
+  assert.ok(S.machinePowered(s, x0, y0)); assert.equal(S.lineNet(s).used.reduce((a, b) => a + b, 0), T.picker.tiers[1].power + T.planter.tiers[1].power, 'they draw together');
+  addItem(s.inventory, { kind: 'picker', qty: 1 }); assert.ok(slot('picker') >= 0 && !S.useItem(s, slot('picker'), x0, y0).ok, 'one picker to a tower');
+  r = S.toggleMachine(s, x0, y0); assert.ok(r.off && t.stack.every(o => o.off) && !S.machinePowered(s, x0, y0), 'one switch for the tower'); S.toggleMachine(s, x0, y0);
+  const hoe = s.inventory.slots.findIndex(i => i?.kind === 'tool' && i.tool === 'hoe');
+  assert.ok(hoe >= 0); { s.inventory.slots = s.inventory.slots.map((i, k) => k === hoe ? i : null); r = S.useItem(s, hoe, x0, y0); assert.ok(r.ok, r.msg); assert.deepEqual(t.stack.map(o => o.kind), ['planter'], 'the hoe takes the top off first'); }
+  const bare = tile(x0 + 1, y0); bare.line = false; bare.obj = { kind: 'sprinkler', level: 0 }; s.inventory.slots = s.inventory.slots.map((i, k) => k === hoe ? i : null); addItem(s.inventory, { kind: 'planter', qty: 1 }); r = S.useItem(s, slot('planter'), x0 + 1, y0); assert.ok(!r.ok && /line/.test(r.msg), 'no line under it: ' + r.msg);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

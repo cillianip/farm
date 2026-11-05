@@ -488,7 +488,7 @@ export class UI {
   }
   // The planter: its seed box and its fertiliser, the switch, and your pockets to load it from.
   openPlanter(x, y) {
-    const s = this.state, g = this.game, C = CONFIG.power.planter, t = s.world.tiles[y * s.world.w + x], o = t.obj; if (!o || o.kind !== 'planter') return;
+    const s = this.state, g = this.game, C = CONFIG.power.planter, t = s.world.tiles[y * s.world.w + x], o = S.stackedOf(t, 'planter'); if (!o) return;
     const P = S.machineTier(o);
     this.show(P.name, body => {
       const row = el('div', 'station-row'); const left = el('div');

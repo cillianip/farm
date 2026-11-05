@@ -516,6 +516,13 @@ export function useItem(state, slotIndex, x, y) {
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
     if (t.obj?.kind === 'dcrate') return fail('Hold on it to pick it up');
+    if (isTower(t)) {   // the top of the tower first
+      const o = t.stack[t.stack.length - 1]; if (o.held?.length || o.seeds?.length || o.bags?.length || o.job?.taken) return fail('Empty it first');
+      if (!spend(state, E.clear)) return fail('Too tired');
+      if (addItem(state.inventory, { kind: o.kind, level: o.level || 0, qty: 1 })) return fail('No pocket free');
+      t.stack.pop(); if (!t.stack.length) delete t.stack; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1;
+      return { ok: true, msg: '', float: 'Picked up' };
+    }
     if (t.obj) { if (t.obj.kind === 'chest') return fail('Hold on it to pick it up'); if (t.obj.held?.length || t.obj.out?.length || t.obj.doing || t.obj.items?.length || t.obj.seeds?.length || t.obj.bags?.length) return fail('Empty it first'); if (!spend(state, E.clear)) return fail('Too tired'); const it = { kind: t.obj.kind, qty: 1 }; if (t.obj.level != null) it.level = t.obj.level; if (addItem(state.inventory, it)) return fail('No pocket free'); const spilt = fuelOf(t.obj) ? addItem(state.inventory, { kind: 'fuel', qty: t.obj.fuel }) : 0; t.obj = null; state.pipeRev = (state.pipeRev || 0) + 1; state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: spilt ? `${spilt} ${spilt === 1 ? 'can' : 'cans'} of fuel spilt: no pocket for it` : '', float: 'Picked up' }; }
     // the belt sits over pipe and line, so the hoe lifts it first
     if (t.belt) { if (t.load?.length) return fail('Empty it first'); if (!hasRoom(state.inventory, { kind: 'belt', qty: 1 })) return fail('No pocket free'); if (!spend(state, E.clear)) return fail('Too tired'); addItem(state.inventory, { kind: 'belt', qty: 1 }); t.belt = false; t.load = null; state.beltRev = (state.beltRev || 0) + 1; return { ok: true, msg: '', float: 'Belt up' }; }
@@ -555,10 +562,12 @@ export function useItem(state, slotIndex, x, y) {
     return { ok: true, msg: '', float: item.fert.name };
   }
   if (item.kind === 'sprinkler') {
-    if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || t.obj) return fail(t?.crop ? 'A plant grows there' : 'Set it on your own land');
+    const under = (t?.obj?.kind === 'picker' || t?.obj?.kind === 'planter') && !t.stack ? t.obj : null;   // a lone picker or planter goes onto its post
+    if (!isOwnedFarmland(state.world, x, y) || t.track || t.crop || (t.obj && !under)) return fail(t?.crop ? 'A plant grows there' : t?.obj ? 'Something stands there' : 'Set it on your own land');
     if (!spend(state, E.place)) return fail('Too tired');
     removeFromSlot(state.inventory, slotIndex, 1);
     t.tilled = false; t.fert = null; t.obj = { kind: 'sprinkler', level: item.level || 0 }; state.pipeRev = (state.pipeRev || 0) + 1;
+    if (under) { t.stack = [under]; state.lineRev = (state.lineRev || 0) + 1; }
     return { ok: true, msg: !pipeLinked(state, x, y) ? 'Dry: it needs pipe under it that reaches the well' : sprinklerFed(state, x, y) ? '' : `No pressure: ${headAt(state, x, y)} ${headAt(state, x, y) === 1 ? 'tile' : 'tiles'} of flow ${headAt(state, x, y) === 1 ? 'reaches' : 'reach'} here, it drinks ${sprinklerTier(t.obj).draw}. A pump nearer the well adds more`, float: 'Set' };
   }
   if (item.kind === 'pump') {
@@ -623,6 +632,15 @@ export function useItem(state, slotIndex, x, y) {
     t.obj = item.kind === 'splitter' ? { kind: 'splitter', turn: 0 } : { kind: 'filter', rule: 'dried', swap: false }; state.beltRev = (state.beltRev || 0) + 1;
     const outs = splitOutputs(state, x, y);
     return { ok: true, msg: outs.length < 2 ? 'It needs two ways out: belt leading away on two sides' : '', float: 'Set' };
+  }
+  if ((item.kind === 'picker' || item.kind === 'planter') && isSprinkler(t)) {
+    if (!t.line) return fail('Lay power line under the sprinkler first');
+    if (stackedOf(t, item.kind)) return fail(`It already has a ${item.kind}`);
+    if (!spend(state, E.place)) return fail('Too tired');
+    removeFromSlot(state.inventory, slotIndex, 1);
+    (t.stack = t.stack || []).push(item.kind === 'planter' ? { kind: 'planter', level: item.level || 0, seeds: [], bags: [] } : { kind: 'picker', level: item.level || 0, held: [] });
+    state.lineRev = (state.lineRev || 0) + 1; state.beltRev = (state.beltRev || 0) + 1;
+    return { ok: true, msg: machinePowered(state, x, y) ? '' : 'No power yet: the line under it needs a generator', float: 'Stacked' };
   }
   if (item.kind === 'picker' || item.kind === 'hopper' || item.kind === 'dryer' || item.kind === 'planter') {
     if (!t.line || t.obj) return fail(t.obj ? 'Something stands there' : `A ${item.kind} stands on the power line`);
@@ -906,13 +924,24 @@ export const generatorTier = o => CONFIG.power.generator.tiers[Math.min(2, o?.le
 export const isChest = t => t?.obj?.kind === 'chest';
 export function chestTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isChest(t)) out.push({ x, y, t }); } return out; }
 export const isMachine = t => t?.obj?.kind === 'picker' || t?.obj?.kind === 'hopper' || t?.obj?.kind === 'dryer' || t?.obj?.kind === 'planter';
-export const isPlanter = t => t?.obj?.kind === 'planter';
+// Build 89, the tower: a picker and a planter can stand on a sprinkler's tile (with line laid under it), stacked on its post,
+// so all three work the same square from the same centre. The sprinkler stays t.obj; the machines on it are t.stack.
+export const stackOf = t => t?.stack || [];
+export const stackedOf = (t, kind) => t?.obj?.kind === kind ? t.obj : stackOf(t).find(o => o.kind === kind) || null;
+export const isTower = t => isSprinkler(t) && stackOf(t).length > 0;
+export const hasMachine = t => isMachine(t) || stackOf(t).length > 0;
+// the tile seen as holding just one of its stacked machines, so code written for a machine per tile works on a tower
+const viewOf = (t, o) => Object.create(t, { obj: { value: o, writable: true, enumerable: true } });
+export const machineView = (t, kind) => { const o = stackedOf(t, kind); return !o ? null : o === t.obj ? t : viewOf(t, o); };
+export const isPlanter = t => !!stackedOf(t, 'planter');
 // a machine's numbers: pickers and planters by their tier, the rest flat
 export const machineTier = o => o.kind === 'picker' ? CONFIG.power.picker.tiers[Math.min(2, o.level || 0)] : o.kind === 'planter' ? CONFIG.power.planter.tiers[Math.min(2, o.level || 0)] : CONFIG.power[o.kind];
 export const machinePower = o => machineTier(o).power;
 // Every machine has a switch: off, it draws no power, does nothing, and a hopper's belt stands still.
 export function toggleMachine(state, x, y) {
-  const t = tileAt(state.world, x, y); if (!isMachine(t)) return fail('');
+  const t = tileAt(state.world, x, y);
+  if (isTower(t)) { const off = !t.stack[0].off; for (const o of t.stack) o.off = off; state.lineRev = (state.lineRev || 0) + 1; return { ok: true, msg: '', float: off ? 'Off' : 'On', off }; }
+  if (!isMachine(t)) return fail('');
   t.obj.off = !t.obj.off; state.lineRev = (state.lineRev || 0) + 1;
   return { ok: true, msg: '', float: t.obj.off ? 'Off' : 'On', off: t.obj.off };
 }
@@ -923,7 +952,7 @@ function addHeld(held, it) { const key = pileKey(it); const have = held.find(h =
 // a pile entry as an item for your pockets, the crate or the counter
 export const pileItem = it => ({ kind: it.product ? 'product' : 'crop', species: it.species, q: it.q || 0, qty: it.qty, ...(it.product ? { product: it.product } : {}) });
 export function generatorTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isGenerator(t)) out.push({ x, y, t }); } return out; }
-export function machineTiles(state, kind = null) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isMachine(t) && (!kind || t.obj.kind === kind)) out.push({ x, y, t }); } return out; }
+export function machineTiles(state, kind = null) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isMachine(t) && (!kind || t.obj.kind === kind)) out.push({ x, y, t }); for (const o of stackOf(t)) if (!kind || o.kind === kind) out.push({ x, y, t: viewOf(t, o) }); } return out; }
 // The line network: connected runs of power line, each powered by the generators standing on or beside it (their
 // `power` adds up, off ones give nothing), machines on it nearest the generators first by line distance. Cached until a section, a generator
 // or a machine is laid or picked up (state.lineRev).
@@ -946,7 +975,8 @@ export function lineNet(state) {
   while (queue.length) { const j = queue.shift(), x = j % w.w, y = (j - x) / w.w, d = dist.get(j); for (const [dx, dy] of N4) { const t = tileAt(w, x + dx, y + dy), k = idx(x + dx, y + dy); if (t?.line && !dist.has(k)) { dist.set(k, d + 1); queue.push(k); } } }
   const used = new Array(nComp).fill(0), on = new Set();
   const machines = machineTiles(state).filter(({ x, y, t }) => t.line && dist.has(idx(x, y))).sort((a, b) => dist.get(idx(a.x, a.y)) - dist.get(idx(b.x, b.y)));
-  for (const { x, y, t } of machines) { if (t.obj.off) continue; const c = comp.get(idx(x, y)), d = machinePower(t.obj); if (used[c] + d <= cap[c]) { used[c] += d; on.add(idx(x, y)); } }
+  const demand = new Map(); for (const { x, y, t } of machines) { if (t.obj.off) continue; const k = idx(x, y); demand.set(k, (demand.get(k) || 0) + machinePower(t.obj)); }   // a tower's machines draw together
+  for (const [k, d] of demand) { const c = comp.get(k); if (used[c] + d <= cap[c]) { used[c] += d; on.add(k); } }
   const net = { rev, w, comp, dist, cap, used, on }; POW.set(state, net);
   return net;
 }
@@ -1212,7 +1242,12 @@ function planterPass(state, net) {
 // What a machine's lamp shows (Build 87): 'stop' when it is blocked (full and can't get rid of what it holds), 'wait' when it
 // is powered but has nothing to work on, null when it is fine, off or unpowered (those show already). Chests only as belt sinks.
 export function machineStatus(state, x, y) {
-  const w = state.world, o = tileAt(w, x, y)?.obj; if (!o) return null;
+  const t = tileAt(state.world, x, y);
+  if (isTower(t)) { let st = null; for (const o of t.stack) { const k = statusOf(state, x, y, o); if (k === 'stop') return 'stop'; st = st || k; } return st; }
+  return statusOf(state, x, y, t?.obj);
+}
+function statusOf(state, x, y, o) {
+  const w = state.world; if (!o) return null;
   if (o.kind === 'chest') return beltNet(state).sinks.has(y * w.w + x) && o.slots.every(Boolean) ? 'stop' : null;
   if (o.off || !['picker', 'hopper', 'planter', 'dryer'].includes(o.kind) || !machinePowered(state, x, y)) return null;
   if (o.kind === 'picker') return heldCount(o.held) >= machineTier(o).holds ? 'stop' : null;
@@ -1224,7 +1259,7 @@ export function machineStatus(state, x, y) {
 export const planterCount = o => (o.seeds || []).reduce((n, s) => n + s.qty, 0) + (o.bags || []).reduce((n, b) => n + b.qty, 0);
 // Seeds or bags in hand onto a planter: as much of the stack as fits.
 export function loadPlanter(state, slotIndex, x, y, n = Infinity) {
-  const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isPlanter(t) || !it) return fail('');
+  const t = machineView(tileAt(state.world, x, y), 'planter'), it = state.inventory.slots[slotIndex]; if (!t || !it) return fail('');
   if (it.kind !== 'seed' && it.kind !== 'fert') return fail('It takes seeds and fertiliser');
   if (!inReach(state, x, y)) return fail('Too far');
   const o = t.obj, C = CONFIG.power.planter; o.seeds = o.seeds || []; o.bags = o.bags || [];
@@ -1241,7 +1276,7 @@ export function loadPlanter(state, slotIndex, x, y, n = Infinity) {
 }
 // Empty hands on a planter: its seeds and bags back into your pockets, as much as fits.
 export function unloadPlanter(state, x, y) {
-  const t = tileAt(state.world, x, y); if (!isPlanter(t)) return fail('');
+  const t = machineView(tileAt(state.world, x, y), 'planter'); if (!t) return fail('');
   const o = t.obj; let got = 0;
   for (const [pile, mk] of [[o.seeds || [], p => ({ kind: 'seed', species: p.species, qty: p.qty })], [o.bags || [], p => ({ kind: 'fert', fert: p.fert, qty: p.qty })]]) {
     while (pile.length) { const p = pile[0], left = addItem(state.inventory, mk(p)); got += p.qty - left; if (left) { p.qty = left; break; } pile.shift(); }
@@ -1265,7 +1300,7 @@ function drainHoppersInto(state) {
 // Empty hands on a picker, a hopper or a belt tile: what it holds into your pockets, as much as fits.
 export const heldOn = t => isDryer(t) ? t.obj.out : isMachine(t) ? t.obj.held : t?.belt ? t.load : null;
 export function takeHeld(state, x, y) {
-  const t = tileAt(state.world, x, y), held = heldOn(t); if (!held?.length) return fail(isDryer(t) ? 'Nothing dried yet' : 'Nothing in it');
+  const t0 = tileAt(state.world, x, y), t = isTower(t0) ? machineView(t0, 'picker') : t0, held = heldOn(t); if (!held?.length) return fail(isDryer(t) ? 'Nothing dried yet' : 'Nothing in it');
   let taken = 0;
   while (held.length) { const it = held[0], left = addItem(state.inventory, pileItem(it)); taken += it.qty - left; if (left) { it.qty = left; break; } held.shift(); }
   if (!taken) return fail('Your pockets are full');
@@ -1349,9 +1384,9 @@ export function makeModelFarm() {
   tile(26, 25).obj = { kind: 'generator', level: 1, fuel: 7 };
   // the block: beds two rows above and below the path, carrots at every stage
   let k = 0; for (const y of [23, 24, 26, 27]) for (let x = 27; x <= 31; x++) { const t = tile(x, y); t.tilled = true; t.moisture = 55; t.crop = { speciesId: carrot.id, growth: (k * 23) % 100, health: 100, ripeAt: null, dead: false, plantedAt: state.minutes, harvests: 0, v: k % 4 }; if (t.crop.growth >= 100) t.crop.ripeAt = state.minutes; k++; }
-  tile(29, 25).obj = { kind: 'sprinkler', level: 1 }; tile(28, 25).obj = { kind: 'planter', level: 1, seeds: [{ species: carrot.id, qty: 30 }], bags: [] }; tile(30, 25).obj = { kind: 'picker', level: 1, held: [] };   // tier II, like the sprinkler: a tier is built to work its sprinkler's block from the tile beside it
+  tile(29, 25).obj = { kind: 'sprinkler', level: 1 }; tile(29, 25).stack = [{ kind: 'planter', level: 1, seeds: [{ species: carrot.id, qty: 30 }], bags: [] }, { kind: 'picker', level: 1, held: [] }];   // Build 89: one tower   // tier II, like the sprinkler: a tier is built to work its sprinkler's block from the tile beside it
   // the belt: from beside the picker east along the path to a splitter; one way on to the dryer, the other down to a hopper by the porch crate
-  for (const x of [31, 32, 33]) { tile(x, 25).belt = true; tile(x, 25).load = []; }
+  for (const x of [30, 31, 32, 33]) { tile(x, 25).belt = true; tile(x, 25).load = []; }
   tile(32, 25).obj = { kind: 'splitter', turn: 0 };
   tile(32, 26).belt = true; tile(32, 26).load = []; tile(33, 26).obj = { kind: 'chest', level: 1, slots: new Array(chestSlots(1)).fill(null) };   // a large chest at the end of the short branch: fresh carrots for the market
   tile(34, 25).obj = { kind: 'dryer', held: [], out: [], doing: null };

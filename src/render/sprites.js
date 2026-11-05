@@ -855,6 +855,34 @@ export function coinIcon() {
 // A bag of fertiliser (16×16): a tied sack in the colour of its strongest stat, one band per grade, a gold star per sure star.
 // look: {stat, grade, stars} from fertiliser.fertLook; with nothing it is the plain brown bag.
 const STAT_COLOUR = { speed: ['#8fd36a', '#5fa14a'], quality: ['#f6c453', '#b57a1f'], yield: ['#e8a23b', '#b86d1f'], waterKeep: ['#7fb4e6', '#3f72a8'], hardiness: ['#c47a5a', '#8a4a32'], mutation: ['#c47fe6', '#8a5cc0'] };
+// The tower (Build 89, 16×28): a picker and/or a planter stacked on a sprinkler. A steel mast on a base plate; the planter's
+// seed funnel rings it low down with a drop tube and disc to the left; the picker's collar and folded arm sit high, its
+// bin at the foot on the right. Each part wears its tier as it does alone: wood, steel, steel with gold. pk / pl: the
+// tier, or -1 when that machine is not on it. The game sets the sprinkler's own head on top and draws the boom when out.
+export function towerSprite(pk = -1, pl = -1, pkFull = false, plFull = false, armOut = false) {
+  return sprite(`tower:${pk}:${pl}:${pkFull ? 1 : 0}${plFull ? 1 : 0}${armOut ? 1 : 0}`, 16, 28, P => {
+    P.rect(2, 26, 12, 2, 'rgba(30,20,10,0.28)');
+    P.rect(5, 25, 6, 1, PAL.metalDark); P.rect(4, 26, 8, 1, PAL.metalDark);                        // base plate
+    P.rect(7, 3, 2, 22, PAL.metalDark); P.rect(7, 3, 1, 22, PAL.metal);                               // the mast
+    if (pl >= 0) {
+      const steel = pl > 0, edge = steel ? PAL.metalDark : PAL.woodDark, fill = steel ? PAL.metal : PAL.wood, rim = pl === 2 ? PAL.gold : steel ? PAL.metalLight : PAL.woodLight;
+      for (let r = 0; r < 4; r++) { const ww = 12 - r * 2, x = 8 - ww / 2; P.rect(x, 14 + r, ww, 1, edge); if (ww > 2) P.rect(x + 1, 14 + r, ww - 2, 1, fill); }
+      P.rect(2, 14, 12, 1, rim);
+      P.line(4, 17, 3, 22, PAL.metalDark); P.rect(2, 22, 3, 3, PAL.metalDark); P.px(3, 23, PAL.metalLight);   // drop tube and disc
+      if (pl === 2) { P.line(11, 17, 12, 20, PAL.metalDark); }
+      if (plFull) { P.px(4, 14, '#5e4a2a'); P.px(6, 14, '#d9a84e'); P.px(10, 14, '#5e4a2a'); }
+    }
+    if (pk >= 0) {
+      const col = pk === 0 ? PAL.woodDark : PAL.metalDark;
+      P.rect(6, 8, 4, 2, col); P.px(6, 8, pk === 0 ? PAL.wood : PAL.metalLight); if (pk === 2) P.px(9, 8, PAL.gold);   // the collar the boom turns on
+      if (!armOut) { const a = pk === 0 ? PAL.wood : PAL.metal; P.line(10, 9, 13, 11, a); P.line(13, 11, 13, 14, PAL.metalDark); P.px(12, 15, PAL.outline); P.px(14, 15, PAL.outline); }
+      if (pk === 0) { P.rect(10, 21, 6, 5, '#8a6230'); P.rect(11, 22, 4, 3, '#c9a35a'); P.px(12, 22, '#a57f3c'); }
+      else if (pk === 1) { P.rect(10, 20, 6, 6, PAL.woodDark); P.rect(11, 21, 4, 4, PAL.wood); P.rect(10, 22, 6, 1, PAL.metalDark); }
+      else { P.rect(10, 20, 6, 6, PAL.metalDark); P.rect(11, 21, 4, 4, PAL.metal); P.rect(10, 20, 6, 1, PAL.gold); }
+      if (pkFull) { P.px(11, 20, '#e86a6a'); P.px(13, 20, '#f6c453'); P.px(14, 20, '#8fd36a'); }
+    }
+  });
+}
 // The key cap over the station E opens (9×9): a cream face, a darker side below it, an E on it.
 export function keyCapSprite() {
   return sprite('keycap2', 9, 9, P => {
