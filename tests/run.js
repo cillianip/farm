@@ -1041,7 +1041,7 @@ await test('Sprinkler II and III reach 2 and 3 tiles and drink more of the flow:
 });
 
 console.log('power');
-await test('the chain: a generator powers the line; a picker takes one ripe crop an hour and drops it on the belt; the belt carries it a tile a step to the hopper beside the crate; the cart sells it; dead without a generator; nearest machines first when the line asks for more', () => {
+await test('the chain: a generator powers the line; a picker swings its boom out to a ripe crop, cuts it and drops it on the belt; the belt carries it a tile a step to the hopper beside the crate; the cart sells it; dead without a generator; nearest machines first when the line asks for more', () => {
   const s = arm(S.createState(1)); const W = s.world, Cr = WB.crate, tile = (x, y) => W.tiles[y * W.w + x], B = CONFIG.power.belt;
   const carrot = byName(s, 'Carrot');
   for (let x = X; x <= Cr.x - 1; x++) tile(x, Cr.y - 1).line = true;   // a line from beside the crate west along the row above it
@@ -1062,9 +1062,14 @@ await test('the chain: a generator powers the line; a picker takes one ripe crop
   assert.ok(S.linePowered(s, X, hy) && S.machinePowered(s, X, hy) && S.machinePowered(s, hx, hy));
   assert.ok(S.beltRunning(s, X + 1, hy) && S.beltRunning(s, hx - 1, hy), 'the hopper drives the belt'); assert.equal(S.beltNet(s).dist.get(hy * W.w + hx - 1), 1); assert.equal(S.beltNet(s).dist.get(hy * W.w + X + 1), D);
   assert.equal(S.beltDir(s, X + 1, hy), 1, 'the belt runs east toward the hopper'); assert.equal(S.beltDir(s, hx - 1, hy), 1);
-  tickMinutes(s, 1); assert.equal(tile(X, hy).obj.held.length, 0, 'between hours nothing moves');
-  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60 + 59; s.beltClock = 0; tickMinutes(s, 1);   // across 10:00
-  assert.ok(!tile(X, hy - 1).crop, 'the bed is cleared'); assert.equal(tile(X, hy).obj.held.length, 0, 'the basket went onto the belt');
+  const pk = tile(X, hy).obj, trip = S.pickMinutes(pk);
+  tickMinutes(s, 1); assert.ok(pk.job && pk.job.x === X && pk.job.y === hy - 1, 'powered: the boom swings out for the ripe carrot'); assert.ok(tile(X, hy - 1).crop, 'not cut yet');
+  while (s.minutes < pk.job.cut) tickMinutes(s, 1);
+  assert.ok(!tile(X, hy - 1).crop, 'cut: the bed is cleared'); assert.ok(pk.job?.taken, 'the carrot rides back on the boom'); assert.equal(pk.held.length, 0, 'not in the basket yet');
+  assert.ok(trip >= 10, 'a tier I trip takes a while: ' + trip);
+  while (pk.job) tickMinutes(s, 1);
+  s.beltClock = 0; for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
+  assert.equal(pk.held.length, 0, 'the basket went onto the belt');
   assert.equal(S.heldCount(tile(X + 1, hy).load), carrot.genome.count, 'on the first belt tile'); assert.equal(tile(hx, hy).obj.held.length, 0, 'not at the hopper yet');
   assert.equal(S.ledger(s).today.picked, carrot.genome.count);
   for (let i = 0; i < B.stepMinutes; i++) tickMinutes(s, 1);
@@ -1523,6 +1528,24 @@ await test('machine lamps: a full picker or hopper and a full chest at a belt en
   at(cx, cy).slots = at(cx, cy).slots.map(() => ({ kind: 'crop', species: sp, q: 0, qty: 99 })); assert.equal(S.machineStatus(s, cx, cy), 'stop');
   const { produceScale } = await import('../src/render/crops.js').catch(() => ({}));
   if (produceScale) assert.ok(produceScale({ size: 0.95 }) > produceScale({ size: 0.1 }) + 3, 'giants draw bigger');
+});
+
+await test('picker trips: the boom fetches one crop at a time at 60 / perHour minutes a trip; two pickers never reach for the same crop; a long tick catches up its trips; unpowered it folds back', () => {
+  const s = S.makeModelFarm(), w = s.world, at = (x, y) => w.tiles[y * w.w + x];
+  let px, py; for (let y = 20; y < 32; y++) for (let x = 24; x < 40; x++) if (at(x, y).obj?.kind === 'picker') { px = x; py = y; }
+  const pk = at(px, py).obj, P = S.machineTier(pk), ripe = [];
+  for (let dy = -P.radius; dy <= P.radius; dy++) for (let dx = -P.radius; dx <= P.radius; dx++) { const c = at(px + dx, py + dy).crop; if (c) { c.growth = 100; c.dead = false; c.health = 100; c.ripeAt = s.minutes - 10; ripe.push([px + dx, py + dy]); } }
+  assert.ok(ripe.length >= 4, 'beds in reach: ' + ripe.length);
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; pk.held = [];
+  S.pickerTick(s, 0); assert.ok(pk.job, 'a trip starts'); const first = [pk.job.x, pk.job.y];
+  // a second picker beside it reaches for something else
+  const nb = [[px, py + 1], [px, py - 1], [px - 1, py], [px + 1, py]].find(([x, y]) => !at(x, y).obj && !at(x, y).crop && !at(x, y).belt && at(x, y).line);
+  if (nb) { at(nb[0], nb[1]).obj = { kind: 'picker', held: [], level: pk.level }; s.lineRev = (s.lineRev || 0) + 1; S.pickerTick(s, 0); const j2 = at(nb[0], nb[1]).obj.job; if (j2) assert.ok(j2.x !== first[0] || j2.y !== first[1], 'not the same crop'); at(nb[0], nb[1]).obj = null; s.lineRev++; }
+  const trip = S.pickMinutes(pk); assert.equal(trip, 60 / P.perHour);
+  s.minutes += trip * 3; S.pickerTick(s, trip * 3);
+  assert.ok(S.heldCount(pk.held) >= 2, 'three trips in a long tick bring back at least two crops: ' + S.heldCount(pk.held));
+  assert.ok(!at(first[0], first[1]).crop || at(first[0], first[1]).crop.growth < 100, 'the first crop was cut');
+  S.toggleMachine(s, px, py); S.pickerTick(s, 1); assert.ok(!pk.job || pk.job.taken, 'switched off: the boom folds back');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

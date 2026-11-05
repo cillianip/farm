@@ -636,7 +636,8 @@ export function pickerSprite(frame = 0, full = false, level = 0) {
     if (level === 0) {
       P.rect(7, 7, 2, 11, PAL.woodDark); P.rect(7, 7, 1, 11, PAL.wood);
       P.rect(6, 6, 4, 2, PAL.metalDark); P.px(6, 6, PAL.metalLight);
-      if (frame === 1) { P.line(8, 7, 13, 3, PAL.wood); P.line(13, 3, 15, 5, PAL.woodDark); P.px(15, 6, PAL.outline); }
+      if (frame < 0) {}   // the boom is out: the game draws it
+      else if (frame === 1) { P.line(8, 7, 13, 3, PAL.wood); P.line(13, 3, 15, 5, PAL.woodDark); P.px(15, 6, PAL.outline); }
       else { P.line(8, 7, 2, 10, PAL.wood); P.line(2, 10, 1, 14, PAL.woodDark); P.px(1, 15, PAL.outline); }
       P.rect(9, 14, 6, 4, '#8a6230'); P.rect(10, 15, 4, 2, '#c9a35a'); P.px(11, 15, '#a57f3c'); P.px(13, 16, '#a57f3c');   // wicker
       if (full) CROPS3.forEach((c, i) => P.px(10 + i * 2, 14, c));
@@ -648,8 +649,10 @@ export function pickerSprite(frame = 0, full = false, level = 0) {
     const up = () => { P.line(8, 4, 13, 1, PAL.metal); P.line(13, 1, 14, 4, PAL.metalDark); claw(14, 5); };
     const upL = () => { P.line(8, 4, 3, 1, PAL.metal); P.line(3, 1, 1, 3, PAL.metalDark); claw(1, 4); };
     const downR = () => { P.line(8, 4, 12, 7, PAL.metal); P.line(12, 7, 12, 10, PAL.metalDark); claw(12, 11); };
-    if (level === 1) { if (frame === 1) up(); else down(); }
-    else { if (frame === 1) { upL(); downR(); } else { down(); up(); } P.px(7, 1, '#ffe680'); P.px(8, 1, PAL.gold); P.rect(7, 2, 2, 1, PAL.metalDark); }   // the lamp
+    if (frame < 0) {}
+    else if (level === 1) { if (frame === 1) up(); else down(); }
+    else { if (frame === 1) { upL(); downR(); } else { down(); up(); } }
+    if (level === 2) { P.px(7, 1, '#ffe680'); P.px(8, 1, PAL.gold); P.rect(7, 2, 2, 1, PAL.metalDark); }   // the lamp
     if (level === 1) { P.rect(9, 12, 7, 6, PAL.woodDark); P.rect(10, 13, 5, 4, PAL.wood); P.rect(9, 14, 7, 1, PAL.metalDark); }
     else { P.rect(9, 12, 7, 6, PAL.metalDark); P.rect(10, 13, 5, 4, PAL.metal); P.rect(9, 12, 7, 1, PAL.gold); }
     if (full) CROPS3.forEach((c, i) => P.px(10 + i * 2, 12, c));
@@ -852,14 +855,28 @@ export function coinIcon() {
 // A bag of fertiliser (16×16): a tied sack in the colour of its strongest stat, one band per grade, a gold star per sure star.
 // look: {stat, grade, stars} from fertiliser.fertLook; with nothing it is the plain brown bag.
 const STAT_COLOUR = { speed: ['#8fd36a', '#5fa14a'], quality: ['#f6c453', '#b57a1f'], yield: ['#e8a23b', '#b86d1f'], waterKeep: ['#7fb4e6', '#3f72a8'], hardiness: ['#c47a5a', '#8a4a32'], mutation: ['#c47fe6', '#8a5cc0'] };
+// The key cap over the station E opens (9×9): a cream face, a darker side below it, an E on it.
+export function keyCapSprite() {
+  return sprite('keycap2', 9, 9, P => {
+    P.rect(1, 0, 7, 9, '#3b2314'); P.rect(0, 1, 9, 7, '#3b2314');                                  // the outline, corners clipped
+    P.rect(1, 1, 7, 6, '#f5e6c3'); P.rect(1, 1, 7, 1, '#fffaf0'); P.rect(1, 7, 7, 1, '#c9a878');   // face, its lit edge, the side
+    const ink = '#3b2314'; P.rect(3, 2, 1, 5, ink); P.rect(4, 2, 2, 1, ink); P.rect(4, 4, 1, 1, ink); P.rect(4, 6, 2, 1, ink);   // E
+  });
+}
 export function fertIcon(look = null) {
   const stat = look?.stat || null, grade = look?.grade || 1, stars = look?.stars || 0;
-  return sprite(`fert:${stat}:${grade}:${stars}`, 16, 16, P => {
-    const [c, cd] = stat ? STAT_COLOUR[stat] : ['#8a6a44', '#5a4a2a'];
-    P.rect(3, 5, 10, 10, cd); P.rect(4, 6, 8, 8, c); P.rect(4, 6, 8, 1, 'rgba(255,255,255,0.25)'); P.rect(4, 13, 8, 1, 'rgba(0,0,0,0.2)');   // the sack
-    P.rect(6, 3, 4, 2, cd); P.rect(5, 2, 6, 1, '#3b2314'); P.px(7, 1, '#3b2314'); P.px(8, 1, '#3b2314');                              // the neck, tied
-    for (let g = 0; g < grade; g++) P.rect(4, 12 - g * 2, 8, 1, cd);                                                                  // a band per grade
-    for (let k = 0; k < stars; k++) { const x = 5 + k * 3; P.px(x, 8, PAL.gold); P.px(x, 7, '#fff1b8'); }                              // the stars
+  // Build 88: the original open sack again. Plain compost is drawn exactly as it always was; a bag with a strong stat gets
+  // flecks in that stat's colour and a stitched label in it, a pip on the label per grade, and gold stars on the rim.
+  return sprite(`fert2:${stat}:${grade}:${stars}`, 16, 16, P => {
+    P.rect(3, 5, 10, 9, '#5a4a2a'); P.rect(3, 4, 10, 1, '#7a6a3a');                                   // the sack and its rolled rim
+    if (!stat) { P.px(5, 7, '#8bc34a'); P.px(9, 9, '#8bc34a'); P.px(7, 11, '#c9b07c'); }
+    else {
+      const [c, cd] = STAT_COLOUR[stat];
+      P.px(5, 6, c); P.px(8, 7, c); P.px(10, 6, c);                                                     // flecks
+      P.rect(5, 9, 6, 4, cd); P.rect(6, 10, 4, 2, c);                                                   // the label
+      for (let g = 0; g < Math.min(3, grade); g++) P.px(6 + g, 11, '#fff8e0');                          // grade pips
+    }
+    for (let k = 0; k < stars; k++) P.px(5 + k * 3, 4, PAL.gold);                                       // stars on the rim
   });
 }
 

@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile , isCleared } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, planterSprite, barrowSprite, forkliftSprite } from './render/sprites.js';
+import { keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, planterSprite, barrowSprite, forkliftSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -346,7 +346,7 @@ export class Game {
     if (t.t === 'sign') return { title: 'Delivery sign', sub: 'Crops left in the crate are collected at night.' };
     if (t.t === 'board') { const bb = S.bayBoard(this.state); return { title: 'Loading bay', sub: `${bb.count} going tonight, ${formatMoney(bb.total)}: ${bb.loaded} of ${bb.slots} crates on the truck.${bb.waiting ? ` ${bb.waiting} crops still wait in crates on the gravel: carry them to the truck.` : ''} E opens the list.` }; }
     if (t.t === 'truck') { const tier = S.truckTier(this.state), n = this.state.truck?.bed?.length || 0; return { title: tier.name, sub: `${n} / ${tier.slots} crates on the bed. Carry a full crate to it and click to load. It leaves at night with what is loaded and is back empty by morning.` }; }
-    if (this.state.truck && S.inBayOf(this.state, x, y) && t.t === 'grass' && !t.tilled && !t.obj) return { title: 'Loading bay', sub: 'Gravel beside the truck. Empty hands set a free crate here; a hopper beside it tips in as the belt runs, belt can end at it. Hold on a full one to lift it and carry it to the truck.' };
+    if (this.state.truck && S.inBayOf(this.state, x, y) && t.t === 'grass' && !t.tilled && !t.obj) return { title: 'Loading bay', sub: 'Gravel beside the truck. Empty hands set a free crate here; a hopper beside it tips in as the belt runs, belt can end at it. Hold on a crate to lift it and carry it to the truck; any crate with something in it goes on.' };
     if (t.t === 'roadsign') return { title: 'To the market', sub: 'Click the sign to set off: an hour down the track. Open 8 to 6; shoppers buy at your stall, merchants sell seeds and hardware.' };
     if (t.t === 'seedrack') return { title: 'Seed rack', sub: S.activeTray(this.state) ? `${this.state.seedRack.trays.length} ${this.state.seedRack.trays.length === 1 ? 'tray' : 'trays'}` : 'Lay a crop on a tray. It dries into seeds.' };
     if (t.t === 'crate') return { title: 'Delivery crate', sub: 'Drop crops in. The cart collects them at night and pays in the morning.' };
@@ -517,6 +517,26 @@ export class Game {
     if (this.sleeping || this.travelling) for (const k in lv) lv[k] = 0;
     for (const [k, v] of Object.entries(lv)) snd.setLoop(k, v);
   }
+  // The picker's boom (Build 88): telescoping out from the mast to the crop it is after over the first part of the trip,
+  // the claw snipping while it cuts, then folding back with the crop held at its real size. Drawn on the world's pixel grid.
+  drawBoom(sx, sy, j, lv, now, cx, cy) {
+    const ctx = this.ctx, T = CONFIG.tile * CONFIG.scale, u = CONFIG.scale, s = this.state, dur = j.done - j.start || 1, f = Math.max(0, Math.min(1, (s.minutes - j.start) / dur));
+    const ease = k => k * k * (3 - 2 * k), OUT = 0.4, CUT = S.PICK_CUT;
+    const e = f < OUT ? ease(f / OUT) : f < CUT ? 1 : ease(1 - (f - CUT) / (1 - CUT)), cutting = f >= OUT && f < CUT;
+    const ox = sx + 8 * u, oy = sy + T - 20 * u + (lv ? 4 : 6) * u, tx = (j.x + 0.5) * T - cx, ty = (j.y + 0.5) * T - cy - 3 * u;
+    const x1 = ox + (tx - ox) * e, y1 = oy + (ty - oy) * e, n = Math.max(1, Math.round(Math.hypot(x1 - ox, y1 - oy) / u));
+    const snap = v => Math.round(v / u) * u, dark = '#5c6273', mid = '#8b93a6', lite = '#c2c8d6';
+    ctx.fillStyle = 'rgba(30,20,10,0.16)';   // its shadow on the ground, from the mast's foot
+    for (let i = 0; i <= n; i += 2) { const k = i / n; ctx.fillRect(snap(ox + (x1 - ox) * k), snap(sy + T - 2 * u + (ty + 6 * u - (sy + T - 2 * u)) * k * e), 2 * u, u); }
+    for (let i = 0; i <= n; i++) {   // three sections, each thinner than the one it slides out of
+      const k = i / n, w = k < 0.34 ? 3 : 2, px = snap(ox + (x1 - ox) * k) - u, py = snap(oy + (y1 - oy) * k) - u;
+      ctx.fillStyle = dark; ctx.fillRect(px, py, w * u, w * u); ctx.fillStyle = k < 0.67 ? mid : lite; ctx.fillRect(px, py, u, u);
+    }
+    for (const k of [0.34, 0.67]) if (n > 6) { ctx.fillStyle = '#3b2314'; ctx.fillRect(snap(ox + (x1 - ox) * k) - u, snap(oy + (y1 - oy) * k) - u, 3 * u, 3 * u); ctx.fillStyle = dark; ctx.fillRect(snap(ox + (x1 - ox) * k), snap(oy + (y1 - oy) * k), u, u); }
+    const hx = snap(x1), hy = snap(y1), open = cutting ? Math.floor(now / 110) % 2 : 0;   // the claw
+    ctx.fillStyle = '#2b2a33'; ctx.fillRect(hx - (2 + open) * u, hy + u, u, 2 * u); ctx.fillRect(hx + (1 + open) * u, hy + u, u, 2 * u); ctx.fillRect(hx - 2 * u, hy, 4 * u, u);
+    if (j.taken && f >= CUT) { const sp = s.species[j.taken.species]; if (sp) ctx.drawImage(produceSprite(sp, true), hx - 4 * u, hy + u, 8 * u, 8 * u); }
+  }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
   // Crates just loaded fly from where you stand to their places on the bed, one after another (Build 87)
   flyToTruck(n) { const bed = this.state.truck?.bed || [], p = this.state.player; for (let k = 0; k < n; k++) this.flying.push({ idx: bed.length - n + k, x0: p.x - 0.45, y0: p.y - 1.1, t: -k * 0.14 }); }
@@ -627,7 +647,8 @@ export class Game {
       if (tree) drawables.push({ y: y + 1 + t.jy / 16, draw: () => ctx.drawImage(treeSprite(t.v), sx - 2 * CONFIG.scale + t.jx * CONFIG.scale, sy - T + t.jy * CONFIG.scale, 20 * CONFIG.scale, 32 * CONFIG.scale) });
       if (t.obj?.kind === 'sprinkler') { const on = (t.obj.sprayUntil || 0) > s.minutes; ctx.drawImage(sprinklerSprite(t.obj.level || 0, on ? 1 + Math.floor(now / 160) % 2 : 0), sx, sy, T, T); if (on) sprays.push([sx, sy, S.sprinklerTier(t.obj).radius]); }
       if (t.obj?.kind === 'generator') { const live = S.generatorLive(s, x, y); drawables.push({ y: y + 1, draw: () => ctx.drawImage(generatorSprite(live ? 1 + Math.floor(now / 200) % 2 : 0, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
-      if (t.obj?.kind === 'picker') { const on = S.machinePowered(s, x, y), full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(pickerSprite(on ? Math.floor(now / 700) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
+      if (t.obj?.kind === 'picker' && t.obj.job) { const j = t.obj.job, lv = t.obj.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.95, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy) }); }
+      if (t.obj?.kind === 'picker') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(pickerSprite(t.obj.job ? -1 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'planter') { const on = S.machinePowered(s, x, y) && S.planterCount(t.obj) > 0, full = !!t.obj.seeds?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(planterSprite(on ? Math.floor(now / 900) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'dcrate') { const u = CONFIG.scale, n = S.dcrateCount(t.obj), lv = n >= CONFIG.truck.crateHolds ? 2 : n > 0 ? 1 : 0; drawables.push({ y: y + 1, draw: () => ctx.drawImage(crateSprite(lv, true), sx + u, sy + T - 12 * u, 14 * u, 13 * u) }); }   // a crate: smaller than the porch crate, a box you can lift
       if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u); lamp(sx, sy, S.machineStatus(s, x, y), 16); } }); }
@@ -719,7 +740,14 @@ export class Game {
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();
-    if (!this.ui.openPanel && !this.action) { const t = this.eTarget(); if (t && !(this.hit && this.hit.kind === t.key)) { const u = CONFIG.scale, cs = Math.max(1, Math.round(u / 2)), bx = (t.b.x + t.b.w / 2) * T - cx, by = t.b.y * T - cy - 6 * u, a = 0.75 + 0.25 * Math.sin(now / 220); ctx.globalAlpha = a; ctx.fillStyle = '#3b2314'; ctx.fillRect(bx - 5 * cs, by - 6 * cs, 10 * cs, 11 * cs); ctx.fillStyle = '#f5e6c3'; ctx.fillRect(bx - 4 * cs, by - 5 * cs, 8 * cs, 9 * cs); drawText(ctx, 'E', bx - textWidth('E', cs) / 2, by - 4 * cs, '#3b2314', cs); ctx.globalAlpha = 1; } }   // the E marker: which station the key opens
+    { // the E marker (Build 88): a key cap over the station E opens. It fades in and out, slides when the station changes and
+      // bobs a whole pixel at a time, drawn on the world's pixel grid
+      const t = !this.ui.openPanel && !this.action ? this.eTarget() : null, show = t && !(this.hit && this.hit.kind === t.key), u = CONFIG.scale;
+      const M = this.eMark = this.eMark || { x: 0, y: 0, a: 0 }, dt = Math.min(0.1, (now - (M.t || now)) / 1000); M.t = now;
+      if (show) { const gx = t.b.x + t.b.w / 2, gy = t.b.y - 0.02; if (M.a < 0.05) { M.x = gx; M.y = gy; } else { const k = Math.min(1, dt * 14); M.x += (gx - M.x) * k; M.y += (gy - M.y) * k; } }
+      M.a = Math.max(0, Math.min(1, M.a + (show ? 6 : -6) * dt));
+      if (M.a > 0) { const bob = Math.round(Math.sin(now / 380)) * u; ctx.globalAlpha = M.a; ctx.drawImage(keyCapSprite(), Math.round((M.x * T - cx) / u - 4.5) * u, Math.round((M.y * T - cy) / u - 9) * u + bob, 9 * u, 9 * u); ctx.globalAlpha = 1; }
+    }
     if (this.netView) this.drawNetworks(ctx, s, w, cx, cy, T, x0, y0, x1, y1);
     // a sprinkler's reach: under the cursor while you hold one, or over a placed one you point at
     if (!this.ui.openPanel && this.mouse.inside && !s.carrying) {

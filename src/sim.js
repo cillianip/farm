@@ -256,7 +256,8 @@ export function tick(state, dtMinutes, opts = {}) {
   // sprinklers: while you are awake, a pour for any bed in reach the moment it dries below the band
   if (!opts.asleep) {
     sprinklerPass(state, dtMinutes); const hr0 = hourOf(state);
-    if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // pickers work once an hour
+    if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // planters work once an hour
+    pickerTick(state, dtMinutes);   // pickers work all the time you are awake, one crop per swing of the boom
     state.beltClock = (state.beltClock || 0) + dtMinutes; const step = CONFIG.power.belt.stepMinutes;   // the belts move a tile every few minutes
     if (state.beltClock >= step) { const n = Math.min(8, Math.floor(state.beltClock / step)); state.beltClock -= n * step; for (let i = 0; i < n; i++) beltStep(state); }
     dryerPass(state);   // after the belts, so what just arrived goes straight in
@@ -429,7 +430,7 @@ export function loadTruck(state) {
   if (!state.truck) return fail('No truck');
   const p = state.player, cx = Math.min(Math.max(p.x, TRUCK_SPOT.x), TRUCK_SPOT.x + TRUCK_SPOT.w), cy = Math.min(Math.max(p.y, TRUCK_SPOT.y), TRUCK_SPOT.y + TRUCK_SPOT.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.3) return fail('Too far');
-  if (!dcrateCount(state.carriedCrate)) return fail('Only full crates go on the truck');
+  if (!dcrateCount(state.carriedCrate)) return fail('That crate is empty: put something in it first');
   const bed = state.truck.bed = state.truck.bed || []; if (bed.length >= truckSlots(state)) return fail(`The truck is full: ${truckSlots(state)} crates`);
   bed.push({ items: state.carriedCrate.items }); state.carriedCrate = null; state.carrying = null;
   return { ok: true, msg: '', float: `Loaded ${bed.length} / ${truckSlots(state)}` };
@@ -960,7 +961,6 @@ export function toggleGenerator(state, x, y) {
 }
 // A hopper beside the crate (any of the eight tiles around it) tips into it when the cart comes.
 export const hopperByCrate = (x, y, state = null) => (!state?.truck && Math.abs(x - BUILDINGS.crate.x) <= 1 && Math.abs(y - BUILDINGS.crate.y) <= 1) || (!!state && N4.some(([dx, dy]) => isDcrate(tileAt(state.world, x + dx, y + dy))));
-const ripeBedNear = (state, x, y, R) => { let best = null; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = tileAt(state.world, x + dx, y + dy); if (t?.crop && !t.crop.dead && t.crop.growth >= 100 && (!best || (t.crop.ripeAt ?? 0) < (best.t.crop.ripeAt ?? 0))) best = { t, x: x + dx, y: y + dy }; } return best; };
 // Move crops from one pile to another, as much as fits under `cap`. Returns how many moved.
 function pour(from, to, cap) { let n = 0; while (from.length && heldCount(to) < cap) { const it = from[0], take = Math.min(cap - heldCount(to), it.qty); addHeld(to, { ...it, qty: take }); it.qty -= take; n += take; if (!it.qty) from.shift(); } return n; }
 // The belt network: every belt tile that runs, with its distance along the belt to the nearest powered hopper (a
@@ -1105,23 +1105,48 @@ export function describeSplit(state, x, y) {
   const what = o.rule === 'species' ? `${state.species[o.species]?.name || 'That species'} goes` : 'Dried goods go';
   return { title: 'Filter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `${what} ${word(A)}, everything else ${word(B)}. Click it with a crop, a seed or dried goods to sort by that; empty hands swap the sides.` };
 }
-// Once a game hour while you are awake: each powered picker takes a ripe crop (the one waiting longest) from the beds
-// in its reach into its basket and drops the basket on the belt beside it. Returns crops picked.
+// Once a game hour while you are awake: each powered planter plants (see planterPass), then the belts move.
 export function machinePass(state) {
-  const net = lineNet(state), idx = (x, y) => y * state.world.w + x; let picked = 0;
-  planterPass(state, net);
-  for (const { x, y, t } of machineTiles(state, 'picker')) {
-    if (!net.on.has(idx(x, y))) continue;
-    const P = machineTier(t.obj), held = t.obj.held = t.obj.held || [];
-    for (let n = 0; n < P.perHour && heldCount(held) < P.holds; n++) {
-      const bed = ripeBedNear(state, x, y, P.radius); if (!bed) break;
-      const g = state.species[bed.t.crop.speciesId]?.genome; if (!g) { bed.t.crop = null; continue; }
-      const produce = harvestYield(state, bed.t, bed.x, bed.y);
-      addHeld(held, produce); state.stats.harvests++; bed.t.crop.harvests++; clearReaped(bed.t, g); picked += produce.qty; if (SFX.length < 40) SFX.push({ type: 'snip', x, y });
+  planterPass(state, lineNet(state));
+  beltStep(state);
+}
+// The pickers (Build 88): a boom crane that works one crop at a time. When it is powered, switched on and has room, it
+// picks the ripe crop in its reach that has waited longest (not one another picker is already reaching for), swings the
+// boom out, cuts it at `cut` and is back with it at `done`, when it drops into the basket. A trip takes 60 / perHour game
+// minutes, so the tier's rate is the speed you can watch. Called every tick; a long tick runs the trips it covers.
+export const pickMinutes = o => 60 / machineTier(o).perHour;
+export const PICK_CUT = 0.55;   // the share of a trip spent reaching out and cutting; the rest carries it back
+export function pickerTick(state, dtMinutes = 0) {
+  const net = lineNet(state), w = state.world, now = state.minutes; let picked = 0;
+  const pickers = machineTiles(state, 'picker'), reserved = new Set(pickers.map(p => p.t.obj.job).filter(j => j && !j.taken).map(j => j.y * w.w + j.x));
+  for (const { x, y, t } of pickers) {
+    const o = t.obj, P = machineTier(o), held = o.held = o.held || [];
+    if (o.off || !net.on.has(y * w.w + x)) { if (o.job && !o.job.taken) o.job = null; continue; }   // no power: the boom folds back, a crop already cut is kept
+    for (let guard = 0; guard < 64; guard++) {
+      const j = o.job;
+      if (j) {
+        if (!j.taken) {
+          if (now < j.cut) break;
+          const bt = tileAt(w, j.x, j.y), c = bt?.crop; reserved.delete(j.y * w.w + j.x);
+          const g = c && !c.dead && c.growth >= 100 && state.species[c.speciesId]?.genome;
+          if (!g) { o.job = null; continue; }   // gone by the time the boom got there
+          const produce = harvestYield(state, bt, j.x, j.y); state.stats.harvests++; c.harvests++; clearReaped(bt, g);
+          j.taken = produce; if (SFX.length < 40) SFX.push({ type: 'snip', x: j.x, y: j.y });
+        }
+        if (now < j.done) break;
+        addHeld(held, j.taken); picked += j.taken.qty; o.job = null; o.lastDone = j.done; continue;
+      }
+      if (heldCount(held) >= P.holds) break;
+      let best = null; for (let dy = -P.radius; dy <= P.radius; dy++) for (let dx = -P.radius; dx <= P.radius; dx++) {
+        const bt = tileAt(w, x + dx, y + dy), c = bt?.crop; if (!c || c.dead || c.growth < 100 || reserved.has((y + dy) * w.w + x + dx)) continue;
+        if (!best || (c.ripeAt ?? 0) < (best.c.ripeAt ?? 0)) best = { c, x: x + dx, y: y + dy };
+      }
+      if (!best) break;
+      const dur = pickMinutes(o), start = Math.min(now, Math.max(now - dtMinutes, o.lastDone ?? -Infinity));   // straight on from the last trip when a long tick is caught up
+      o.job = { x: best.x, y: best.y, start, cut: start + dur * PICK_CUT, done: start + dur, taken: null }; reserved.add(best.y * w.w + best.x);
     }
   }
   if (picked) { const D = today(state); D.picked = (D.picked || 0) + picked; }
-  beltStep(state);   // the baskets go straight onto the belt
   return picked;
 }
 // The dryers, by the clock (so a night's sleep finishes what was drying): a batch of one kind takes dryHours of that species;
@@ -1303,7 +1328,7 @@ export function forkLoad(state) {
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.6) return fail('Too far');
   const bed = state.truck.bed = state.truck.bed || []; let n = 0;
   for (let i = f.crates.length - 1; i >= 0; i--) { const c = f.crates[i]; if (!dcrateCount(c)) continue; if (bed.length >= truckSlots(state)) break; bed.push({ items: c.items }); f.crates.splice(i, 1); n++; }
-  if (!n) return fail(f.crates.length ? (bed.length >= truckSlots(state) ? `The truck is full: ${truckSlots(state)} crates` : 'Only full crates go on the truck') : 'Nothing on the forks');
+  if (!n) return fail(f.crates.length ? (bed.length >= truckSlots(state) ? `The truck is full: ${truckSlots(state)} crates` : 'Those crates are empty: put something in them first') : 'Nothing on the forks');
   return { ok: true, msg: '', float: `Loaded ${n}: ${bed.length} / ${truckSlots(state)}`, n };
 }
 // ---------- the model farm ----------
