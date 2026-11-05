@@ -4,7 +4,7 @@ import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile , isCleared } from './world.js';
 import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
 import { UI } from './ui.js';
-import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, planterSprite, barrowSprite, forkliftSprite } from './render/sprites.js';
+import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, planterSprite, barrowSprite, barrowViewSprite, BARROW_W, BARROW_H, forkliftSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
@@ -23,7 +23,16 @@ const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
 
 // Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
 function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
-const FLY_SECS = 0.65;   // how long a crate takes to fly onto the truck
+const FLY_SECS = 0.65;
+// Build 92: where a pushed barrow stands, so its handle ends sit in the player's hands (in world pixels from the player's
+// position: the player sprite's feet are 3 below it, the hands 6 above it to the side, 4 above it facing up or down).
+// b.dx/b.dy: the sprite's top-left in tiles; b.x/b.y: the tile it is clicked and found by.
+function placeBarrow(b, p) {
+  const face = b.face = p.dir, side = face === 'left' || face === 'right', w = BARROW_W[side ? 'side' : face] / 16, h = BARROW_H[side ? 'side' : face] / 16;
+  b.dx = face === 'right' ? p.x + 7 / 16 : face === 'left' ? p.x - 7 / 16 - w : p.x - 0.5;
+  b.dy = side ? p.y + 3 / 16 - h : face === 'down' ? p.y - 4 / 16 : p.y - 4 / 16 - (h - 1 / 16);
+  b.x = b.dx + w / 2 - 0.5; b.y = b.dy + h - 1;
+}   // how long a crate takes to fly onto the truck
 
 export class Game {
   constructor(canvas) {
@@ -220,7 +229,7 @@ export class Game {
     const CP = S.objectPos(s, 'compost');
     if (CP && s.carrying !== 'compost') out.push({ kind: 'compost', near: { ...CP, w: 1, h: 1 }, rect: [CP.x * 16, (CP.y + 1) * 16 - 20 + 1, 16, 19], label: (s.compost.ready ? (it && it.kind !== 'fert' ? 'Compost ready: empty hands to take it' : 'Take the compost') : s.compost.running ? 'Rotting down, ready by morning' : it && S.COMPOSTABLE.includes(it.kind) ? (S.compostCount(s) >= CONFIG.fertiliser.compostMax ? 'The bin is full' : 'Drop it in') : 'Compost bin') + '  (E: open, hold: pick up)' });
     if (s.forklift && !s.market?.at) { const F = s.forklift; if (F.mounted) out.push({ kind: 'forklift', x: Math.round(F.x), y: Math.round(F.y), near: { x: s.player.x - 0.5, y: s.player.y - 0.5, w: 1, h: 1 }, rect: [Math.round(F.x * 16), Math.round(F.y * 16) - 4, 16, 20], label: 'Get off  (E)' }); else out.push({ kind: 'forklift', x: Math.round(F.x), y: Math.round(F.y), near: { x: F.x, y: F.y, w: 1, h: 1 }, rect: [Math.round(F.x * 16), Math.round(F.y * 16) - 4, 16, 20], label: F.crates.length ? `Forklift · ${F.crates.length} on the forks. Get on` : 'Get on the forklift' }); }
-    if (s.barrow && !s.market?.at) { const b = s.barrow, bx = Math.round(b.x), by = Math.round(b.y); out.push({ kind: 'barrow', x: bx, y: by, near: { x: b.x, y: b.y, w: 1, h: 1 }, rect: [Math.round(b.x * 16) - 1, Math.round(b.y * 16) + 1, 18, 14], label: b.held ? (it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Let go of the barrow  (E: open)') : it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Take the handles  (E: open)' }); }
+    if (s.barrow && !s.market?.at) { const b = s.barrow, bx = Math.round(b.x), by = Math.round(b.y); out.push({ kind: 'barrow', x: bx, y: by, near: { x: b.x, y: b.y, w: 1, h: 1 }, rect: [Math.round((b.dx ?? b.x) * 16), Math.round((b.dy ?? b.y + 1 - 14 / 16) * 16), b.face === 'up' || b.face === 'down' ? 16 : 20, b.face === 'up' ? 26 : 14], label: b.held ? (it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Let go of the barrow  (E: open)') : it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Take the handles  (E: open)' }); }
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
     for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Field chest') + '  (E: open, hold: pick up)' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
@@ -494,7 +503,7 @@ export class Game {
       this.rollV = 0; if (!this.jolt) { this.jolt = 0.18; this.sound.play('drop'); }
     }
     if (this.state.forklift?.mounted) { this.state.forklift.x = p.x - 0.5; this.state.forklift.y = p.y - 0.5; }   // the forklift is under you
-    if (this.state.barrow?.held) { const b = this.state.barrow, ahead = { up: [0, -0.9], down: [0, 0.9], left: [-0.9, 0], right: [0.9, 0] }[p.dir]; const tx = p.x + ahead[0] - 0.5, ty = p.y + ahead[1] - 0.5; b.x += (tx - b.x) * Math.min(1, dt * 6); b.y += (ty - b.y) * Math.min(1, dt * 6); }   // the barrow is pushed a step ahead of you
+    if (this.state.barrow?.held) placeBarrow(this.state.barrow, p);   // Build 92: in your hands, the way you face
     this.printDist = (this.printDist || 0) + Math.hypot(p.x - x0, p.y - y0);   // a print every half tile or so, feet alternating
     if (this.printDist >= 0.55) { this.printDist = 0; const side = p.dir === 'left' || p.dir === 'right'; this.leftFoot = !this.leftFoot; this.prints.push({ x: p.x + (this.leftFoot ? -0.14 : 0.14) * (side ? 0.4 : 1), y: p.y + (side ? (this.leftFoot ? -0.06 : 0.06) : 0), t: 0 }); if (this.prints.length > 64) this.prints.shift(); }
     this.walkT += dt * Math.max(0.5, wf); this.moving = true;
@@ -742,7 +751,12 @@ export class Game {
     } });
     { const BP = S.objectPos(s, 'bench'); if (BP && s.carrying !== 'bench') { const st = s.breeder.running ? 2 : s.breeder.a || s.breeder.b ? 1 : 0; drawables.push({ y: BP.y + 1, draw: () => { ctx.drawImage(benchSprite(st, Math.floor(now / 350) % 2), BP.x * T - cx, (BP.y + 1) * T - cy - 28 * CONFIG.scale, T, 28 * CONFIG.scale); if ((s.breeder.result || s.breeder.result2)) { const sp = s.species[(s.breeder.result || s.breeder.result2).species], u = CONFIG.scale; if (sp) ctx.drawImage(seedIcon(Math.round(sp.genome.hue1), sp.genome.sat1, sp.genome.light1), BP.x * T - cx + 3 * u, (BP.y + 1) * T - cy - 24 * u, 10 * u, 8 * u); } } }); } }
     { const CP = S.objectPos(s, 'compost'); if (CP && s.carrying !== 'compost') { const lv = S.compostLevel(s); drawables.push({ y: CP.y + 1, draw: () => ctx.drawImage(compostSprite(lv), CP.x * T - cx, (CP.y + 1) * T - cy - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); } }
-    if (s.barrow) { const b = s.barrow, u = CONFIG.scale, full = b.slots.slots.some(Boolean); drawables.push({ y: b.y + 1, draw: () => ctx.drawImage(barrowSprite(full), Math.round(b.x * T) - cx - u, Math.round((b.y + 1) * T) - cy - 14 * u, 18 * u, 14 * u) }); }
+    if (s.barrow) {   // Build 92: drawn in front of you pushing toward the camera, behind you pushing away, beside you otherwise
+      const b = s.barrow, u = CONFIG.scale, full = b.slots.slots.some(Boolean), face = b.face || 'right', side = face === 'left' || face === 'right', view = side ? 'side' : face;
+      if (b.dx == null) { b.dx = b.x + 0.5 - BARROW_W[view] / 32; b.dy = b.y + 1 - BARROW_H[view] / 16; }
+      const sortY = b.held ? s.player.y + (face === 'down' ? 0.001 : -0.001) : b.dy + (BARROW_H[view] - 3) / 16;
+      drawables.push({ y: sortY, draw: () => drawFacing(ctx, barrowViewSprite(view, !!b.held, full), Math.round(b.dx * T) - cx, Math.round(b.dy * T) - cy, BARROW_W[view] * u, BARROW_H[view] * u, face === 'left') });
+    }
     if (s.forklift && !s.forklift.mounted) { const F = s.forklift, u = CONFIG.scale; drawables.push({ y: F.y + 1, draw: () => { const left = F.face === 'left'; drawFacing(ctx, forkliftSprite(), Math.round(F.x * T) - cx, Math.round((F.y + 1) * T) - cy - 20 * u, T, 20 * u, left); for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), Math.round(F.x * T) - cx + (left ? -4 : 11) * u, Math.round((F.y + 1) * T) - cy - 8 * u - i * 6 * u, 9 * u, 8 * u); } }); }
     { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
     const Cr = BUILDINGS.crate, crateLevel = S.crateCount(s) >= s.crate.capacity ? 2 : S.crateCount(s) > 0 ? 1 : 0;
@@ -769,7 +783,7 @@ export class Game {
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw();
     { // the E marker (Build 88): a key cap over the station E opens. It fades in and out and slides when the station changes
-      const t = !this.ui.openPanel && !this.action ? this.eTarget() : null, show = t && !(this.hit && this.hit.kind === t.key), u = CONFIG.scale;
+      const t = !this.ui.openPanel && !this.action ? this.eTarget() : null, show = t && !(this.hit && this.hit.kind === t.key) && !(t.key === 'barrow' && this.state.barrow?.held), u = CONFIG.scale;
       const M = this.eMark = this.eMark || { x: 0, y: 0, a: 0 }, dt = Math.min(0.1, (now - (M.t || now)) / 1000); M.t = now;
       if (show) { const gx = t.b.x + t.b.w / 2, gy = t.b.y - 0.02; if (M.a < 0.05) { M.x = gx; M.y = gy; } else { const k = Math.min(1, dt * 14); M.x += (gx - M.x) * k; M.y += (gy - M.y) * k; } }
       M.a = Math.max(0, Math.min(1, M.a + (show ? 6 : -6) * dt));
@@ -837,7 +851,7 @@ export class Game {
     drawables.push({ y: p.y, draw: () => {
       ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(p.x * T) - cx - 10, Math.round(p.y * T) - cy + 6, 20, 5);
       const heldNow = this.action ? this.actionItem() : this.hotbarItem(), act = this.action?.type;
-      const pose = s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
+      const pose = s.barrow?.held ? 'push' : s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
       const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
       if (s.forklift?.mounted) {   // on the forklift: the truck under you, the crates stacked on the forks, you sat up on it
         const F = s.forklift, left = F.face === 'left', jx = this.jolt ? Math.round(Math.sin(this.jolt * 90) * u0) : 0, fx = px + jx;
@@ -858,8 +872,8 @@ export class Game {
         ctx.drawImage(img, px, py - h + 4 * CONFIG.scale + bob, T, h);
       }
       const held = heldNow;
-      if (!this.action && !s.carrying && held?.kind === 'tool') ctx.drawImage(heldOverlay(held.tool, p.dir), px, py + bobPx, T, PLAYER_H * CONFIG.scale);
-      else if (!this.action && !s.carrying && held && held.kind !== 'tool' && p.dir !== 'up') {   // in the extended hand
+      if (!this.action && !s.carrying && !s.barrow?.held && held?.kind === 'tool') ctx.drawImage(heldOverlay(held.tool, p.dir), px, py + bobPx, T, PLAYER_H * CONFIG.scale);
+      else if (!this.action && !s.carrying && !s.barrow?.held && held && held.kind !== 'tool' && p.dir !== 'up') {   // in the extended hand
         const img = itemSprite(held, s.species, true);
         if (img) { const u = CONFIG.scale; if (p.dir === 'down') { ctx.drawImage(img, px + 4 * u, py + 12 * u + bobPx, 8 * u, 8 * u); ctx.fillStyle = '#f1c7a1'; ctx.fillRect(px + 4 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillRect(px + 10 * u, py + 17 * u + bobPx, 2 * u, 2 * u); ctx.fillStyle = '#d9a784'; ctx.fillRect(px + 4 * u, py + 18 * u + bobPx, 2 * u, u); ctx.fillRect(px + 10 * u, py + 18 * u + bobPx, 2 * u, u); } else { const hx = p.dir === 'left' ? px - 4 * u : px + 12 * u; ctx.drawImage(img, hx, py + 9 * u + bobPx, 8 * u, 8 * u); } }
       }

@@ -301,7 +301,7 @@ export function birdDrop(state) {
 export function fillCan(state) { if (state.can.water < state.can.capacity) today(state).fills++; state.can.water = state.can.capacity; return { ok: true, msg: '' }; }
 export function takeTool(state, tool) {
   if (!state.rack[tool]) return fail('The rack is empty');
-  if (addItem(state.inventory, { kind: 'tool', tool, qty: 1 })) return fail('Bag is full');
+  if (addItem(state.inventory, { kind: 'tool', tool, qty: 1 })) return fail('Pockets full');
   state.rack[tool] = false;
   return { ok: true, msg: tool === 'hoe' ? 'Took the hoe' : 'Took the watering can' };
 }
@@ -697,7 +697,7 @@ export function harvest(state, t, x, y) {
   today(state).harvested++;
   const produce = harvestYield(state, t, x, y), count = produce.qty;
   const leftP = addItem(state.inventory, produce);
-  if (leftP === count && count) { state.energy += CONFIG.energy.harvest; return fail('Bag is full'); }
+  if (leftP === count && count) { state.energy += CONFIG.energy.harvest; return fail('Pockets full'); }
   state.stats.harvests++;
   c.harvests++;
   clearReaped(t, sp.genome);
@@ -799,9 +799,9 @@ export function takeSeeds(state) {
   for (const R of ready) {
     const sp = state.species[R.item.species], n = R.item.seeds ?? seedsFromProduce(sp);
     const left = addItem(state.inventory, { kind: 'seed', species: sp.id, qty: n });
-    if (left === n) return got ? { ok: true, msg: 'Bag is full', float: `+${got} seeds`, seeds: got } : fail('Bag is full');
+    if (left === n) return got ? { ok: true, msg: 'Pockets full', float: `+${got} seeds`, seeds: got } : fail('Pockets full');
     got += n - left; names.add(sp.name);
-    if (left) { R.item.seeds = left; return { ok: true, msg: 'Bag is full', float: `+${got} seeds`, seeds: got }; }
+    if (left) { R.item.seeds = left; return { ok: true, msg: 'Pockets full', float: `+${got} seeds`, seeds: got }; }
     R.item = null; R.readyAt = null; R.startedAt = null;
   }
   return { ok: true, msg: '', float: `+${got} ${names.size === 1 ? [...names][0] + ' ' : ''}seeds`, seeds: got };

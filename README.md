@@ -299,3 +299,5 @@ pace of the whole economy.
 **Build 90.** The truck's cargo box is open at the top with the tailgate down at the back, drawn in two layers so the crates stand inside it and only their tops show over the near wall. The far row fills first, from the cab back. A crate you load, by hand or off the forks, arcs to the open tailgate and slides along the floor to its place. Produce on belts is smaller and lies flat. The E key cap is smaller.
 
 **Build 91.** The E key cap is redrawn at half-pixel detail with a margin round the E and the key's side below it, and it sits in the world like the ground does, so it moves exactly with the map as you walk; no more bob.
+
+**Build 92.** The wheelbarrow is redrawn in three views (side, pushed toward you, pushed away), standing on its tyre and legs with its shadow under them; pushed, its legs lift and the handles come up to your hands. It sits exactly in your hands the way you face, no lag, and the farmer has a pushing pose with both hands on the handles (the tool or crop in hand is put away while pushing). The E marker no longer sits on the barrow you are pushing. "Bag is full" now says "Pockets full".

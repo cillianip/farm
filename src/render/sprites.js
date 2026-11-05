@@ -725,15 +725,46 @@ export function dryerSprite(frame = 0, full = false) {
   });
 }
 // The wheelbarrow (18×14): a tray on a frame with one wheel at the front and two handles behind; `full` shows a load.
-export function barrowSprite(full = false) {
-  return sprite(`barrow${full ? 'f' : ''}`, 18, 14, P => {
-    P.rect(2, 12, 14, 2, 'rgba(30,20,10,0.25)');
-    P.rect(4, 3, 11, 6, PAL.metalDark); P.rect(5, 4, 9, 4, '#6f7a8a'); P.rect(5, 4, 9, 1, PAL.metalLight);   // the tray
-    P.rect(0, 5, 4, 1, PAL.woodDark); P.rect(0, 7, 4, 1, PAL.woodDark); P.px(0, 5, PAL.wood); P.px(0, 7, PAL.wood);   // handles
-    P.rect(6, 9, 1, 2, PAL.metalDark); P.rect(12, 9, 1, 2, PAL.metalDark);                                   // legs
-    P.disc(15, 10, 2, '#2a2a2a'); P.px(15, 10, PAL.metalLight);                                             // the wheel
-    if (full) { P.px(6, 4, '#e86a6a'); P.px(8, 3, '#f6c453'); P.px(10, 4, '#8fd36a'); P.px(12, 3, '#e8a23b'); }
+// Build 92: the barrow in three views, its tyre and legs on the ground row (13) with the shadow right under them.
+// 'side' (20×14, facing right; the game mirrors it for left): handles back to the hands at row 5 when pushed (lifted:
+// legs off the ground), sloping down to rest when parked. 'down' (16×14): pushed toward you, the wheel nearest, the
+// handles rising behind the tub to the hands at its top row. 'up' (16×14): pushed away, the handles nearest at its
+// bottom row in the hands, the tub beyond, the wheel peeping over the far rim.
+export const BARROW_W = { side: 20, down: 16, up: 16 }, BARROW_H = { side: 14, down: 14, up: 26 };   // pushed away, the long handles carry the tub past your hat
+export function barrowViewSprite(view = 'side', lifted = false, full = false) {
+  return sprite(`barrow4:${view}:${lifted ? 1 : 0}${full ? 1 : 0}`, BARROW_W[view], BARROW_H[view], P => {
+    const tubE = PAL.metalDark, tubF = '#6f7a8a', inside = '#3e4450', crops = ['#e86a6a', '#f6c453', '#8fd36a', '#e8a23b'];
+    const handle = (x0, y0, x1, y1) => { P.line(x0, y0, x1, y1, PAL.woodDark); P.line(x0, y0 - 1, x1, y1 - 1, PAL.wood); };
+    if (view === 'side') {
+      P.rect(14, 13, 5, 1, 'rgba(30,20,10,0.3)'); if (!lifted) P.rect(8, 13, 3, 1, 'rgba(30,20,10,0.3)');   // shadows under the tyre and the leg
+      if (lifted) handle(0, 6, 6, 5); else handle(0, 11, 6, 6);
+      P.rect(9, 9, 1, lifted ? 2 : 4, tubE);                                                   // the leg: on the ground when parked
+      for (let r = 0; r < 6; r++) { const y = 3 + r, xl = 5 + Math.round(r * 0.8), xr = 17 - Math.round(r * 0.6); P.rect(xl, y, xr - xl + 1, 1, tubE); if (r > 0 && r < 5) P.rect(xl + 1, y, xr - xl - 1, 1, tubF); }
+      P.rect(5, 3, 13, 1, PAL.metalLight);
+      P.line(13, 8, 16, 11, tubE);                                                              // the wheel's strut
+      P.disc(16, 11, 2, '#2a2a2a'); P.px(16, 11, PAL.metalLight); P.px(16, 13, '#1c1c1c');     // the tyre on the ground
+      if (full) crops.forEach((c, i) => P.px(8 + i * 2, 2 + (i % 2), c));
+    } else if (view === 'down') {
+      P.rect(3, 13, 10, 1, 'rgba(30,20,10,0.3)');
+      handle(3, 1, 4, 5); handle(12, 1, 11, 5);                                                 // up behind the tub to the hands
+      P.rect(4, 10, 1, lifted ? 2 : 4, tubE); P.rect(11, 10, 1, lifted ? 2 : 4, tubE);
+      for (let r = 0; r < 7; r++) { const y = 4 + r, xl = 1 + Math.round(r * 0.5), xr = 14 - Math.round(r * 0.5); P.rect(xl, y, xr - xl + 1, 1, tubE); if (r > 0 && r < 6) P.rect(xl + 1, y, xr - xl - 1, 1, r < 3 ? inside : tubF); }
+      P.rect(1, 4, 14, 1, PAL.metalLight);
+      P.rect(7, 10, 2, 4, '#2a2a2a'); P.px(7, 11, PAL.metalLight);                             // the tyre, head on
+      if (full) crops.forEach((c, i) => P.px(4 + i * 2, 5 + (i % 2), c));
+    } else {
+      P.rect(2, 9, 12, 2, 'rgba(30,20,10,0.22)');
+      P.rect(7, 0, 2, 3, '#2a2a2a');                                                            // the wheel beyond the rim
+      for (let r = 0; r < 7; r++) { const y = 2 + r, xl = 4 - Math.round(r * 0.5), xr = 11 + Math.round(r * 0.5); P.rect(xl, y, xr - xl + 1, 1, tubE); if (r > 0 && r < 6) P.rect(xl + 1, y, xr - xl - 1, 1, r < 4 ? inside : tubF); }
+      P.rect(4, 2, 8, 1, PAL.metalLight);
+      P.rect(4, 9, 1, lifted ? 1 : 3, tubE); P.rect(11, 9, 1, lifted ? 1 : 3, tubE);
+      handle(4, 9, 3, 25); handle(11, 9, 12, 25);                                                // toward you, into the hands
+      if (full) crops.forEach((c, i) => P.px(5 + i * 2, 4 + (i % 2), c));
+    }
   }, 'rgba(40,25,15,0.9)');
+}
+export function barrowSprite(full = false) {   // the catalogue's picture
+  return barrowViewSprite('side', false, full);
 }
 // The forklift (16×20): a small yellow lift truck seen from the front-left: a mast, two forks at the foot, a seat and a roll cage.
 export function forkliftSprite() {
@@ -798,6 +829,9 @@ export function figureSprite(C, key, dir, frame, pose = 'idle') {
     } else if (pose === 'plant') {
       if (!side) { rect(3, 10 + bob, 1, 3, C.shirt); px(3, 13 + bob, C.skin); rect(12, 10 + bob, 1, 5, C.shirtDark); px(12, 15 + bob, C.skin); }
       else { rect(3 + step, 10 + bob, 2, 3, C.shirtDark); px(3 + step, 13 + bob, C.skin); rect(11, 11 + bob, 1, 4, C.shirt); px(12, 15 + bob, C.skin); px(13, 15 + bob, C.skin); }
+    } else if (pose === 'push') {   // both hands forward on the barrow's handles
+      if (!side) { rect(3, 10 + bob, 1, 3, C.shirt); px(3, 13 + bob, C.skin); rect(12, 10 + bob, 1, 3, C.shirtDark); px(12, 13 + bob, C.skin); }
+      else { rect(10, 11, 5, 1, C.shirtDark); px(14, 11, C.skinDark); rect(11, 12, 4, 1, C.shirt); px(15, 12, C.skin); px(15, 11, C.skin); }
     } else if (pose === 'hold') {
       if (dir === 'down') { rect(3, 10 + bob, 1, 3, C.shirt); px(3, 13 + bob, C.skin); rect(12, 10 + bob, 1, 3, C.shirtDark); px(12, 13 + bob, C.skin); rect(7, 13 + bob, 2, 1, C.skin); }   // the near hand, arm foreshortened
       else if (dir === 'up') { rect(3, 10 + bob, 1, 3, C.shirt); px(3, 13 + bob, C.skin); rect(12, 10 + bob, 1, 3, C.shirtDark); px(12, 13 + bob, C.skin); }
