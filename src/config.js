@@ -119,8 +119,10 @@ export const CONFIG = {
   // The truck (Build 76) stands in the bay by day with crate slots on its bed; that is the night's capacity. The haulier's
   // crates are free: each morning the truck leaves as many empties on the gravel as it has slots. Belts and hoppers fill them;
   // a full crate is lifted and carried to the truck by hand (the forklift comes later). Bigger trucks replace the small one.
+  // Build 96: price grows a little slower than the load: the maxed porch crate cost 285 for 48, the small truck 540 for 96,
+  // the medium 1000 for 192, the large 1400 for 288. From the medium up the bed is too high to load by hand: the forklift does it.
   // Build 95: a crate holds 24, so the small truck (4 crates, 96) carries twice the fully extended porch crate (48).
-  truck: { crateHolds: 24, emptiesOut: 4, tiers: [{ name: 'Small truck', slots: 4, price: 900 }, { name: 'Medium truck', slots: 8, price: 1500 }, { name: 'Large truck', slots: 12, price: 2800 }] },
+  truck: { crateHolds: 24, emptiesOut: 4, tiers: [{ name: 'Small truck', slots: 4, price: 540 }, { name: 'Medium truck', slots: 8, price: 1000 }, { name: 'Large truck', slots: 12, price: 1400 }] },
   // What drying does to a price: a dried crop is worth its fresh price × (base + sugar × the sugar gene), so a bland crop loses
   // by drying and a sweet one doubles; stars count for half as much once it is dried (the product is the thing, not the fruit).
   // Dried goods are their own line at the cart's buyer (their own `demand.full`) and the market's shoppers ask for them by name.
@@ -145,7 +147,8 @@ export const CONFIG = {
     wakeFloor: 0.4,                                                         // waking energy = max × (floor + (1 − floor) × lower of hunger/thirst)
     eatEnergyPerHunger: 0.6, drinkEnergy: 5,                                // food gives energy right away (fraction of the hunger it restores); a drink gives a little
     eatBase: 15, eatPerSize: 35 },                                          // hunger restored by one produce: base + size × perSize
-  player: { speed: 5.5, reach: 1.7, carrySpeed: 0.55, pickUpSeconds: 0.5,     // tiles per second, tiles; carrying slows you; hold LMB this long to lift
+  // crateSpeed (Build 96): a delivery crate slows you from the first number (empty) to the second (full)
+  player: { speed: 5.5, reach: 1.7, carrySpeed: 0.55, crateSpeed: [0.5, 0.3], pickUpSeconds: 0.5,     // tiles per second, tiles; carrying slows you; hold LMB this long to lift
     heavyAt: 40, heavySpeed: 0.75 },                                           // this many crops in your pockets and you walk slower
   inventory: { slots: 5, hotbar: 5, stack: 99, cropStack: [12, 24, 36], fertStack: 10 },   // pockets hold few crops (Build 85): a basket raises the stack; seeds are light and stack to 99; chests and counters stack to 99
   basket: { prices: [30, 90] },                      // the basket and the big basket: the pocket stack for crops, cropStack[1] then [2]

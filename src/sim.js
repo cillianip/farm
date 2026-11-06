@@ -440,10 +440,14 @@ export function loadTruck(state) {
   const TS = truckSpotOf(state), p = state.player, cx = Math.min(Math.max(p.x, TS.x), TS.x + TS.w), cy = Math.min(Math.max(p.y, TS.y), TS.y + TS.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.3) return fail('Too far');
   if (!dcrateCount(state.carriedCrate)) { state.carriedCrate = null; state.carrying = null; return { ok: true, msg: '', float: 'Empty crate handed back', back: true }; }   // the haulier takes an empty back
+  if (!handLoads(state)) return fail(`The ${truckTier(state).name.toLowerCase()}'s bed is too high to lift a crate onto by hand: load it with the forklift`);
   const bed = state.truck.bed = state.truck.bed || []; if (bed.length >= truckSlots(state)) return fail(`The truck is full: ${truckSlots(state)} crates`);
   bed.push({ items: state.carriedCrate.items }); state.carriedCrate = null; state.carrying = null;
   return { ok: true, msg: '', float: `Loaded ${bed.length} / ${truckSlots(state)}` };
 }
+export const handLoads = state => !(state.truck?.level > 0);   // only the small truck's bed is low enough to load by hand
+// walking pace while carrying: a delivery crate gets heavier as it fills
+export function carryFactor(state) { if (!state.carrying) return 1; if (state.carrying !== 'dcrate' || !state.carriedCrate) return CONFIG.player.carrySpeed; const [a, b] = CONFIG.player.crateSpeed, f = Math.min(1, dcrateCount(state.carriedCrate) / CONFIG.truck.crateHolds); return a + (b - a) * f; }
 export const inBayOf = (state, x, y) => inBay(x, y, bayLevel(state));
 export const baySpotCount = state => baySpots(state.world, bayLevel(state));
 export const bayCrates = state => dcrateTiles(state).filter(({ x, y }) => inBayOf(state, x, y));

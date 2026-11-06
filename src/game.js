@@ -495,7 +495,7 @@ export class Game {
     if (fork) this.state.forklift.face = p.dir;   // Build 94: the forklift faces the way you drive, up and down too
     // Build 87: wheels take a moment to get going, the forklift longer than the barrow; feet don't
     this.rollV = wheels ? Math.min(1, (this.rollV || 0) + dt / (fork ? 0.5 : 0.3)) : 1;
-    const wf = S.walkFactor(this.state), sp = (0.3 + 0.7 * this.rollV) * CONFIG.player.speed * dt * (this.state.carrying ? CONFIG.player.carrySpeed : 1) * (this.state.barrow?.held ? CONFIG.barrow.speed : 1) * (this.state.forklift?.mounted ? CONFIG.forklift.speed : 1) * wf;
+    const wf = S.walkFactor(this.state), sp = (0.3 + 0.7 * this.rollV) * CONFIG.player.speed * dt * S.carryFactor(this.state) * (this.state.barrow?.held ? CONFIG.barrow.speed : 1) * (this.state.forklift?.mounted ? CONFIG.forklift.speed : 1) * wf;
     const w = this.state.world, rad = 0.3;
     const free = this.state.market?.at ? ((x, y) => M.walkable(x, y)) : (x, y) => !isBlockedAt(w, x - rad, y - rad) && !isBlockedAt(w, x + rad, y - rad) && !isBlockedAt(w, x - rad, y + rad) && !isBlockedAt(w, x + rad, y + rad);
     const x0 = p.x, y0 = p.y;

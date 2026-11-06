@@ -1301,7 +1301,11 @@ await test('the truck: sold once the crate is fully extended; it parks on the tr
   assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); s.player.x = W.TRUCK_SPOT.x + 1; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.loadTruck(s); assert.ok(r.ok && r.back && !s.carrying && !s.truck.bed.length, JSON.stringify(r));
   assert.equal(T2.tiers[0].slots * T2.crateHolds, 2 * (CONFIG.crate.capacity + 3 * 12), 'the small truck carries twice the fully extended porch crate'); assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
   // parcels come to the sign now
+  // Build 96: crates get heavier as they fill; the medium truck needs the forklift, and only the forklift loads it
+  s.carrying = 'dcrate'; s.carriedCrate = { items: [] }; const e0 = S.carryFactor(s); s.carriedCrate.items = [{ species: carrot.id, q: 0, qty: T2.crateHolds }]; assert.ok(S.carryFactor(s) < e0 && e0 < CONFIG.player.carrySpeed, 'a full crate is slower'); s.carrying = null; s.carriedCrate = null;
+  assert.equal(T2.tiers[0].price, 540); s.money = 1e6; assert.ok(!placeOrder(s, 'truck1').ok, 'needs the forklift first'); s.forklift = S.makeForklift(b.x0, b.y0 + 3);
   assert.ok(placeOrder(s, 'truck1').ok); S.sleep(s); assert.ok(s.parcels?.length); S.collectParcels(s); assert.equal(s.truck.level, 1); assert.equal(S.truckSlots(s), T2.tiers[1].slots);
+  s.carrying = 'dcrate'; s.carriedCrate = { items: [{ species: carrot.id, q: 0, qty: 5 }] }; s.player.x = S.truckSpotOf(s).x + 1; s.player.y = S.truckSpotOf(s).y + 2.5; r = S.loadTruck(s); assert.ok(!r.ok && /forklift/.test(r.msg), r.msg); s.carrying = null; s.carriedCrate = null;
   // pickers take real amounts: a Picker III takes up to 16 an hour
   assert.equal(CONFIG.power.picker.tiers[2].perHour, 16); assert.equal(CONFIG.power.picker.tiers[0].perHour, 4);
 });

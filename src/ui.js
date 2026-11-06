@@ -562,9 +562,9 @@ export class UI {
         ['1 · Crates are free', 'Click any open gravel in the loading bay, beside the truck, to set a crate down. Set as many as you like; nothing to buy. Too many? The hoe lifts an empty one away, or carry it to the truck and it goes back.'],
         ['2 · Fill a crate', `A crate holds ${holds}. Click it with crops or dried goods in hand. A hopper standing beside a crate tips into it as the belt runs, and a belt can end at a crate.`],
         ['3 · Lift it', 'Hold the click on a crate to pick it up. You walk slower carrying it. Any crate with something in it can go on the truck.'],
-        ['4 · Load the truck', `Carry it over and click the truck: it goes in over the tailgate. Your ${S.truckTier(s).name.toLowerCase()} takes ${n} crates.`],
+        ['4 · Load the truck', S.handLoads(s) ? `Carry it over and click the truck: it goes in over the tailgate. Your ${S.truckTier(s).name.toLowerCase()} takes ${n} crates. A full crate is heavy: you walk slowly with it.` : `Your ${S.truckTier(s).name.toLowerCase()} takes ${n} crates, and its bed is too high to lift one onto by hand: get on the forklift, lift crates onto the forks and click the truck.`],
         ['5 · It leaves at night', 'The truck drives off overnight with what is on its bed and pays for it; you see it under Sold last night. The board by the bay shows tonight\'s count and money. Crates left on the gravel wait for tomorrow.'],
-        ['6 · Later', 'The forklift lifts three crates at a time and loads them all with one click. A bigger truck carries more.'],
+        S.handLoads(s) ? ['6 · Later', 'The forklift lifts three crates at a time and loads them all with one click. The medium and large trucks carry more, but their beds are too high for hands: only the forklift loads them.'] : ['6 · The forklift', 'It lifts three crates at a time and loads them all with one click. Drive it up to a crate and click to lift.'],
       ];
       for (const [h, t] of steps) { body.appendChild(el('div', 'pc-sec', h)); body.appendChild(el('div', 'pc-note', t)); }
       const ok = el('button', 'primary', 'Got it'); ok.onclick = () => this.closePanel(); body.appendChild(ok);
