@@ -24,6 +24,7 @@ const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
 // Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
 function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
 const FLY_SECS = 0.65;
+const FORK = { lift: 0.4, rise: 0.4, load: 0.85 };   // Build 98: seconds the forks take to lift a crate, to rise to the truck's bed, and the whole load
 // Build 92: where a pushed barrow stands, so its handle ends sit in the player's hands (in world pixels from the player's
 // position: the player sprite's feet are 3 below it, the hands 6 above it to the side, 4 above it facing up or down).
 // b.dx/b.dy: the sprite's top-left in tiles; b.x/b.y: the tile it is clicked and found by.
@@ -117,7 +118,7 @@ export class Game {
     const hb = hotbarRects(this.vw, this.vh), slot = hb.slots.findIndex(r => this.mouse.x >= r.x && this.mouse.x < r.x + r.w && this.mouse.y >= r.y && this.mouse.y < r.y + r.h);
     if (slot >= 0) { this.drag = { from: slot, x0: this.mouse.x, y0: this.mouse.y, moved: false }; return; }
     if (this.state.carrying) return this.placeCarried();
-    if (this.hit && this.hit.kind === 'dcrate' && this.state.forklift?.mounted) { const r = S.forkLift(this.state, this.hit.x, this.hit.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, this.hit.x + 0.5, this.hit.y - 0.2, '#f6c453'); this.sound.play('pickup'); this.save(); } return; }
+    if (this.hit && this.hit.kind === 'dcrate' && this.state.forklift?.mounted) { const r = S.forkLift(this.state, this.hit.x, this.hit.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.forkAnim = { kind: 'lift', t: 0 }; this.addFloat(r.float, this.hit.x + 0.5, this.hit.y - 0.2, '#f6c453'); this.sound.play('pickup'); this.save(); } return; }
     if (this.hit && (MOVABLE.includes(this.hit.kind) || this.hit.kind === 'fchest' || this.hit.kind === 'dcrate') && !this.action && !this.ui.openPanel) { this.press = { t: 0, hit: this.hit }; return; }
     this.click();
   }
@@ -235,7 +236,7 @@ export class Game {
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.obj?.kind === 'filter') out.push({ kind: 'filter', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it && (it.kind === 'crop' || it.kind === 'seed') ? `Set the filter to ${s.species[it.species]?.name || 'this'}` : it?.kind === 'product' ? 'Set the filter to dried goods' : it ? 'Filter' : 'Swap the filter\'s sides' }); } }
     for (const { x, y, t } of S.dcrateTiles(s)) { const n = S.dcrateCount(t.obj), fullD = n >= CONFIG.truck.crateHolds; out.push({ kind: 'dcrate', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 2, (y + 1) * 16 - 16, 20, 16], label: s.forklift?.mounted ? (s.forklift.crates.length >= CONFIG.forklift.forks ? 'The forks are full' : `Lift onto the forks (${s.forklift.crates.length} / ${CONFIG.forklift.forks})`) : (it && (it.kind === 'crop' || it.kind === 'product') ? (fullD ? 'Crate is full' : 'Drop in the crate') : (it?.tool === 'hoe' && !n ? 'Lift the crate away' : `Crate · ${n} / ${CONFIG.truck.crateHolds}`)) + '  (hold: lift)' }); }
-    if (s.truck) { const Ts = S.truckSpotOf(s), tier = S.truckTier(s), A = truckArt(s.truck.level); out.push({ kind: 'truck', near: Ts, rect: [(Ts.x + Ts.w) * 16 - A.w, (Ts.y + Ts.h) * 16 - A.h, A.w, A.h], label: s.forklift?.mounted && s.forklift.crates.length ? `Load the forks onto the truck (${s.truck.bed?.length || 0} / ${tier.slots})` : `${tier.name} · ${s.truck.bed?.length || 0} / ${tier.slots} crates loaded  (E: open)` }); }
+    if (s.truck) { const Ts = S.truckSpotOf(s), tier = S.truckTier(s), A = truckArt(s.truck.level); out.push({ kind: 'truck', near: Ts, rect: [(Ts.x + Ts.w) * 16 - A.w, (Ts.y + Ts.h) * 16 - A.h, A.w, A.h], label: s.forklift?.mounted && s.forklift.crates.length ? (s.player.x > Ts.x + 0.6 ? 'Drive round to the tailgate, on the left, to load' : `Load the forks onto the truck (${s.truck.bed?.length || 0} / ${tier.slots})`) : `${tier.name} · ${s.truck.bed?.length || 0} / ${tier.slots} crates loaded  (E: open)` }); }
     for (const { x, y, t } of S.machineTiles(s, 'dryer')) { const n = S.heldCount(t.obj.out); out.push({ kind: 'dryer', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: (it?.kind === 'crop' ? 'Load the dryer' : it?.kind === 'product' ? 'Already dried' : n ? `Take ${n} dried` : 'Dryer') + '  (E: open)' }); }
     for (const { x, y, t } of S.machineTiles(s, 'planter')) { const o = t.obj, n = S.planterCount(o), th = towerH(x, y); if (th > 20 && !it && S.heldCount(S.stackedOf(tileAt(s.world, x, y), 'picker')?.held)) continue;   // on a tower, empty hands take the picker's crops first
       out.push({ kind: 'planter', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - th, 16, th], label: (it?.kind === 'seed' ? 'Load the seeds' : it?.kind === 'fert' ? 'Load the fertiliser' : it ? `${S.machineTier(o).name}${o.off ? ' (off)' : ''}` : n ? `Take ${n} back` : o.off ? 'Switch on' : 'Switch off') + '  (E: open)' }); }
@@ -306,7 +307,7 @@ export class Game {
       case 'forklift': { const r = S.mountForklift(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.player.x, s.player.y - 1.4, '#ffffff'); this.sound.play(r.float === 'On' ? 'switch' : 'drop'); this.save(); } return true; }
       case 'barrow': { if (it && it.kind !== 'tool') { const r = S.putInBarrow(s, this.selected); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#f6c453'); this.sound.play('drop'); this.save(); } return true; } const r = S.grabBarrow(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, s.barrow.x + 0.5, s.barrow.y - 0.2, '#ffffff'); this.sound.play('pickup'); } return true; }
       case 'board': { this.ui.openCrate(); return true; }
-      case 'truck': { if (s.forklift?.mounted && s.forklift.crates.length) { const r = S.forkLoad(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.flyToTruck(r.n || 1); this.addFloat(r.float, S.truckSpotOf(s).x + 1.5, S.truckSpotOf(s).y - 0.3, '#f6c453'); this.sound.play('stake'); this.save(); } return true; } this.ui.openCrate(); return true; }
+      case 'truck': { if (s.forklift?.mounted && s.forklift.crates.length) { if (this.forkAnim) return true; const was = [...s.forklift.crates], r = S.forkLoad(s); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.forkAnim = { kind: 'load', t: 0, crates: was, n: r.n || 1 }; this.addFloat(r.float, S.truckSpotOf(s).x + 1.5, S.truckSpotOf(s).y - 0.3, '#f6c453'); this.sound.play('pickup'); this.save(); } return true; } this.ui.openCrate(); return true; }
       case 'bayspot': { const r = s.forklift?.mounted && s.forklift.crates.length ? S.forkDrop(s, o.x, o.y) : S.setCrate(s, o.x, o.y); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.x + 0.5, o.y, '#ffffff'); this.sound.play('stake'); this.save(); } return true; }
       case 'mstore': { const ch = s.market.store; if (it && it.kind !== 'tool') { const r = S.stash(s, this.selected, ch); if (r.msg) this.ui.toast(r.msg); if (r.float) { this.addFloat(r.float, o.near.x + 0.5, o.near.y - 0.2, '#f6c453'); this.sound.play('chest'); } } else this.ui.openChest(ch); return true; }
       case 'fountain': { if (it) { this.ui.toast('Empty hands to drink'); return true; } this.startAction('drink', MARKET.fountain.x, MARKET.fountain.y, CONFIG.actions.drinkSeconds); return true; }
@@ -456,6 +457,11 @@ export class Game {
     if (this.mouse.inside && !this.ui.openPanel && hbSlot >= 0 && s.inventory.slots[hbSlot] && !this.drag?.moved) this.ui.hoverItem(s.inventory.slots[hbSlot], this.mouse.x, this.mouse.y);
     else if (this.mouse.inside && !this.ui.openPanel && hbSlot < 0) this.ui.hover(tileAt(s.world, this.mouse.tx, this.mouse.ty), this.mouse.tx, this.mouse.ty, this.mouse.x, this.mouse.y); else if (!this.ui.panelHover) this.ui.hideHover();
     for (const f of this.floats) f.t += dt; this.floats = this.floats.filter(f => f.t < 2.2);
+    if (this.forkAnim) {   // Build 98: the forks lift a crate off the ground, or rise to the bed, tip the load in and come down
+      const A = this.forkAnim, p = s.player; A.t += dt;
+      if (A.kind === 'load' && !A.flown && A.t >= FORK.rise) { A.flown = true; const face = s.forklift?.face; this.flyToTruck(A.n, { x: p.x + (face === 'left' ? -0.75 : face === 'right' ? 0.19 : -0.28), y: p.y - 14 / 16 }); this.sound.play('stake'); }
+      if (A.t >= (A.kind === 'load' ? FORK.load : FORK.lift)) this.forkAnim = null;
+    }
     for (const f of this.flying) f.t += dt; this.flying = this.flying.filter(f => f.t < FLY_SECS);
     { // a footfall when a foot lands in the walk animation (frames 1 and 3): the sound, and a print left behind
       const frame = this.moving && !this.action ? Math.floor(this.walkT * 7) % 4 : 0;
@@ -484,7 +490,7 @@ export class Game {
     if (now - this.lastSave > 30000) this.save();
   }
   movePlayer(dt) {
-    const p = this.state.player, k = this.keys;
+    const p = this.state.player, k = this.keys; if (this.forkAnim) { this.walkT = 0; this.rollV = 0; return; }   // the forks are working: hold still
     let dx = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
     let dy = (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0);
     this.jolt = Math.max(0, (this.jolt || 0) - dt);
@@ -535,11 +541,11 @@ export class Game {
   }
   // The picker's boom (Build 88): telescoping out from the mast to the crop it is after over the first part of the trip,
   // the claw snipping while it cuts, then folding back with the crop held at its real size. Drawn on the world's pixel grid.
-  drawBoom(sx, sy, j, lv, now, cx, cy, oy0 = null) {   // oy0: where the boom turns, when it is not a lone picker's (a tower's collar)
+  drawBoom(sx, sy, j, lv, now, cx, cy, oy0 = null, plant = false) {   // oy0: where the boom turns, when it is not a lone picker's (a tower's collar); plant: the planter's drill
     const ctx = this.ctx, T = CONFIG.tile * CONFIG.scale, u = CONFIG.scale, s = this.state, dur = j.done - j.start || 1, f = Math.max(0, Math.min(1, (s.minutes - j.start) / dur));
-    const ease = k => k * k * (3 - 2 * k), OUT = 0.4, CUT = S.PICK_CUT;
+    const ease = k => k * k * (3 - 2 * k), OUT = 0.4, CUT = plant ? S.PLANT_DROP : S.PICK_CUT;
     const e = f < OUT ? ease(f / OUT) : f < CUT ? 1 : ease(1 - (f - CUT) / (1 - CUT)), cutting = f >= OUT && f < CUT;
-    const ox = sx + 8 * u, oy = oy0 ?? sy + T - 20 * u + (lv ? 4 : 6) * u, tx = (j.x + 0.5) * T - cx, ty = (j.y + 0.5) * T - cy - 3 * u;
+    const ox = sx + 8 * u, oy = oy0 ?? sy + T - 20 * u + (lv ? 4 : 6) * u, tx = (j.x + 0.5) * T - cx, ty = (j.y + 0.5) * T - cy - (plant ? 7 : 3) * u;
     const x1 = ox + (tx - ox) * e, y1 = oy + (ty - oy) * e, n = Math.max(1, Math.round(Math.hypot(x1 - ox, y1 - oy) / u));
     const snap = v => Math.round(v / u) * u, dark = '#5c6273', mid = '#8b93a6', lite = '#c2c8d6';
     ctx.fillStyle = 'rgba(30,20,10,0.16)';   // its shadow on the ground, from the mast's foot
@@ -549,7 +555,17 @@ export class Game {
       ctx.fillStyle = dark; ctx.fillRect(px, py, w * u, w * u); ctx.fillStyle = k < 0.67 ? mid : lite; ctx.fillRect(px, py, u, u);
     }
     for (const k of [0.34, 0.67]) if (n > 6) { ctx.fillStyle = '#3b2314'; ctx.fillRect(snap(ox + (x1 - ox) * k) - u, snap(oy + (y1 - oy) * k) - u, 3 * u, 3 * u); ctx.fillStyle = dark; ctx.fillRect(snap(ox + (x1 - ox) * k), snap(oy + (y1 - oy) * k), u, u); }
-    const hx = snap(x1), hy = snap(y1), open = cutting ? Math.floor(now / 110) % 2 : 0;   // the claw
+    const hx = snap(x1), hy = snap(y1), open = cutting ? Math.floor(now / 110) % 2 : 0;
+    if (plant) {   // Build 98: the drill head, a seed cup over a spout and a press disc; while it sows the seeds drop and the disc presses in
+      const seedC = j.what === 'fert' && !j.seed ? '#6b5236' : '#d9a84e', press = cutting ? Math.floor(now / 140) % 2 : 0, R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(hx + x * u, hy + y * u, w * u, h * u); };
+      if (cutting) { R(-2, 7, 4, 1, 'rgba(60,40,20,0.55)'); R(-1, 8, 2, 1, 'rgba(60,40,20,0.35)'); }      // the furrow it presses
+      else R(-2, 8, 4, 1, 'rgba(30,20,10,0.18)');                                                              // its shadow
+      R(-3, -1, 6, 3, dark); R(-2, -1, 4, 1, lite); R(-2, 0, 4, 1, mid); R(-2, 2, 4, 1, dark); R(-1, 2, 2, 1, mid); R(-1, 3, 2, 1, dark);   // the cup and its spout
+      if (!j.sown) { R(-2, 0, 1, 1, seedC); R(1, 0, 1, 1, seedC); }                                        // seeds in the cup on the way out
+      R(-2, 4 + press, 4, 2, dark); R(-1, 4 + press, 2, 1, lite);                                            // the press disc
+      if (cutting) { const k = (now / 240) % 1; R(Math.floor(now / 240) % 2 ? 0 : -1, 4 + Math.round(3 * k), 1, 1, seedC); }   // a seed falling into the furrow
+      return;
+    }
     ctx.fillStyle = '#2b2a33'; ctx.fillRect(hx - (2 + open) * u, hy + u, u, 2 * u); ctx.fillRect(hx + (1 + open) * u, hy + u, u, 2 * u); ctx.fillRect(hx - 2 * u, hy, 4 * u, u);
     if (j.taken && f >= CUT) { const sp = s.species[j.taken.species]; if (sp) ctx.drawImage(produceSprite(sp, true), hx - 4 * u, hy + u, 8 * u, 8 * u); }
   }
@@ -562,7 +578,7 @@ export class Game {
   }
   addFloat(text, x, y, color) { this.floats.push({ text, x, y, color, t: 0 }); }
   // Crates just loaded fly from where you stand to their places on the bed, one after another (Build 87)
-  flyToTruck(n) { const bed = this.state.truck?.bed || [], p = this.state.player; for (let k = 0; k < n; k++) this.flying.push({ idx: bed.length - n + k, x0: p.x - 0.45, y0: p.y - 1.1, t: -k * 0.14 }); }
+  flyToTruck(n, fork = null) { const bed = this.state.truck?.bed || [], p = this.state.player; for (let k = 0; k < n; k++) this.flying.push(fork ? { idx: bed.length - n + k, x0: fork.x, y0: fork.y - (n - 1 - k) * 6 / 16, w0: 9, h0: 8, arc: 0.15, t: -k * 0.14 } : { idx: bed.length - n + k, x0: p.x - 0.45, y0: p.y - 1.1, t: -k * 0.14 }); }   // fork: where the top of the bottom crate on the raised forks is
   // footprints: small dark marks where each foot landed, fading over a few seconds; drawn on the ground under everything
   pushPrints(ctx, cx, cy, drawables) {
     if (!this.prints.length) return;
@@ -673,6 +689,7 @@ export class Game {
         if (S.isTower(t)) {   // Build 89: the picker and planter stacked on its post, the sprinkler's head on top
           const u = CONFIG.scale, top = sy + T - 28 * u, pk = S.stackedOf(t, 'picker'), pl = S.stackedOf(t, 'planter'), st = t.stack;
           if (pk?.job) { const j = pk.job, lv = pk.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.95, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy, top + 9 * u) }); }
+          if (pl?.job) { const j = pl.job, lv = pl.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.94, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy, top + 17 * u, true) }); }
           drawables.push({ y: y + 1, draw: () => {
             ctx.drawImage(towerSprite(pk ? pk.level || 0 : -1, pl ? pl.level || 0 : -1, !!pk?.held?.length, !!pl?.seeds?.length, !!pk?.job), sx, top, T, 28 * u);
             ctx.drawImage(head, 0, 0, 16, 7, sx, top - 3 * u, T, 7 * u);
@@ -683,6 +700,7 @@ export class Game {
       if (t.obj?.kind === 'generator') { const live = S.generatorLive(s, x, y); drawables.push({ y: y + 1, draw: () => ctx.drawImage(generatorSprite(live ? 1 + Math.floor(now / 200) % 2 : 0, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale) }); }
       if (t.obj?.kind === 'picker' && t.obj.job) { const j = t.obj.job, lv = t.obj.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.95, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy) }); }
       if (t.obj?.kind === 'picker') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(pickerSprite(t.obj.job ? -1 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
+      if (t.obj?.kind === 'planter' && t.obj.job) { const j = t.obj.job, lv = t.obj.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.95, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy, sy + T - 12 * CONFIG.scale, true) }); }
       if (t.obj?.kind === 'planter') { const on = S.machinePowered(s, x, y) && S.planterCount(t.obj) > 0, full = !!t.obj.seeds?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(planterSprite(on ? Math.floor(now / 900) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'dcrate') { const u = CONFIG.scale, n = S.dcrateCount(t.obj), lv = n >= CONFIG.truck.crateHolds ? 2 : n > 0 ? 1 : 0; drawables.push({ y: y + 1, draw: () => ctx.drawImage(crateSprite(lv, true), sx + u, sy + T - 12 * u, 14 * u, 13 * u) }); }   // a crate: smaller than the porch crate, a box you can lift
       if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u); lamp(sx, sy, S.machineStatus(s, x, y), 16); } }); }
@@ -726,13 +744,14 @@ export class Game {
       const mouth = [ox + 1 * u, oy + 4 * u], SLIDE = 0.55;   // the crates go in over the open tailgate, then slide along the floor
       const phase = f => { const k = Math.max(0, Math.min(1, f.t / (FLY_SECS - 0.05))); return k; };
       const inAir = new Set(this.flying.filter(f => phase(f) < 1).map(f => f.idx));
+      if (this.forkAnim?.kind === 'load' && !this.forkAnim.flown) for (let k = 1; k <= this.forkAnim.n; k++) inAir.add(bed.length - k);   // still on the forks, rising
       const order = [...bed.keys()].filter(i => !inAir.has(i)).sort((a, b) => slotAt(a)[1] - slotAt(b)[1]);   // the back row first
       for (const i of order) { const [bx, by] = slotAt(i); crate(bx, by, cw - 0.5, ch); }
       for (const f of this.flying) { const k = phase(f); if (k < SLIDE || k >= 1) continue; const e = (k - SLIDE) / (1 - SLIDE), [tx, ty] = slotAt(f.idx); crate(mouth[0] + (tx - mouth[0]) * e, mouth[1] + (ty - mouth[1]) * e, cw - 0.5, ch); }
       ctx.drawImage(truckFrontSprite(s.truck.level), ox, oy, A.w * u, A.h * u);
       for (const f of this.flying) {   // the arc up to the tailgate, shrinking from carried size to bed size
         const k = phase(f); if (k >= SLIDE) continue; const e0 = k / SLIDE, e = e0 * e0 * (3 - 2 * e0), sx0 = f.x0 * T - cx, sy0 = f.y0 * T - cy;
-        crate(sx0 + (mouth[0] - sx0) * e, sy0 + (mouth[1] - sy0) * e - Math.sin(Math.PI * e) * 0.6 * T, 14 + (cw - 0.5 - 14) * e, 13 + (ch - 13) * e);
+        crate(sx0 + (mouth[0] - sx0) * e, sy0 + (mouth[1] - sy0) * e - Math.sin(Math.PI * e) * (f.arc ?? 0.6) * T, (f.w0 || 14) + (cw - 0.5 - (f.w0 || 14)) * e, (f.h0 || 13) + (ch - (f.h0 || 13)) * e);
       }
     } }); }
     if (s.truck) { const Bd = BUILDINGS.board, u = CONFIG.scale, bb = S.bayBoard(s); drawables.push({ y: Bd.y + 1, draw: () => {   // the bay's board: tonight's count and money in chalk
@@ -866,17 +885,20 @@ export class Game {
       const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
       if (s.forklift?.mounted) {   // on the forklift: the truck under you, the crates stacked on the forks, you sat up on it
         const F = s.forklift, left = F.face === 'left', jx = this.jolt ? Math.round(Math.sin(this.jolt * 90) * u0) : 0, fx = px + jx;
-        const crate = (i, x, y) => ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), x, y, 9 * u0, 8 * u0);
+        // Build 98: how high the forks are: a crate just lifted comes up off the ground, a load rises to the bed and the forks come back down
+        const A = this.forkAnim, ez = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); }, list = A?.kind === 'load' && !A.flown ? A.crates : F.crates;
+        const up = i => !A ? 0 : A.kind === 'lift' ? (i === list.length - 1 ? -Math.round((1 - ez(A.t / FORK.lift)) * 5) * u0 : 0) : Math.round((A.flown ? 1 - ez((A.t - FORK.rise) / (FORK.load - FORK.rise)) : ez(A.t / FORK.rise)) * 7) * u0;
+        const crate = (i, x, y) => ctx.drawImage(crateSprite(S.dcrateCount(list[i]) ? 1 : 0, true), x, y - up(i), 9 * u0, 8 * u0);
         if (F.face === 'down') {   // toward you: the driver behind the mast, the crates on the forks in front
           ctx.drawImage(forkliftSprite('down'), fx, py + 2 * u0, T, 20 * u0); ctx.drawImage(spr, 0, 0, 16, 14, fx, py - 3 * u0, T, 14 * u0); ctx.drawImage(forkliftMastSprite(), fx, py + 2 * u0, T, 20 * u0);
-          for (let i = 0; i < F.crates.length; i++) crate(i, fx + 3.5 * u0, py + 13 * u0 - i * 6 * u0); return;
+          for (let i = 0; i < list.length; i++) crate(i, fx + 3.5 * u0, py + 13 * u0 - i * 6 * u0); return;
         }
         if (F.face === 'up') {     // away: the crates beyond on the forks, the driver's back, the seat and counterweight nearest
-          for (let i = 0; i < F.crates.length; i++) crate(i, fx + 3.5 * u0, py - 12 * u0 - i * 5 * u0);
+          for (let i = 0; i < list.length; i++) crate(i, fx + 3.5 * u0, py - 12 * u0 - i * 5 * u0);
           ctx.drawImage(spr, 0, 0, 16, 14, fx, py - 3 * u0, T, 14 * u0); ctx.drawImage(forkliftSprite('up'), fx, py + 2 * u0, T, 20 * u0); return;
         }
         drawFacing(ctx, forkliftSprite(), fx, py + 2 * u0, T, 20 * u0, left);
-        for (let i = 0; i < F.crates.length; i++) crate(i, fx + (left ? -4 : 11) * u0, py + 12 * u0 - i * 6 * u0);
+        for (let i = 0; i < list.length; i++) crate(i, fx + (left ? -4 : 11) * u0, py + 12 * u0 - i * 6 * u0);
         ctx.drawImage(spr, 0, 0, 16, 14, fx + (left ? 2 : -2) * u0, py - 2 * u0, T, 14 * u0); return;
       }
       if (S.isTired(s) && !s.carrying) {   // worn out: the head sinks a pixel into the shoulders, and a drop of sweat

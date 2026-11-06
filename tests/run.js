@@ -1353,13 +1353,13 @@ await test('field machines: picker tiers reach like the sprinklers and draw more
   const bag = { name: 'Quality compost III', grade: 3, stats: { quality: 0.6 }, budget: 0.6, id: 'fq' }; addItem(s.inventory, { kind: 'fert', fert: bag, qty: 2 }); const fi = s.inventory.slots.findIndex(i => i?.kind === 'fert');
   let r = S.loadPlanter(s, si, X + 3, y0); assert.ok(r.ok && r.count === nSeeds, JSON.stringify(r)); r = S.loadPlanter(s, fi, X + 3, y0); assert.ok(r.ok && r.count === 2); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2);
   assert.equal(S.loadPlanter(s, 0, X + 3, y0).msg, 'It takes seeds and fertiliser');
-  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60 + 59; tickMinutes(s, 2);   // across 10:00
+  s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; tickMinutes(s, 60);   // an hour of trips
   const planted = () => { let n = 0, fert = 0; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const t = tile(X + 3 + dx, y0 + dy); if (t.crop && !t.crop.unknown) n++; if (t.fert) fert++; } return [n, fert]; };   // a bird may drop a seed in too: those are unknown sprouts, not the planter's
-  let [n, f] = planted(); assert.equal(n, T.planter.tiers[1].perHour, 'four beds an hour'); assert.equal(f, 2, 'the two bags went in first'); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2 - n - 2);
+  let [n, f] = planted(); assert.equal(n, T.planter.tiers[1].perHour, 'four beds an hour'); { const j = tile(X + 3, y0).obj.job; assert.ok(j && !j.sown && !tile(j.x, j.y).crop, 'mid-trip: the bed waits for the drill'); } assert.equal(f, 2, 'the two bags went in first'); assert.equal(S.planterCount(tile(X + 3, y0).obj), nSeeds + 2 - n - 2);
   assert.ok(tile(X + 3, y0 - 1).crop && tile(X + 3, y0 + 1).crop, 'nearest beds first');
-  s.minutes = (S.dayOf(s) - 1) * 1440 + 10 * 60 + 59; tickMinutes(s, 2); [n, f] = planted(); assert.equal(n, 8, 'another four the next hour');
+  tickMinutes(s, 60); [n, f] = planted(); assert.equal(n, 8, 'another four the next hour');
   // a switch: off, it draws nothing and plants nothing
-  r = S.toggleMachine(s, X + 3, y0); assert.ok(r.off); assert.ok(!S.machinePowered(s, X + 3, y0)); s.minutes = (S.dayOf(s) - 1) * 1440 + 11 * 60 + 59; tickMinutes(s, 2); assert.equal(planted()[0], 8, 'nothing more while off'); S.toggleMachine(s, X + 3, y0);
+  r = S.toggleMachine(s, X + 3, y0); assert.ok(r.off); assert.ok(!S.machinePowered(s, X + 3, y0)); tickMinutes(s, 60); assert.equal(planted()[0], 8, 'nothing more while off'); assert.ok(!tile(X + 3, y0).obj.job, 'the boom folds back'); S.toggleMachine(s, X + 3, y0);
   // take the rest back
   s.inventory.slots[4] = null; r = S.unloadPlanter(s, X + 3, y0); assert.ok(r.ok && r.got === nSeeds - 8, JSON.stringify(r)); assert.equal(S.planterCount(tile(X + 3, y0).obj), 0); assert.equal(S.unloadPlanter(s, X + 3, y0).msg, 'Nothing in it');
   // picker tiers: a Picker III reaches three tiles and costs three power; the generator's six is not enough for both planter II and picker III plus a hopper
@@ -1422,7 +1422,8 @@ await test('the forklift: parks in the bay once the truck is here; get on, lift 
   const crates = [[b.x0, b.y0], [b.x0 + 1, b.y0], [b.x0, b.y0 + 1], [b.x0 + 1, b.y0 + 1]].filter(([x, y]) => tile(x, y).obj?.kind === 'dcrate');
   for (const [x, y] of crates.slice(0, 3)) { r = S.forkLift(s, x, y); assert.ok(r.ok, r.msg); assert.ok(!tile(x, y).obj); }
   assert.equal(s.forklift.crates.length, 3); if (crates[3]) assert.ok(/forks hold/.test(S.forkLift(s, ...crates[3]).msg));
-  s.player.x = W.TRUCK_SPOT.x + 1.5; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.forkLoad(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, s.truck.bed.length);
+  s.player.x = W.TRUCK_SPOT.x + 1.5; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; assert.ok(/tailgate/.test(S.forkLoad(s).msg), 'from the side the forks cannot reach in');
+  s.player.x = W.TRUCK_SPOT.x - 0.5; s.player.y = W.TRUCK_SPOT.y + 1; r = S.forkLoad(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, s.truck.bed.length);
   const fullOnForks = s.forklift.crates.filter(c => S.dcrateCount(c)).length; assert.equal(fullOnForks, 0, 'every full crate went on'); assert.ok(s.truck.bed.length >= 2);
   // an empty crate stays on the forks and is set down
   s.player.x = b.x0 + 2.5; s.player.y = b.y0 + 2.5; const had = s.forklift.crates.length; if (had) { r = S.forkDrop(s, b.x0 + 2, b.y0 + 2); assert.ok(r.ok, r.msg); assert.equal(s.forklift.crates.length, had - 1); assert.ok(S.isDcrate(tile(b.x0 + 2, b.y0 + 2))); }

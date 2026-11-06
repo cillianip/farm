@@ -257,6 +257,7 @@ export function tick(state, dtMinutes, opts = {}) {
   if (!opts.asleep) {
     sprinklerPass(state, dtMinutes); const hr0 = hourOf(state);
     if (Math.floor((now - dtMinutes) / 60) !== Math.floor(now / 60) && hr0 >= CONFIG.time.wakeHour && hr0 < 20) machinePass(state);   // planters work once an hour
+    planterTick(state, dtMinutes);   // planters swing a drill out to one bed at a time (Build 98)
     pickerTick(state, dtMinutes);   // pickers work all the time you are awake, one crop per swing of the boom
     state.beltClock = (state.beltClock || 0) + dtMinutes; const step = CONFIG.power.belt.stepMinutes;   // the belts move a tile every few minutes
     if (state.beltClock >= step) { const n = Math.min(8, Math.floor(state.beltClock / step)); state.beltClock -= n * step; for (let i = 0; i < n; i++) beltStep(state); }
@@ -1158,9 +1159,8 @@ export function describeSplit(state, x, y) {
   const what = o.rule === 'species' ? `${state.species[o.species]?.name || 'That species'} goes` : 'Dried goods go';
   return { title: 'Filter', sub: outs.length < 2 ? 'Only one way out: it needs belt leading away on two sides.' : `${what} ${word(A)}, everything else ${word(B)}. Click it with a crop, a seed or dried goods to sort by that; empty hands swap the sides.` };
 }
-// Once a game hour while you are awake: each powered planter plants (see planterPass), then the belts move.
+// Once a game hour while you are awake the belts take an extra step (the planters work by the clock now, see planterTick).
 export function machinePass(state) {
-  planterPass(state, lineNet(state));
   beltStep(state);
 }
 // The pickers (Build 88): a boom crane that works one crop at a time. When it is powered, switched on and has room, it
@@ -1239,24 +1239,39 @@ export function loadDryer(state, slotIndex, x, y, n = Infinity) {
   const take = Math.min(room, it.qty, n); removeFromSlot(state.inventory, slotIndex, take); addHeld(o.held, { species: it.species, q: it.q || 0, qty: take });
   return { ok: true, msg: '', float: `+${take} in`, count: take };
 }
-// The planter, once an hour: for up to perHour empty beds in its reach (nearest first), a bag worked in if it has one and
-// the bed has none, then the seed it holds. It never touches a bed with a plant in it, dead or alive, or one with a machine.
-function planterPass(state, net) {
-  const idx = (x, y) => y * state.world.w + x; let planted = 0;
-  for (const { x, y, t } of machineTiles(state, 'planter')) {
-    if (!net.on.has(idx(x, y))) continue;
+// The planter (Build 98): like the picker, a boom that works one bed at a time. Powered, switched on and holding seeds or
+// fertiliser, it takes the nearest empty bed (one another planter is not already reaching for), swings the drill out, and at
+// `drop` works a bag in if the bed has none and it has one, then sows the seed it holds; it is back at `done`. A trip takes
+// 60 / perHour game minutes. It never touches a bed with a plant in it, dead or alive, or one with a machine.
+export const PLANT_DROP = 0.5;   // the share of a trip spent reaching out and sowing; the rest swings back
+export function planterTick(state, dtMinutes = 0) {
+  const net = lineNet(state), w = state.world, now = state.minutes; let planted = 0;
+  const planters = machineTiles(state, 'planter'), reserved = new Set(planters.map(p => p.t.obj.job).filter(j => j && !j.sown).map(j => j.y * w.w + j.x));
+  for (const { x, y, t } of planters) {
     const o = t.obj, P = machineTier(o); o.seeds = o.seeds || []; o.bags = o.bags || [];
-    if (!o.seeds.length && !o.bags.length) continue;
-    const beds = []; for (let dy = -P.radius; dy <= P.radius; dy++) for (let dx = -P.radius; dx <= P.radius; dx++) { const b = tileAt(state.world, x + dx, y + dy); if (b && b.tilled && !b.crop && !b.obj) beds.push({ b, d: Math.abs(dx) + Math.abs(dy), x: x + dx, y: y + dy }); }
-    beds.sort((a, c) => a.d - c.d || a.y - c.y || a.x - c.x);
-    let n = 0;
-    for (const { b, x: bx, y: by } of beds) {
-      if (n >= P.perHour) break;
-      let did = false;
-      if (!b.fert && o.bags.length) { const bag = o.bags[0]; b.fert = bag.fert; bag.qty--; if (!bag.qty) o.bags.shift(); did = true; }
-      if (o.seeds.length) { const sd = o.seeds[0]; b.crop = { speciesId: sd.species, growth: 0, health: 100, ripeAt: null, dead: false, plantedAt: state.minutes, harvests: 0, v: (bx * 7 + by * 13 + Math.floor(state.minutes)) % 4 }; sd.qty--; if (!sd.qty) o.seeds.shift(); today(state).planted++; planted++; did = true; if (SFX.length < 40) SFX.push({ type: 'plant', x: bx, y: by }); }
-      if (did) n++;
+    if (o.off || !net.on.has(y * w.w + x)) { o.job = null; continue; }   // no power: the boom folds back
+    for (let guard = 0; guard < 64; guard++) {
+      const j = o.job;
+      if (j) {
+        if (!j.sown) {
+          if (now < j.drop) break;
+          const b = tileAt(w, j.x, j.y); reserved.delete(j.y * w.w + j.x); j.sown = true;
+          if (b && b.tilled && !b.crop && !b.obj) {
+            if (!b.fert && o.bags.length) { const bag = o.bags[0]; b.fert = bag.fert; bag.qty--; if (!bag.qty) o.bags.shift(); j.what = 'fert'; }
+            if (o.seeds.length) { const sd = o.seeds[0]; b.crop = { speciesId: sd.species, growth: 0, health: 100, ripeAt: null, dead: false, plantedAt: j.drop, harvests: 0, v: (j.x * 7 + j.y * 13 + Math.floor(j.drop)) % 4 }; sd.qty--; if (!sd.qty) o.seeds.shift(); today(state).planted++; planted++; j.what = 'seed'; if (SFX.length < 40) SFX.push({ type: 'plant', x: j.x, y: j.y }); }
+          }
+        }
+        if (now < j.done) break;
+        o.job = null; o.lastDone = j.done; continue;
+      }
       if (!o.seeds.length && !o.bags.length) break;
+      let best = null; for (let dy = -P.radius; dy <= P.radius; dy++) for (let dx = -P.radius; dx <= P.radius; dx++) {
+        const b = tileAt(w, x + dx, y + dy); if (!b || !b.tilled || b.crop || b.obj || reserved.has((y + dy) * w.w + x + dx) || (!o.seeds.length && b.fert)) continue;
+        const d = Math.abs(dx) + Math.abs(dy); if (!best || d < best.d || (d === best.d && (y + dy < best.y || (y + dy === best.y && x + dx < best.x)))) best = { d, x: x + dx, y: y + dy };
+      }
+      if (!best) break;
+      const dur = 60 / P.perHour, start = Math.min(now, Math.max(now - dtMinutes, o.lastDone ?? -Infinity));   // straight on from the last trip when a long tick is caught up
+      o.job = { x: best.x, y: best.y, start, drop: start + dur * PLANT_DROP, done: start + dur, sown: false, seed: o.seeds[0]?.species ?? null }; reserved.add(best.y * w.w + best.x);
     }
   }
   if (planted) { const D = today(state); D.autoPlanted = (D.autoPlanted || 0) + planted; }
@@ -1384,6 +1399,7 @@ export function forkLoad(state) {
   const f = state.forklift; if (!f?.mounted) return fail(''); if (!state.truck) return fail('No truck');
   const TS = truckSpotOf(state), p = state.player, cx = Math.min(Math.max(p.x, TS.x), TS.x + TS.w), cy = Math.min(Math.max(p.y, TS.y), TS.y + TS.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.6) return fail('Too far');
+  if (p.x > TS.x + 0.6) return fail('Drive round to the tailgate: the open end of the truck, on its left');   // Build 98: the forks go in over the tailgate
   const bed = state.truck.bed = state.truck.bed || []; let n = 0;
   for (let i = f.crates.length - 1; i >= 0; i--) { const c = f.crates[i]; if (!dcrateCount(c)) continue; if (bed.length >= truckSlots(state)) break; bed.push({ items: c.items }); f.crates.splice(i, 1); n++; }
   if (!n) return fail(f.crates.length ? (bed.length >= truckSlots(state) ? `The truck is full: ${truckSlots(state)} crates` : 'Those crates are empty: put something in them first') : 'Nothing on the forks');
