@@ -1284,18 +1284,22 @@ await test('the truck: sold once the crate is fully extended; it parks on the tr
   const b = W.BAY; s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5;
   r = S.setCrate(s, b.x0 + 1, b.y0); assert.ok(r.ok, r.msg); r = S.setCrate(s, b.x0 + 1, b.y0 + 1); assert.ok(r.ok, r.msg); assert.equal(S.bayCrates(s).length, 2);
   addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 30 }); const ci = s.inventory.slots.findIndex(i => i?.kind === 'crop');
-  r = S.putInDcrate(s, ci, b.x0 + 1, b.y0); assert.ok(r.ok && r.count === T2.crateHolds && r.full, JSON.stringify(r));
+  let put = 0; do { if (!s.inventory.slots.some(i => i?.kind === 'crop')) addItem(s.inventory, { kind: 'crop', species: carrot.id, qty: 12 }); r = S.putInDcrate(s, s.inventory.slots.findIndex(i => i?.kind === 'crop'), b.x0 + 1, b.y0); assert.ok(r.ok, r.msg); put += r.count; } while (!r.full); assert.equal(put, T2.crateHolds, 'a crate takes ' + T2.crateHolds); void ci;
   // a hopper beside the second crate tips into it as the belt runs, not only at night
   tile(b.x0, b.y0 + 1).line = true; tile(b.x0, b.y0 + 2).line = true; tile(b.x0, b.y0 + 1).obj = { kind: 'hopper', held: [{ species: carrot.id, q: 0, qty: 3 }] }; tile(b.x0 - 1, b.y0 + 2).obj = { kind: 'generator', fuel: 9 }; tile(b.x0 - 1, b.y0 + 2).t = 'grass'; s.lineRev = (s.lineRev || 0) + 1;
   assert.ok(S.hopperByCrate(b.x0, b.y0 + 1, s)); s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; s.beltClock = 0; for (let i = 0; i < CONFIG.power.belt.stepMinutes; i++) tickMinutes(s, 1);
   assert.equal(S.dcrateCount(tile(b.x0 + 1, b.y0 + 1).obj), 3, 'tipped in as it went'); assert.equal(tile(b.x0, b.y0 + 1).obj.held.length, 0);
   // lift the full one and load it; an empty will not go on
-  s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.equal(S.useItem(s, 0, b.x0 + 1, b.y0).msg, 'Hold on it to pick it up'); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); assert.equal(S.dcrateCount(s.carriedCrate), T2.crateHolds);
+  s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.ok(/hold on it to lift/.test(S.useItem(s, 0, b.x0 + 1, b.y0).msg)); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); assert.equal(S.dcrateCount(s.carriedCrate), T2.crateHolds);
   s.player.x = W.TRUCK_SPOT.x + 1; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.loadTruck(s); assert.ok(r.ok, r.msg); assert.equal(s.truck.bed.length, 1); assert.ok(!s.carrying); assert.equal(S.bayCrates(s).length, 1, 'the spot stays empty: no crate appears by itself');
   assert.equal(S.allCrateItems(s).reduce((n, i) => n + i.qty, 0), T2.crateHolds, 'the bed counts, the gravel does not');
   s.minutes = (S.dayOf(s) - 1) * 1440 + 19 * 60; const rep = S.sleep(s);
   assert.ok(rep.sale && rep.sale.count === T2.crateHolds, 'the bed only: ' + JSON.stringify(rep.sale)); assert.deepEqual(rep.sale.crates, { shipped: 1 }); assert.equal(s.truck.bed.length, 0);
-  assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|')); assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
+  assert.ok(rep.lines.some(l => /wait in crates on the gravel/.test(l)), rep.lines.join('|'));
+  // Build 95: too many crates? the hoe lifts an empty one away, and an empty carried to the truck goes back
+  assert.equal(s.inventory.slots[0]?.tool, 'hoe'); s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok); r = S.useItem(s, 0, b.x0 + 1, b.y0); assert.ok(r.ok && !tile(b.x0 + 1, b.y0).obj, r.msg);
+  assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); s.player.x = W.TRUCK_SPOT.x + 1; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.loadTruck(s); assert.ok(r.ok && r.back && !s.carrying && !s.truck.bed.length, JSON.stringify(r));
+  assert.equal(T2.tiers[0].slots * T2.crateHolds, 2 * (CONFIG.crate.capacity + 3 * 12), 'the small truck carries twice the fully extended porch crate'); assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
   // parcels come to the sign now
   assert.ok(placeOrder(s, 'truck1').ok); S.sleep(s); assert.ok(s.parcels?.length); S.collectParcels(s); assert.equal(s.truck.level, 1); assert.equal(S.truckSlots(s), T2.tiers[1].slots);
   // pickers take real amounts: a Picker III takes up to 16 an hour

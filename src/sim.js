@@ -439,7 +439,7 @@ export function loadTruck(state) {
   if (!state.truck) return fail('No truck');
   const TS = truckSpotOf(state), p = state.player, cx = Math.min(Math.max(p.x, TS.x), TS.x + TS.w), cy = Math.min(Math.max(p.y, TS.y), TS.y + TS.h);
   if (Math.hypot(p.x - cx, p.y - cy) > CONFIG.player.reach + 0.3) return fail('Too far');
-  if (!dcrateCount(state.carriedCrate)) return fail('That crate is empty: put something in it first');
+  if (!dcrateCount(state.carriedCrate)) { state.carriedCrate = null; state.carrying = null; return { ok: true, msg: '', float: 'Empty crate handed back', back: true }; }   // the haulier takes an empty back
   const bed = state.truck.bed = state.truck.bed || []; if (bed.length >= truckSlots(state)) return fail(`The truck is full: ${truckSlots(state)} crates`);
   bed.push({ items: state.carriedCrate.items }); state.carriedCrate = null; state.carrying = null;
   return { ok: true, msg: '', float: `Loaded ${bed.length} / ${truckSlots(state)}` };
@@ -456,6 +456,14 @@ export function setCrate(state, x, y) {
   if (!inReach(state, x, y)) return fail('Too far');
   t.obj = { kind: 'dcrate', items: [] }; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '', float: 'Set' };
+}
+// The hoe lifts an empty crate away, back to the haulier's stack. One with something in it has to be emptied or loaded.
+export function clearCrate(state, x, y) {
+  const t = tileAt(state.world, x, y); if (!isDcrate(t)) return fail('');
+  if (!inReach(state, x, y)) return fail('Too far');
+  if (dcrateCount(t.obj)) return fail('Something is in it: hold on it to lift it, or load it');
+  t.obj = null; state.beltRev = (state.beltRev || 0) + 1;
+  return { ok: true, msg: '', float: 'Crate away' };
 }
 export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
 export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0);
@@ -524,7 +532,7 @@ export function useItem(state, slotIndex, x, y) {
       addItem(state.inventory, got);
       return { ok: true, msg: wasDead ? 'Cleared withered plant' : '', float: wasDead ? '' : got.kind === 'seed' ? 'Seed back' : 'Pulled up' };
     }
-    if (t.obj?.kind === 'dcrate') return fail('Hold on it to pick it up');
+    if (t.obj?.kind === 'dcrate') return clearCrate(state, x, y);
     if (isTower(t)) {   // the top of the tower first
       const o = t.stack[t.stack.length - 1]; if (o.held?.length || o.seeds?.length || o.bags?.length || o.job?.taken) return fail('Empty it first');
       if (!spend(state, E.clear)) return fail('Too tired');

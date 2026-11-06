@@ -559,7 +559,7 @@ export class UI {
     const s = this.state, n = S.truckSlots(s), holds = CONFIG.truck.crateHolds;
     this.show('How the truck works', body => {
       const steps = [
-        ['1 · Crates are free', 'Click any open gravel in the loading bay, beside the truck, to set a crate down. Set as many as you like; nothing to buy.'],
+        ['1 · Crates are free', 'Click any open gravel in the loading bay, beside the truck, to set a crate down. Set as many as you like; nothing to buy. Too many? The hoe lifts an empty one away, or carry it to the truck and it goes back.'],
         ['2 · Fill a crate', `A crate holds ${holds}. Click it with crops or dried goods in hand. A hopper standing beside a crate tips into it as the belt runs, and a belt can end at a crate.`],
         ['3 · Lift it', 'Hold the click on a crate to pick it up. You walk slower carrying it. Any crate with something in it can go on the truck.'],
         ['4 · Load the truck', `Carry it over and click the truck: it goes in over the tailgate. Your ${S.truckTier(s).name.toLowerCase()} takes ${n} crates.`],
