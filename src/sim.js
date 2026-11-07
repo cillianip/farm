@@ -1376,7 +1376,7 @@ export function mountForklift(state) {
   if (state.carrying) return fail('Put down what you carry first');
   if (state.barrow?.held) return fail('Let go of the barrow first');
   if (dist(state.player.x, state.player.y, f.x + 0.5, f.y + 0.5) > CONFIG.player.reach + 0.6) return fail('Too far');
-  f.mounted = true; state.player.x = f.x + 0.5; state.player.y = f.y + 0.5;
+  f.mounted = true; state.player.x = f.x + 0.5; state.player.y = f.y + 0.5; state.player.dir = f.face || 'right';   // you sit facing the forks
   return { ok: true, msg: '', float: 'On' };
 }
 export function forkLift(state, x, y) {

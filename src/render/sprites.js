@@ -803,13 +803,12 @@ export function forkliftSprite(view = 'side') {
     P.px(3, 12, '#d9453d'); P.px(12, 12, '#d9453d');                                                          // tail lights
     P.rect(0, 14, 2, 5, '#2a2a2a'); P.rect(14, 14, 2, 5, '#2a2a2a');                                           // rear wheels
   }, 'rgba(40,25,15,0.9)');
-  return sprite('forklift', 16, 20, P => {
+  return sprite('forklift2', 16, 20, P => {   // the forks are drawn by the game, at the carriage's height
     P.rect(3, 18, 11, 2, 'rgba(30,20,10,0.28)');
     P.rect(3, 9, 9, 7, '#e8c13a'); P.rect(3, 9, 9, 1, '#f6dd6a'); P.rect(3, 15, 9, 1, '#b8921f');       // the body
     P.rect(4, 5, 7, 4, '#3b2314'); P.rect(5, 6, 5, 2, '#5a4a2a');                                       // the seat and its back
     P.rect(3, 3, 1, 12, PAL.metalDark); P.rect(11, 3, 1, 12, PAL.metalDark); P.rect(3, 3, 9, 1, PAL.metalDark);   // the roll cage
     P.rect(12, 2, 2, 15, PAL.metalDark); P.px(12, 2, PAL.metal); P.rect(12, 10, 1, 7, PAL.metal);       // the mast
-    P.rect(12, 16, 4, 1, PAL.metalLight); P.rect(12, 17, 4, 1, PAL.metalDark);                           // the forks
     P.disc(5, 17, 2, '#2a2a2a'); P.disc(10, 17, 2, '#2a2a2a'); P.px(5, 17, PAL.metalLight); P.px(10, 17, PAL.metalLight);   // wheels
   }, 'rgba(40,25,15,0.9)');
 }

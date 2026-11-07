@@ -380,6 +380,7 @@ export class Game {
     return { title: 'Grass', sub: 'Hoe it to make a bed.' };
   }
   facePoint(x, y) {
+    if (this.state.forklift?.mounted) return;   // on the forklift you face the way it faces
     const p = this.state.player, dx = x - p.x, dy = y - p.y;
     p.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
   }
@@ -882,24 +883,32 @@ export class Game {
       ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(p.x * T) - cx - 10, Math.round(p.y * T) - cy + 6, 20, 5);
       const heldNow = this.action ? this.actionItem() : this.hotbarItem(), act = this.action?.type;
       const pose = s.barrow?.held ? 'push' : s.carrying ? 'carry' : act === 'drink' || act === 'eat' ? 'drink' : act === 'plant' ? 'plant' : (!this.action && heldNow && heldNow.kind !== 'tool' ? 'hold' : 'idle');
-      const spr = playerSprite(p.dir, frame, pose), u0 = CONFIG.scale;
+      const spr = playerSprite(s.forklift?.mounted ? s.forklift.face || p.dir : p.dir, frame, pose), u0 = CONFIG.scale;
       if (s.forklift?.mounted) {   // on the forklift: the truck under you, the crates stacked on the forks, you sat up on it
         const F = s.forklift, left = F.face === 'left', jx = this.jolt ? Math.round(Math.sin(this.jolt * 90) * u0) : 0, fx = px + jx;
         // Build 98: how high the forks are: a crate just lifted comes up off the ground, a load rises to the bed and the forks come back down
         const A = this.forkAnim, ez = k => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); }, list = A?.kind === 'load' && !A.flown ? A.crates : F.crates;
-        const up = i => !A ? 0 : A.kind === 'lift' ? (i === list.length - 1 ? -Math.round((1 - ez(A.t / FORK.lift)) * 5) * u0 : 0) : Math.round((A.flown ? 1 - ez((A.t - FORK.rise) / (FORK.load - FORK.rise)) : ez(A.t / FORK.rise)) * 7) * u0;
-        const crate = (i, x, y) => ctx.drawImage(crateSprite(S.dcrateCount(list[i]) ? 1 : 0, true), x, y - up(i), 9 * u0, 8 * u0);
+        // L: the carriage's height in pixels: 2 when carrying, from the ground when it has just lifted, up to 9 at the truck's bed
+        const L = Math.round(!A ? 2 : A.kind === 'lift' ? 2 * ez(A.t / FORK.lift) : 2 + 7 * (A.flown ? 1 - ez((A.t - FORK.rise) / (FORK.load - FORK.rise)) : ez(A.t / FORK.rise)));
+        const crate = (i, x, y) => ctx.drawImage(crateSprite(S.dcrateCount(list[i]) ? 1 : 0, true), x, y - (L - 2) * u0, 9 * u0, 8 * u0);
         if (F.face === 'down') {   // toward you: the driver behind the mast, the crates on the forks in front
           ctx.drawImage(forkliftSprite('down'), fx, py + 2 * u0, T, 20 * u0); ctx.drawImage(spr, 0, 0, 16, 14, fx, py - 3 * u0, T, 14 * u0); ctx.drawImage(forkliftMastSprite(), fx, py + 2 * u0, T, 20 * u0);
           for (let i = 0; i < list.length; i++) crate(i, fx + 3.5 * u0, py + 13 * u0 - i * 6 * u0); return;
         }
         if (F.face === 'up') {     // away: the crates beyond on the forks, the driver's back, the seat and counterweight nearest
-          for (let i = 0; i < list.length; i++) crate(i, fx + 3.5 * u0, py - 12 * u0 - i * 5 * u0);
+          // Build 99: the mast stands up beyond the driver, rails taller than the stack, the carriage and crates riding on it
+          const top = py - 10 * u0 - (list.length - 1) * 6 * u0 - (L - 2) * u0, cb = py - 2 * u0 - (L - 2) * u0;
+          if (list.length) { ctx.fillStyle = '#5c6273'; ctx.fillRect(fx + 2 * u0, top - 3 * u0, u0, py + 6 * u0 - top); ctx.fillRect(fx + 13 * u0, top - 3 * u0, u0, py + 6 * u0 - top); ctx.fillRect(fx + 2 * u0, top - 3 * u0, 12 * u0, u0); ctx.fillStyle = '#8b93a6'; ctx.fillRect(fx + 2 * u0, top - 3 * u0, u0, u0); ctx.fillRect(fx + 13 * u0, top - 3 * u0, u0, u0); ctx.fillStyle = '#5c6273'; ctx.fillRect(fx + 3 * u0, cb, 10 * u0, 2 * u0); }
+          for (let i = 0; i < list.length; i++) crate(i, fx + 3.5 * u0, py - 10 * u0 - i * 6 * u0);
           ctx.drawImage(spr, 0, 0, 16, 14, fx, py - 3 * u0, T, 14 * u0); ctx.drawImage(forkliftSprite('up'), fx, py + 2 * u0, T, 20 * u0); return;
         }
+        // side on (Build 99): the driver on the seat, the mast, then the carriage and forks out in front with the crates on them
         drawFacing(ctx, forkliftSprite(), fx, py + 2 * u0, T, 20 * u0, left);
-        for (let i = 0; i < list.length; i++) crate(i, fx + (left ? -4 : 11) * u0, py + 12 * u0 - i * 6 * u0);
-        ctx.drawImage(spr, 0, 0, 16, 14, fx + (left ? 2 : -2) * u0, py - 2 * u0, T, 14 * u0); return;
+        ctx.drawImage(spr, 0, 0, 16, 14, fx + (left ? 2 : -2) * u0, py - 2 * u0, T, 14 * u0);
+        const fy = py + 19 * u0 - L * u0, mx = fx + (left ? 2 : 12) * u0, tx = fx + (left ? -5 : 12) * u0;
+        ctx.fillStyle = '#5c6273'; ctx.fillRect(mx, fy - 7 * u0, 2 * u0, 8 * u0); ctx.fillStyle = '#8b93a6'; ctx.fillRect(mx + (left ? u0 : 0), fy - 7 * u0, u0, 7 * u0);   // the carriage on the mast
+        ctx.fillStyle = '#c2c8d6'; ctx.fillRect(tx, fy, 9 * u0, u0); ctx.fillStyle = '#5c6273'; ctx.fillRect(tx, fy + u0, 9 * u0, u0);   // the forks
+        for (let i = 0; i < list.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(list[i]) ? 1 : 0, true), fx + (left ? -6 : 13) * u0, fy - 8 * u0 - i * 6 * u0, 9 * u0, 8 * u0); return;
       }
       if (S.isTired(s) && !s.carrying) {   // worn out: the head sinks a pixel into the shoulders, and a drop of sweat
         ctx.drawImage(spr, 0, 10, 16, PLAYER_H - 10, px, py + 10 * u0, T, (PLAYER_H - 10) * u0);
