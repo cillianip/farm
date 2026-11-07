@@ -1299,7 +1299,12 @@ await test('the truck: sold once the crate is fully extended; it parks on the tr
   // Build 95: too many crates? the hoe lifts an empty one away, and an empty carried to the truck goes back
   assert.equal(s.inventory.slots[0]?.tool, 'hoe'); s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok); r = S.useItem(s, 0, b.x0 + 1, b.y0); assert.ok(r.ok && !tile(b.x0 + 1, b.y0).obj, r.msg);
   assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok); assert.ok(S.pickUpCrate(s, b.x0 + 1, b.y0).ok); s.player.x = W.TRUCK_SPOT.x + 1; s.player.y = W.TRUCK_SPOT.y + W.TRUCK_SPOT.h + 0.5; r = S.loadTruck(s); assert.ok(r.ok && r.back && !s.carrying && !s.truck.bed.length, JSON.stringify(r));
-  assert.equal(T2.tiers[0].slots * T2.crateHolds, 2 * (CONFIG.crate.capacity + 3 * 12), 'the small truck carries twice the fully extended porch crate'); assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
+  assert.equal(T2.tiers[0].slots * T2.crateHolds, 2 * (CONFIG.crate.capacity + 3 * 12), 'the small truck carries twice the fully extended porch crate');
+  // Build 100: pushing the barrow, its crops tip into a crate one at a time, the pockets untouched
+  s.barrow = S.makeBarrow(b.x0 + 2, b.y0 + 2); assert.equal(S.barrowFoodSlot(s), -1, 'only while you push it'); s.barrow.held = true; assert.equal(S.barrowFoodSlot(s), -1, 'empty');
+  addItem(s.barrow.slots, { kind: 'crop', species: carrot.id, qty: 30 }); s.player.x = b.x0 + 1.5; s.player.y = b.y0 + 1.5; assert.ok(S.setCrate(s, b.x0 + 1, b.y0).ok);
+  const pockets = JSON.stringify(s.inventory.slots); let tipped = 0; for (let i = 0; i < 40; i++) { const bi = S.barrowFoodSlot(s); if (bi < 0) break; r = S.putInDcrate(s, bi, b.x0 + 1, b.y0, 1, s.barrow.slots); if (!r.ok) break; tipped += r.count; if (r.full) break; }
+  assert.equal(tipped, T2.crateHolds, 'a crate full'); assert.equal(s.barrow.slots.slots.reduce((n, i) => n + (i?.qty || 0), 0), 30 - T2.crateHolds); assert.equal(JSON.stringify(s.inventory.slots), pockets, 'the pockets are not touched'); s.barrow.held = false; assert.ok(!rep.lines.some(l => /haulier left/.test(l)));
   // parcels come to the sign now
   // Build 96: crates get heavier as they fill; the medium truck needs the forklift, and only the forklift loads it
   s.carrying = 'dcrate'; s.carriedCrate = { items: [] }; const e0 = S.carryFactor(s); s.carriedCrate.items = [{ species: carrot.id, q: 0, qty: T2.crateHolds }]; assert.ok(S.carryFactor(s) < e0 && e0 < CONFIG.player.carrySpeed, 'a full crate is slower'); s.carrying = null; s.carriedCrate = null;

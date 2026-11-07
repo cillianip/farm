@@ -470,6 +470,7 @@ export function clearCrate(state, x, y) {
   t.obj = null; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '', float: 'Crate away' };
 }
+export const barrowFoodSlot = state => state.barrow?.held ? state.barrow.slots.slots.findIndex(i => i && isFood(i)) : -1;   // the next crop to tip from the barrow
 export function dcrateTiles(state) { const w = state.world, out = []; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (isDcrate(t)) out.push({ x, y, t }); } return out; }
 export const dcrateCount = o => (o.items || []).reduce((n, it) => n + it.qty, 0);
 // everything waiting for the pickup, the porch crate first then each delivery crate (one buyer's order across all of them)
@@ -478,12 +479,13 @@ export const bayWaiting = state => bayCrates(state).reduce((n, { t }) => n + dcr
 // the board by the bay: what is waiting, what it fetches tonight, and what sits in crates outside the bay
 export function bayBoard(state) { const P = priceCrate(state, allCrateItems(state)); const outside = dcrateTiles(state).filter(({ x, y }) => !inBayOf(state, x, y)).reduce((n, { t }) => n + dcrateCount(t.obj), 0); return { count: P.count, total: P.total, lines: P.lines, loaded: state.truck?.bed?.length || 0, slots: truckSlots(state), crates: bayCrates(state).length, waiting: bayWaiting(state), outside }; }
 // A crop in hand into a delivery crate: crops and dried goods only, as much as fits.
-export function putInDcrate(state, slotIndex, x, y, n = Infinity) {
-  const t = tileAt(state.world, x, y), it = state.inventory.slots[slotIndex]; if (!isDcrate(t) || !it) return fail('');
+// inv: where it comes from, your pockets or (Build 100) the barrow you are pushing, tipped in one crop at a time
+export function putInDcrate(state, slotIndex, x, y, n = Infinity, inv = state.inventory) {
+  const t = tileAt(state.world, x, y), it = inv.slots[slotIndex]; if (!isDcrate(t) || !it) return fail('');
   if (!isFood(it)) return fail('Crops and dried goods go in a delivery crate');
   if (!inReach(state, x, y)) return fail('Too far');
   const o = t.obj, room = CONFIG.truck.crateHolds - dcrateCount(o); if (room <= 0) return fail('The crate is full. The truck comes tonight.');
-  const take = Math.min(n, it.qty, room); removeFromSlot(state.inventory, slotIndex, take);
+  const take = Math.min(n, it.qty, room); removeFromSlot(inv, slotIndex, take);
   const key = pileKey(it), have = o.items.find(c => pileKey(c) === key); if (have) have.qty += take; else o.items.push({ species: it.species, q: it.q || 0, qty: take, ...(it.product ? { product: it.product } : {}) });
   return { ok: true, msg: '', float: `+${take} ${it.kind === 'crop' ? state.species[it.species]?.name || 'crop' : itemName(it, state.species)}`, count: take, full: dcrateCount(o) >= CONFIG.truck.crateHolds };
 }
