@@ -18,4 +18,9 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(data);
   });
+}).on('error', e => {
+  if (e.code !== 'EADDRINUSE') throw e;
+  console.log(`Port ${port} is already in use: the farm server is probably already running. Just open http://localhost:${port}`);
+  console.log(`(To stop the old one: lsof -ti tcp:${port} | xargs kill  — or start on another port: PORT=8081 npm start)`);
+  process.exit(1);
 }).listen(port, () => console.log(`Farm running at http://localhost:${port}`));
