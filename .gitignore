@@ -1,3 +1,6 @@
 .DS_Store
 node_modules/
 *.log
+# the breeding lab is a local dev tool, not part of the public game
+lab.html
+src/lab.js
