@@ -828,7 +828,7 @@ export function traitList(sp) {
   return out;
 }
 // a gene name as a farmer would say it
-const MUT_WORD = { family: 'new family', archetype: 'new shape', surface: 'new skin', pattern: 'new pattern', hue1: 'colour', sat1: 'colour', light1: 'colour', hue2: 'second colour', sat2: 'second colour', light2: 'second colour', leafHue: 'leaf colour', leafShape: 'leaf shape', leafDensity: 'leafiness', size: 'size', count: 'yield', growHours: 'growth speed', thirst: 'thirst', hardiness: 'hardiness', regrow: 'regrowth', elongation: 'shape', width: 'shape', tip: 'shape', curve: 'shape', ribs: 'shape', bumpiness: 'shape', height: 'height', top: 'top', ripeHours: 'ripening' };
+const MUT_WORD = { family: 'new family', archetype: 'new shape', surface: 'new skin', pattern: 'new pattern', hue1: 'colour', sat1: 'colour', light1: 'colour', hue2: 'second colour', sat2: 'second colour', light2: 'second colour', leafHue: 'leaf colour', leafShape: 'leaf shape', leafDensity: 'leafiness', size: 'size', count: 'yield', growHours: 'growth speed', thirst: 'thirst', hardiness: 'hardiness', regrow: 'regrowth', elongation: 'shape', width: 'shape', tip: 'shape', curve: 'shape', ribs: 'shape', bumpiness: 'shape', bulge: 'shape', pinch: 'shape', height: 'height', top: 'top', ripeHours: 'ripening' };
 export function mutationWord(m) { if (m.startsWith('trait:')) return '★ ' + m.slice(6).replace(/([A-Z])/g, ' $1').toLowerCase(); return MUT_WORD[m] || m; }
 export function describeBreed(s, r) {
   const name = r.species ? s.species[r.species]?.name : '';

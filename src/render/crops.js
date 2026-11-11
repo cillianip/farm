@@ -4,7 +4,7 @@
 // lettuce, pea pod, lavender spike, ...), with the numeric genes bending it: width, elongation, tip, curve, ribs, bumps.
 import { hsl, pixelDrawer, makeCanvas, PAL } from './palette.js';
 import { makeRng, hashString } from '../rng.js';
-import { canonical, shownSurface } from '../genetics.js';
+import { canonical, shownSurface, warped } from '../genetics.js';
 
 const cache = new Map();
 
@@ -62,10 +62,11 @@ export function colours(g) {
     light: hsl(h1, Math.min(1, s1), Math.min(0.95, l1 + 0.17)), outline: hsl(h1, Math.min(1, s1 + 0.1), Math.min(0.26, Math.max(0.06, l1 - 0.32))),
     second: hsl(g.hue2, g.sat2, g.light2),
     leaf: hsl(g.leafHue, 0.55, 0.38), leafDark: hsl(g.leafHue, 0.55, 0.27), leafLight: hsl(g.leafHue, 0.6, 0.5),
+    netting: hsl(g.hue2, Math.min(0.35, g.sat2), Math.max(0.68, g.light2)),
     stem: hsl(g.leafHue - 20, 0.4, 0.3), leafLine: hsl(g.leafHue - 10, 0.5, 0.16), glow: hsl(h1, 0.9, 0.8, 0.45), frost: '#dff3ff',
   };
 }
-const DEAD = { leafLine: '#3a3229', main: PAL.withered, dark: PAL.witheredDark, shade: PAL.witheredDark, light: '#a5957a', outline: '#4a4034', second: PAL.witheredDark, leaf: PAL.withered, leafDark: PAL.witheredDark, leafLight: '#a5957a', stem: PAL.witheredDark, glow: 'transparent', frost: 'transparent' };
+const DEAD = { leafLine: '#3a3229', netting: '#a5957a', main: PAL.withered, dark: PAL.witheredDark, shade: PAL.witheredDark, light: '#a5957a', outline: '#4a4034', second: PAL.witheredDark, leaf: PAL.withered, leafDark: PAL.witheredDark, leafLight: '#a5957a', stem: PAL.witheredDark, glow: 'transparent', frost: 'transparent' };
 
 // Where the seed landed: four arrangements of the three dots, so a row of beds does not repeat.
 const SEED_DOTS = [[[6, 12], [9, 11], [8, 13]], [[4, 7], [7, 8], [5, 10]], [[9, 5], [11, 7], [10, 9]], [[7, 4], [5, 6], [8, 7]]];
@@ -214,7 +215,8 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
   };
   // Generic shaded blob: outline on the bottom/right edge, highlight top-left, a shade band bottom-right.
   const fillShape = (test, opts = {}) => {
-    for (let y = -h - 2; y <= h + 2; y++) for (let x = -w - 2; x <= w + 2; x++) {
+    const B = Math.max(w, h) + 4;   // wide enough for a bulged or blended outline, so no side is cut flat
+    for (let y = -B; y <= B; y++) for (let x = -B; x <= B; x++) {
       if (!test(x, y)) continue;
       const edge = !test(x + 1, y) || !test(x, y + 1) || !test(x - 1, y) || !test(x, y - 1);
       let c;
@@ -228,15 +230,24 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
   const ell = (x, y, rw, rh) => (x * x) / (rw * rw + 0.01) + (y * y) / (rh * rh + 0.01) <= 1.05;
   const curve = (y) => Math.round(g.curve * (y / Math.max(1, h)) * (y / Math.max(1, h)) * w * 0.8);
   const fam = g.family;
-  if (g.shapeMix > 0 && PROFILE[g.archetype] && PROFILE[g.shape2]) {
-    // a blended body: both shapes' outlines down the body, mixed; the lead shape's crown or stem on top
+  if (PROFILE[g.archetype] && PROFILE[g.shape2] && (g.shapeMix > 0 || warped(g) || !DRAWN.has(g.archetype))) {
+    // a body drawn from its outline: two shapes mixed (a blend), bent by bulge and pinch, roughened by bumpiness; the
+    // lead shape's crown or stem on top. Pure textbook shapes keep their own drawings below.
     const pa = PROFILE[g.archetype], pb = PROFILE[g.shape2], m = g.shapeMix;
     const asp = pa.asp * (1 - m) + pb.asp * m, R = (w + h) / 2;
     const hw = Math.max(1.5, Math.min(icon ? cap : maxW + 1, R / Math.sqrt(asp) * (0.8 + g.width * 0.4)));
     const hh = Math.max(2, Math.min(icon ? cap : maxH + 1, Math.round(R * Math.sqrt(asp) * (0.8 + g.elongation * 0.4))));
-    const prof = t => pa.f(t) * (1 - m) + pb.f(t) * m;
+    const k = 2 ** ((0.5 - g.bulge) * 2.2), rough = Array.from({ length: 6 }, () => r.range(-1, 1));
+    const prof = t0 => {
+      const t = t0 ** k;                                                                      // bulge: the widest point moves up or down
+      let v = pa.f(t) * (1 - m) + pb.f(t) * m;
+      v *= 1 - g.pinch * 0.55 * Math.exp(-(((t0 - 0.5) / 0.16) ** 2));                        // pinch: a waist
+      v *= 1 + g.bumpiness * 0.22 * rough[Math.min(5, Math.floor(t0 * 6))];                   // an uneven edge
+      return Math.max(0, v);
+    };
     const inside = (x, y) => { const t = (y + hh) / (2 * hh); return t >= 0 && t <= 1 && Math.abs(x - curve(y)) <= hw * prof(t) + 0.35; };
     fillShape(inside);
+    if ((g.archetype === 'bulb' || g.shape2 === 'bulb') && hw >= 2) for (let y = -hh + 2; y < hh - 1; y += 2) if (inside(Math.round(hw / 2), y) && inside(Math.round(hw / 2) + 1, y)) put(cx + curve(y) + Math.round(hw / 2), cy + y, C.shade);   // a bulb's papery lines
     if (g.archetype === 'berry' || g.shape2 === 'berry') for (let y = -hh + 1; y < hh; y++) for (let x = -Math.ceil(hw); x <= hw; x++) {   // a strawberry in it keeps its seeds
       if ((y & 1) || ((x + (y >> 1)) & 1)) continue;
       if (N4.every(([dx, dy]) => inside(x + dx, y + dy)) && inside(x, y)) put(cx + x, cy + y, C.second);
@@ -437,6 +448,20 @@ function finish(P, buf, g, C, r, clipY, icon) {
     const inner = body().filter(k => { const [x, y] = xy(k); return N4.every(([dx, dy]) => isBody(x + dx, y + dy)); });
     for (let i = 0; i < Math.min(3, Math.floor(inner.length / 5)); i++) buf.set(inner[r.int(0, inner.length - 1)], C.outline);
   }
+  else if (skin === 'warty') {
+    // raised warts: a lit pixel with its shadow below-right, scattered, never touching each other or the edge
+    const inner = body().filter(k => { const [x, y] = xy(k); return N4.every(([dx, dy]) => isBody(x + dx, y + dy)) && isBody(x + 1, y + 1); });
+    const taken = new Set(), want = Math.max(2, Math.round(inner.length / 4.5));
+    for (let i = 0, tries = 0; i < want && tries < want * 6; tries++) {
+      const k = inner[r.int(0, inner.length - 1)], [x, y] = xy(k);
+      if ([[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].some(([dx, dy]) => taken.has(K(x + dx, y + dy)))) continue;
+      buf.set(k, C.light); buf.set(K(x + 1, y + 1), C.dark); taken.add(k); taken.add(K(x + 1, y + 1)); i++;
+    }
+  } else if (skin === 'netted') {
+    // a melon's net: two sets of diagonals in a pale tone over the flesh, a pixel in from the edge
+    const net = C.netting;
+    for (const k of body()) { const [x, y] = xy(k); if (!N4.every(([dx, dy]) => isBody(x + dx, y + dy))) continue; if (((x + y) % 4 + 4) % 4 === 0 || ((x - y) % 4 + 4) % 4 === 0) buf.set(k, net); }
+  }
   // the outline: every empty pixel touching the shape
   const line = new Map();
   for (const k of buf.keys()) { const [x, y] = xy(k); for (const [dx, dy] of N4) { const o = K(x + dx, y + dy); if (!buf.has(o) && !line.has(o)) line.set(o, leafy.has(buf.get(k)) ? C.leafLine : C.outline); } }
@@ -462,7 +487,9 @@ function finish(P, buf, g, C, r, clipY, icon) {
 // Width down a solid body (t: 0 top, 1 bottom; 1 = full half-width) and its height over its width, for blending two
 // shapes. Each one is the outline its own drawing above makes.
 const circ = t => Math.sqrt(Math.max(0, 1 - (2 * t - 1) ** 2));
+const DRAWN = new Set(['taper', 'berry', 'lumpy', 'bulb', 'crown', 'elongated', 'ribbed', 'spiky', 'pod']);   // shapes with a drawing of their own
 const PROFILE = {
+  waisted:   { asp: 1.7, f: t => Math.max(0.58 * circ(t / 0.46), circ((t - 0.4) / 0.6)) },   // butternut, peanut: a small neck over a big bulb, a waist between
   crown:     { asp: 1.0, f: t => circ(t) },
   spiky:     { asp: 1.0, f: t => circ(t) },
   lumpy:     { asp: 0.75, f: t => circ(t) ** 0.8 },

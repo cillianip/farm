@@ -1451,6 +1451,16 @@ await test('body and skin: a skin crosses apart from the shape (a ribbed carrot)
   }
   assert.ok(mixed, 'carrot × pumpkin can give a ribbed carrot'); assert.ok(past, 'a child can be wider than both parents');
 });
+await test('a new shape from a mutation is never the textbook one: it starts part-way from the old shape with its outline bent, so two of the same kind differ; neutral warps stay out of the id', () => {
+  const ca = G.WILD_BASES.carrot, to = G.WILD_BASES.tomato, seen = [];
+  for (let seed = 1; seed < 6000 && seen.length < 6; seed++) { const r = G.cross(ca, to, seed); const l = r.log.find(l => l.k === 'archetype'); if (l.mutated && G.SKINNED.has(r.child.archetype)) seen.push(r.child); }
+  assert.ok(seen.length >= 4, 'found mutated shapes');
+  for (const c of seen) { assert.ok(c.shapeMix >= 0.15, 'part-way from where it came from'); assert.ok(G.warped(c), 'its outline is bent'); }
+  assert.equal(new Set(seen.map(c => `${c.bulge}|${c.pinch}|${c.shapeMix}`)).size, seen.length, 'no two alike');
+  assert.ok(!G.canonical(ca).includes('bulge') && !G.canonical(ca).includes('pinch'), 'neutral warps add nothing to the id');
+  assert.equal(G.normaliseGenome(ca).pinch, 0); assert.equal(G.normaliseGenome(ca).bulge, 0.5);
+  assert.ok(G.makeSpecies({ ...G.WILD_BASES.pumpkin, archetype: 'waisted' }).name.includes('Butternut'));
+});
 await test('blended bodies: two solid shapes give a child in between, a backcross drifts back, a pure shape keeps its old id, and the lab breeds what the breeder breeds', () => {
   const ca = G.WILD_BASES.carrot, to = G.WILD_BASES.tomato;
   let blends = 0, n = 0, child = null;

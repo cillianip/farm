@@ -3,17 +3,21 @@ import { CONFIG } from './config.js';
 import { makeRng, hashString } from './rng.js';
 
 export const FAMILIES = ['root', 'bush', 'vine', 'grain', 'flower', 'gourd'];
-export const ARCHETYPES = ['taper', 'lumpy', 'bulb', 'crown', 'cluster', 'pod', 'elongated', 'ribbed', 'ear', 'head', 'spiky', 'star', 'berry'];
+export const ARCHETYPES = ['taper', 'lumpy', 'bulb', 'crown', 'cluster', 'pod', 'elongated', 'ribbed', 'ear', 'head', 'spiky', 'star', 'berry', 'waisted'];
 export const PATTERNS = ['none', 'stripes', 'spots', 'gradient'];
 export const LEAF_SHAPES = ['round', 'pointed', 'frond', 'blade'];
 export const TOPS = ['crown', 'stem', 'none'];
 // The skin laid over any body shape (Build 101): crossing mixes body and skin freely, so a carrot × pumpkin can give a
 // ribbed carrot. Older genomes had the skin baked into the shape; they get it from SURFACE_OF and keep their ids.
-export const SURFACES = ['smooth', 'bumpy', 'ribbed', 'spiky'];
+export const SURFACES = ['smooth', 'bumpy', 'ribbed', 'spiky', 'warty', 'netted'];
 export const SURFACE_OF = { lumpy: 'bumpy', ribbed: 'ribbed', spiky: 'spiky' };
 export const defaultSurface = arch => SURFACE_OF[arch] || 'smooth';
 // the bodies a skin shows on; spikes of grain, flower heads, cobs and stars keep their own look and carry the skin hidden
-export const SKINNED = new Set(['taper', 'berry', 'lumpy', 'bulb', 'crown', 'elongated', 'ribbed', 'spiky', 'pod']);
+export const SKINNED = new Set(['taper', 'berry', 'lumpy', 'bulb', 'crown', 'elongated', 'ribbed', 'spiky', 'pod', 'waisted']);
+// Body warps (Build 104): bulge moves the widest point up (1) or down (0), pinch draws in a waist. Neutral (0.5, 0) is
+// left out of the id, so every older crop keeps its own; a bred child drifts off neutral and is drawn from its outline.
+export const WARP_NEUTRAL = { bulge: 0.5, pinch: 0 };
+export const warped = g => Math.abs((g.bulge ?? 0.5) - 0.5) > 0.1 || (g.pinch ?? 0) > 0.1;
 export const shownSurface = g => SKINNED.has(g.archetype) ? g.surface : defaultSurface(g.archetype);
 // Blended bodies (Build 103): a child of two solid shapes carries both, the lead one (archetype) and a second one (shape2)
 // at shapeMix (0 = pure, up to 0.5 = halfway), and is drawn in between. Crossing mixes the parents' shape weights, so a
@@ -25,8 +29,8 @@ export const RARE_TRAITS = ['golden', 'glowing', 'multiHarvest', 'frostHardy']; 
 // Gene table. type: cat (categorical) | num (0..1 unless min/max) | int | bool. w = rarity weight function.
 export const GENES = [
   { k: 'family', type: 'cat', values: FAMILIES, w: v => ({ root: 0, bush: 0.5, gourd: 1, vine: 1, grain: 1, flower: 2 })[v] },
-  { k: 'archetype', type: 'cat', values: ARCHETYPES, w: v => ({ taper: 0, lumpy: 0, bulb: 0, crown: 1, cluster: 1, pod: 1, elongated: 1, ribbed: 1.5, ear: 1.5, head: 1.5, spiky: 5, star: 7 })[v] },
-  { k: 'surface', type: 'cat', values: SURFACES, w: (v, g) => g && (v === defaultSurface(g.archetype) || shownSurface(g) !== v) ? 0 : ({ smooth: 0, bumpy: 0.5, ribbed: 1, spiky: 2 })[v] },
+  { k: 'archetype', type: 'cat', values: ARCHETYPES, w: v => ({ taper: 0, lumpy: 0, bulb: 0, crown: 1, cluster: 1, pod: 1, elongated: 1, ribbed: 1.5, ear: 1.5, head: 1.5, spiky: 5, star: 7, waisted: 1.5 })[v] },
+  { k: 'surface', type: 'cat', values: SURFACES, w: (v, g) => g && (v === defaultSurface(g.archetype) || shownSurface(g) !== v) ? 0 : ({ smooth: 0, bumpy: 0.5, ribbed: 1, spiky: 2, warty: 1, netted: 1.5 })[v] },
   { k: 'elongation', type: 'num' }, { k: 'width', type: 'num' }, { k: 'bumpiness', type: 'num' },
   { k: 'ribs', type: 'num' }, { k: 'tip', type: 'num' }, { k: 'curve', type: 'num' },
   { k: 'top', type: 'cat', values: TOPS },
@@ -46,6 +50,8 @@ export const GENES = [
   { k: 'skin', type: 'num', noId: true },    // thick skin dries slowly
   { k: 'regrow', type: 'bool', w: v => v ? 1 : 0 },
   { k: 'vigor', type: 'num' },        // hybrid vigour: set by cross(), not blended; pays at the cart (see produceValue)
+  { k: 'bulge', type: 'num', w: v => Math.abs(v - 0.5) > 0.35 ? 0.5 : 0 },
+  { k: 'pinch', type: 'num', w: v => v > 0.6 ? 1 : 0 },
 ];
 export const TRAIT_WEIGHT = { golden: 8, glowing: 7, multiHarvest: 5, frostHardy: 4 };
 
@@ -62,6 +68,7 @@ const r2 = v => Math.round(v * 100) / 100;
 export function normaliseGenome(g) {
   const out = { ...g, traits: { ...(g.traits || {}) } };
   if (!SURFACES.includes(out.surface)) out.surface = defaultSurface(ARCHETYPES.includes(out.archetype) ? out.archetype : ARCHETYPES[0]);
+  for (const [k, v] of Object.entries(WARP_NEUTRAL)) if (typeof out[k] !== 'number' || Number.isNaN(out[k])) out[k] = v;
   if (!ARCHETYPES.includes(out.shape2) || !(out.shapeMix > 0)) { out.shape2 = ARCHETYPES.includes(out.archetype) ? out.archetype : ARCHETYPES[0]; out.shapeMix = 0; }
   else out.shapeMix = r2(Math.min(0.5, out.shapeMix));
   for (const spec of GENES) {
@@ -83,7 +90,7 @@ export function normaliseGenome(g) {
 
 export function canonical(g) {
   const n = normaliseGenome(g);
-  const parts = GENES.filter(s => !s.noId && !(s.k === 'surface' && n.surface === defaultSurface(n.archetype))).map(s => `${s.k}=${n[s.k]}`);   // the skin a shape always had is left out, so old ids hold
+  const parts = GENES.filter(s => !s.noId && !(s.k === 'surface' && n.surface === defaultSurface(n.archetype)) && !(s.k in WARP_NEUTRAL && n[s.k] === WARP_NEUTRAL[s.k])).map(s => `${s.k}=${n[s.k]}`);   // the skin a shape always had is left out, so old ids hold
   if (n.shapeMix > 0) parts.push(`shape2=${n.shape2}`, `shapeMix=${n.shapeMix}`);   // a pure shape adds nothing, so old ids hold
   parts.push('traits=' + RARE_TRAITS.filter(t => n.traits[t]).join('+'));
   return parts.join(';');
@@ -135,12 +142,12 @@ const PATTERN_WORD = { none: '', stripes: 'Striped', spots: 'Spotted', gradient:
 const SURFACE_WORD = { smooth: 'Smooth', bumpy: 'Knobbly', ribbed: 'Ribbed', spiky: 'Spiny' };
 const TRAIT_WORD = { glowing: 'Moon', multiHarvest: 'Bounty', frostHardy: 'Winter' };
 const NOUNS = {
-  root:   { taper: 'Carrot', lumpy: 'Potato', bulb: 'Turnip', crown: 'Beet', cluster: 'Groundnut', pod: 'Peanut', elongated: 'Parsnip', ribbed: 'Yam', ear: 'Ginger', head: 'Radish', spiky: 'Thornroot', star: 'Starroot' },
-  bush:   { taper: 'Chilli', lumpy: 'Fig', bulb: 'Plum', crown: 'Tomato', cluster: 'Berry', pod: 'Bean', elongated: 'Pepper', ribbed: 'Gooseberry', ear: 'Hazel', head: 'Artichoke', spiky: 'Bramble', star: 'Starfruit' },
-  vine:   { taper: 'Hopvine', lumpy: 'Kiwi', bulb: 'Grape', crown: 'Passionfruit', cluster: 'Grape', pod: 'Pea', elongated: 'Cucumber', ribbed: 'Melon', ear: 'Loofah', head: 'Hopflower', spiky: 'Thornvine', star: 'Starvine' },
-  grain:  { taper: 'Rye', lumpy: 'Buckwheat', bulb: 'Millet', crown: 'Amaranth', cluster: 'Oat', pod: 'Lentil', elongated: 'Barley', ribbed: 'Sorghum', ear: 'Corn', head: 'Wheat', spiky: 'Spikegrass', star: 'Stargrain' },
-  flower: { taper: 'Lily', lumpy: 'Poppy', bulb: 'Tulip', crown: 'Rose', cluster: 'Lavender', pod: 'Lupin', elongated: 'Iris', ribbed: 'Dahlia', ear: 'Foxglove', head: 'Sunflower', spiky: 'Thistle', star: 'Starbloom' },
-  gourd:  { taper: 'Zucchini', lumpy: 'Squash', bulb: 'Melon', crown: 'Marrow', cluster: 'Gourdlet', pod: 'Luffa', elongated: 'Marrow', ribbed: 'Pumpkin', ear: 'Calabash', head: 'Cabbage', spiky: 'Spikegourd', star: 'Stargourd' },
+  root:   { taper: 'Carrot', lumpy: 'Potato', bulb: 'Turnip', crown: 'Beet', cluster: 'Groundnut', pod: 'Peanut', elongated: 'Parsnip', ribbed: 'Yam', ear: 'Ginger', head: 'Radish', spiky: 'Thornroot', star: 'Starroot', waisted: 'Bellroot' },
+  bush:   { taper: 'Chilli', lumpy: 'Fig', bulb: 'Plum', crown: 'Tomato', cluster: 'Berry', pod: 'Bean', elongated: 'Pepper', ribbed: 'Gooseberry', ear: 'Hazel', head: 'Artichoke', spiky: 'Bramble', star: 'Starfruit', waisted: 'Pear' },
+  vine:   { taper: 'Hopvine', lumpy: 'Kiwi', bulb: 'Grape', crown: 'Passionfruit', cluster: 'Grape', pod: 'Pea', elongated: 'Cucumber', ribbed: 'Melon', ear: 'Loofah', head: 'Hopflower', spiky: 'Thornvine', star: 'Starvine', waisted: 'Bottlegourd' },
+  grain:  { taper: 'Rye', lumpy: 'Buckwheat', bulb: 'Millet', crown: 'Amaranth', cluster: 'Oat', pod: 'Lentil', elongated: 'Barley', ribbed: 'Sorghum', ear: 'Corn', head: 'Wheat', spiky: 'Spikegrass', star: 'Stargrain', waisted: 'Twingrain' },
+  flower: { taper: 'Lily', lumpy: 'Poppy', bulb: 'Tulip', crown: 'Rose', cluster: 'Lavender', pod: 'Lupin', elongated: 'Iris', ribbed: 'Dahlia', ear: 'Foxglove', head: 'Sunflower', spiky: 'Thistle', star: 'Starbloom', waisted: 'Bellflower' },
+  gourd:  { taper: 'Zucchini', lumpy: 'Squash', bulb: 'Melon', crown: 'Marrow', cluster: 'Gourdlet', pod: 'Luffa', elongated: 'Marrow', ribbed: 'Pumpkin', ear: 'Calabash', head: 'Cabbage', spiky: 'Spikegourd', star: 'Stargourd', waisted: 'Butternut' },
 };
 const SYLL = ['va', 'lo', 'ri', 'ne', 'ka', 'mu', 'so', 'ti', 'el', 'ar', 'is', 'on', 'ue', 'ya', 'fen', 'dor', 'mir', 'tal', 'quo', 'zel'];
 export function variantWord(g) {
@@ -318,7 +325,13 @@ export function cross(a, b, seed, opts = {}) {
     // so the rest of the cross rolls as before)
     const al = log.find(l => l.k === 'archetype'), wA = shapeWeights(A), wB = shapeWeights(B);
     child.shape2 = child.archetype; child.shapeMix = 0;
-    if (!al.mutated && blendable(wA) && blendable(wB)) {
+    if (al.mutated && SKINNED.has(child.archetype) && SKINNED.has(al.before)) {
+      // a new shape is never the textbook one: it starts part-way from the shape it came from, and its outline is bent
+      const rr = makeRng(seed ^ 0x27d4eb2f);
+      child.shape2 = al.before; child.shapeMix = r2(rr.range(0.15, 0.45));
+      child.bulge = clamp(child.bulge + rr.pick([-1, 1]) * rr.range(0.15, 0.35), 0, 1); child.pinch = clamp(child.pinch + rr.range(0, 0.4), 0, 1);
+      al.shape2 = child.shape2; al.shapeMix = child.shapeMix;
+    } else if (!al.mutated && blendable(wA) && blendable(wB)) {
       const t = makeRng(seed ^ 0x5bd1e995).range(0.1, 0.9), w = {};
       for (const [a, v] of Object.entries(wA)) w[a] = (w[a] || 0) + v * (1 - t);
       for (const [a, v] of Object.entries(wB)) w[a] = (w[a] || 0) + v * t;
