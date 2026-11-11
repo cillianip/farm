@@ -20,18 +20,6 @@ const ACTION_PERIOD = { hoe: 0.3, drain: 0.3, clear: 0.3, wither: 0.3, pull: 0.3
 import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
-// A label's name in at most two lines of eight, broken at spaces where it can be
-function labelLines(text) {
-  const out = []; let cur = '';
-  for (let w of text.trim().split(/ +/)) {
-    while (w.length > 8) { if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, 8)); w = w.slice(8); }
-    if (!w) continue;
-    if (!cur) cur = w; else if (cur.length + 1 + w.length <= 8) cur += ' ' + w; else { out.push(cur); cur = w; }
-  }
-  if (cur) out.push(cur);
-  if (out.length > 2) { const flat = text.trim(); return [flat.slice(0, 8), flat.slice(8, 16)].map(l => l.trim()).filter(Boolean); }   // words that will not go in two lines: cut it plainly so nothing is lost
-  return out;
-}
 
 // Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
 function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
@@ -90,25 +78,24 @@ export class Game {
     if (r?.rescued) this.offlineReport = 'This version could not open your farm, so a new one has started. Your old farm is kept safe: Settings → Save.';
     return S.createState();
   }
-  // A chest's label (Build 106), the player's own: the name on a board standing on the lid, one tile wide so chests side
-  // by side never cover each other's (as wide as the chest, two lines of eight), and the item in a frame on the chest's front, the way an
-  // item frame hangs on a chest in Minecraft. Drawn at half-pixel detail like the E marker, so the item keeps all 16 px.
-  // sx: the tile's left on screen, top: the chest sprite's top.
+  // A chest's label (Build 106), the player's own, on the chest itself: the name on a paper label stuck across the lid's
+  // front, and the item in a frame on the body below it, the way an item frame hangs on a chest in Minecraft. Drawn at
+  // half-pixel detail like the E marker, so the item keeps all 16 px. sx: the tile's left on screen, top: the chest's top.
   drawSign(chest, sx, top) {
     const L = S.chestLabel(chest); if (!L) return;
     const ctx = this.ctx, u = CONFIG.scale, h = u / 2, img = L.item && itemSprite(L.item, this.state.species);
-    if (img) {   // the frame: 10 world px, dark wood round a darker board, over the latch
+    if (img) {   // the frame: 10 world px, dark wood round a darker board, over the body
       const fx = sx + 3 * u, fy = top + 6 * u;
       ctx.fillStyle = '#3b2314'; ctx.fillRect(fx, fy, 10 * u, 10 * u); ctx.fillStyle = '#6b4423'; ctx.fillRect(fx + h, fy + h, 10 * u - 2 * h, 10 * u - 2 * h);
       ctx.fillStyle = '#8c5a2b'; ctx.fillRect(fx + h, fy + h, 10 * u - 2 * h, h);
       ctx.drawImage(img, fx + u, fy + u, 8 * u, 8 * u);
     }
-    const lines = labelLines(L.text || ''); if (!lines.length) return;
-    const W = 36, inH = lines.length * 6 + 1, H = inH + 4, x0 = sx - u, y0 = Math.round(top / h + 4 - H) * h;   // the board: as wide as the chest sprite
-    ctx.fillStyle = '#3b2314'; ctx.fillRect(x0, y0, W * h, H * h); ctx.fillRect(x0 + 17 * h, y0 + H * h, 2 * h, 2 * h);
-    ctx.fillStyle = '#f5e6c3'; ctx.fillRect(x0 + 2 * h, y0 + 2 * h, (W - 4) * h, inH * h);
-    ctx.fillStyle = '#e0cda2'; ctx.fillRect(x0 + 2 * h, y0 + (1 + inH) * h, (W - 4) * h, h);
-    lines.forEach((ln, i) => drawText(ctx, ln, x0 + Math.round((W - textWidth(ln, 1)) / 2) * h, y0 + (3 + i * 6) * h, '#3b2314', h, null));
+    const text = L.text || ''; if (!text) return;
+    const W = textWidth(text, 1) + 4, H = 9, x0 = Math.round(sx / h + 16 - W / 2) * h, y0 = top + h;   // the label: one line across the lid
+    ctx.fillStyle = '#4a2f16'; ctx.fillRect(x0, y0, W * h, H * h);
+    ctx.fillStyle = '#f5e6c3'; ctx.fillRect(x0 + h, y0 + h, (W - 2) * h, (H - 2) * h);
+    ctx.fillStyle = '#e0cda2'; ctx.fillRect(x0 + h, y0 + (H - 2) * h, (W - 2) * h, h);
+    drawText(ctx, text, x0 + 2 * h, y0 + 2 * h, '#3b2314', h, null);
   }
   save() { if (this.demo) return; saveLocal(this.state); this.lastSave = performance.now(); }
   exportSave() { return serialize(this.state); }
@@ -196,10 +183,6 @@ export class Game {
     for (const { x, y } of S.machineTiles(s, 'dryer')) out.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y), x, y]);
     for (const { x, y } of S.machineTiles(s, 'planter')) { const tw = S.isTower(tileAt(s.world, x, y)); out.push(['planter', { x, y: tw ? y - 0.75 : y, w: 1, h: tw ? 1.75 : 1 }, () => this.ui.openPlanter(x, y), x, y]); }   // a tower's box starts at its top, for the E cap
     if (s.truck) { out.push(['board', BUILDINGS.board, () => this.ui.openCrate()]); out.push(['truck', S.truckSpotOf(s), () => this.ui.openCrate()]); }
-    for (const e of out) {   // a labelled chest: its box reaches up over the label, so the E sits above it, not on it
-      const ch = e[0] === 'chest' ? s.chest : e[0] === 'fchest' ? tileAt(s.world, e[3], e[4])?.obj : null, L = ch && S.chestLabel(ch);
-      if (L?.text) { const up = labelLines(L.text).length > 1 ? 0.55 : 0.2; e[1] = { ...e[1], y: e[1].y - up, h: e[1].h + up }; }
-    }
     return out;
   }
   // The one E would open: the station under the cursor if it is one and you are near it, else the nearest within reach.
@@ -269,7 +252,7 @@ export class Game {
     if (s.forklift && !s.market?.at) { const F = s.forklift; if (F.mounted) out.push({ kind: 'forklift', x: Math.round(F.x), y: Math.round(F.y), near: { x: s.player.x - 0.5, y: s.player.y - 0.5, w: 1, h: 1 }, rect: [Math.round(F.x * 16), Math.round(F.y * 16) - 4, 16, 20], label: 'Get off  (E)' }); else out.push({ kind: 'forklift', x: Math.round(F.x), y: Math.round(F.y), near: { x: F.x, y: F.y, w: 1, h: 1 }, rect: [Math.round(F.x * 16), Math.round(F.y * 16) - 4, 16, 20], label: F.crates.length ? `Forklift · ${F.crates.length} on the forks. Get on` : 'Get on the forklift' }); }
     if (s.barrow && !s.market?.at) { const b = s.barrow, bx = Math.round(b.x), by = Math.round(b.y); out.push({ kind: 'barrow', x: bx, y: by, near: { x: b.x, y: b.y, w: 1, h: 1 }, rect: [Math.round((b.dx ?? b.x) * 16), Math.round((b.dy ?? b.y + 1 - 14 / 16) * 16), b.face === 'up' || b.face === 'down' ? 16 : 20, b.face === 'up' ? 26 : 14], label: b.held ? (it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Let go of the barrow  (E: open)') : it && it.kind !== 'tool' ? 'Put it in the barrow' : 'Take the handles  (E: open)' }); }
     const Ch = B.chest; out.push({ kind: 'chest', near: Ch, rect: [Ch.x * 16 - 1, (Ch.y + 1) * 16 - 15, 18, 15], label: it && it.kind !== 'tool' ? `Put away  (E: open)` : 'Chest  (E: open)' });
-    for (const { x, y } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : 'Field chest') + '  (E: open, hold: pick up)' });
+    for (const { x, y, t } of S.chestTiles(s)) out.push({ kind: 'fchest', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 1, (y + 1) * 16 - 15, 18, 15], label: (it && it.kind !== 'tool' ? 'Put away' : t.obj.label?.text ? `Field chest "${t.obj.label.text}"` : 'Field chest') + '  (E: open, hold: pick up)' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) for (const { x, y, t } of S.generatorTiles(s)) out.push({ kind: 'generator', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, (y + 1) * 16 - 20, 16, 20], label: it?.kind === 'fuel' ? `Pour fuel in (${S.fuelOf(t.obj)} / ${CONFIG.fuel.tank})` : t.obj.off ? 'Switch on' : 'Switch off' });
     if (!(it?.kind === 'tool' && it.tool === 'hoe')) { const w = s.world; for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) { const t = w.tiles[y * w.w + x]; if (t.obj?.kind === 'filter') out.push({ kind: 'filter', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16, y * 16, 16, 16], label: it && (it.kind === 'crop' || it.kind === 'seed') ? `Set the filter to ${s.species[it.species]?.name || 'this'}` : it?.kind === 'product' ? 'Set the filter to dried goods' : it ? 'Filter' : 'Swap the filter\'s sides' }); } }
     for (const { x, y, t } of S.dcrateTiles(s)) { const n = S.dcrateCount(t.obj), fullD = n >= CONFIG.truck.crateHolds; out.push({ kind: 'dcrate', x, y, near: { x, y, w: 1, h: 1 }, rect: [x * 16 - 2, (y + 1) * 16 - 16, 20, 16], label: s.forklift?.mounted ? (s.forklift.crates.length >= CONFIG.forklift.forks ? 'The forks are full' : `Lift onto the forks (${s.forklift.crates.length} / ${CONFIG.forklift.forks})`) : s.barrow?.held ? (fullD ? 'Crate is full' : S.barrowFoodSlot(s) < 0 ? 'Nothing in the barrow to tip' : 'Tip the barrow in  (hold: keep tipping)') : (it && (it.kind === 'crop' || it.kind === 'product') ? (fullD ? 'Crate is full' : 'Drop in the crate') : (it?.tool === 'hoe' && !n ? 'Lift the crate away' : `Crate · ${n} / ${CONFIG.truck.crateHolds}`)) + '  (hold: lift)' }); }

@@ -755,7 +755,7 @@ export function pickUpChest(state, x, y) {
 }
 // A chest's label (Build 106): the player's own, like a sign in Minecraft: a name, an item set beside it to show, or both.
 // None until you make one. chest.label = { text, item }; works for the porch chest and field chests alike.
-export const LABEL_MAX = 12;
+export const LABEL_MAX = 7;   // what fits on one line across a chest's lid with a gap to the next chest
 export const cleanLabel = text => String(text || '').toUpperCase().replace(/[^0-9A-Z$+\-.: !%/',()]/g, '').slice(0, LABEL_MAX);
 export function chestLabel(chest) { const l = chest?.label; return l && (l.text || l.item) ? l : null; }
 export function setChestLabel(chest, { text, item } = {}) {
@@ -1464,7 +1464,7 @@ export function makeModelFarm() {
   // the three sizes of field chest by the beds, stocked and labelled
   const stock = [[{ kind: 'seed', species: carrot.id, qty: 40 }, { kind: 'fuel', qty: 12 }], [{ kind: 'crop', species: carrot.id, qty: 99 }, { kind: 'crop', species: carrot.id, qty: 60 }], [{ kind: 'belt', qty: 30 }, { kind: 'line', qty: 30 }, { kind: 'pipe', qty: 20 }]];
   [26, 27, 28].forEach((x, lv) => { const o = { kind: "chest", level: lv, slots: new Array(chestSlots(lv)).fill(null) }; for (const it of stock[lv]) addItem(o, it); tile(x, 28).obj = o; });
-  setChestLabel(tile(26, 28).obj, { text: 'SEEDS', item: { kind: 'seed', species: carrot.id } }); setChestLabel(tile(27, 28).obj, { text: 'CARROTS' }); setChestLabel(tile(28, 28).obj, { text: 'BUILDING', item: { kind: 'belt' } });
+  setChestLabel(tile(26, 28).obj, { text: 'SEEDS', item: { kind: 'seed', species: carrot.id } }); setChestLabel(tile(27, 28).obj, { text: 'CARROTS' }); setChestLabel(tile(28, 28).obj, { text: 'PARTS', item: { kind: 'belt' } });
   state.lineRev = 1; state.beltRev = 1; state.pipeRev = 1;
   state.player.x = 29.5; state.player.y = 28.5; state.player.dir = 'up';
   state.minutes = (dayOf(state) - 1) * 1440 + 9 * 60;
