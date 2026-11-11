@@ -10,6 +10,7 @@ import * as M from './market.js';
 import { MARKET } from './market.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord, fertLook } from './fertiliser.js';
 import { growRealMinutes, RARE_TRAITS, shownSurface, defaultSurface } from './genetics.js';
+import { savedCopy } from './save.js';
 const shapeWord = g => `${shownSurface(g) !== defaultSurface(g.archetype) ? shownSurface(g) + ' ' : ''}${g.archetype} ${g.family}`;   // the skin only when it is not the shape's own
 
 const $ = id => document.getElementById(id);
@@ -773,6 +774,21 @@ export class UI {
       for (const b of [save, exp, imp, reset]) { row.appendChild(b); row.appendChild(document.createTextNode(' ')); }
       body.appendChild(row);
       const ta = el('textarea'); ta.placeholder = 'Save text appears here / paste a save here'; body.appendChild(ta);
+      // copies kept by the loader (Build 102): the farm as it was before the last update, and a farm this version could not open
+      const before = savedCopy('backup'), lost = savedCopy('rescue');
+      if (lost) {
+        body.appendChild(el('div', 'pc-row trait bad', `Your old farm could not be opened by this version (${lost.error}). It is kept here untouched.`));
+        const r2 = el('div'); r2.style.margin = '6px 0';
+        const show = el('button', null, 'Show the old farm\'s save'); show.onclick = () => { ta.value = lost.save; ta.select(); };
+        const again = el('button', null, 'Try opening it again'); again.onclick = () => { if (!confirm('Swap to the old farm? The farm you are playing now is replaced.')) return; try { g.retryRescue(lost.save); this.toast('Your old farm is back'); this.closePanel(); } catch (e) { this.toast('Still cannot open it: ' + e.message); } };
+        for (const b of [show, again]) { r2.appendChild(b); r2.appendChild(document.createTextNode(' ')); }
+        body.appendChild(r2);
+      }
+      if (before && before.build) {
+        const r3 = el('div'); r3.style.margin = '6px 0';
+        const b = el('button', 'small', `Show the save from before the update (build ${before.build})`); b.onclick = () => { ta.value = before.save; ta.select(); };
+        r3.appendChild(b); body.appendChild(r3);
+      }
       const st = g.state.stats;
       body.appendChild(el('div', 'muted', `Day ${S.dayOf(g.state)} · harvests ${st.harvests} · sold ${st.sold} · earned ${formatMoney(g.state.lifetime)} · breeds ${st.breeds} · discoveries ${st.discoveries}`));
     });

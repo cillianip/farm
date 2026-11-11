@@ -1451,6 +1451,34 @@ await test('body and skin: a skin crosses apart from the shape (a ribbed carrot)
   }
   assert.ok(mixed, 'carrot × pumpkin can give a ribbed carrot'); assert.ok(past, 'a child can be wider than both parents');
 });
+await test('old saves: every saved build in tests/fixtures opens, keeps its money and species, plays two days and saves again; a broken save is kept, not wiped', async () => {
+  const fs = await import('node:fs'), zlib = await import('node:zlib'), SV = await import('../src/save.js');
+  const dir = new URL('./fixtures/', import.meta.url), files = fs.readdirSync(dir).filter(f => f.endsWith('.json.gz'));
+  assert.ok(files.length >= 6, 'the fixtures are there');
+  for (const f of files) {
+    const raw = zlib.gunzipSync(fs.readFileSync(new URL(f, dir))).toString(), old = JSON.parse(raw);
+    const { state, from } = SV.openSave(raw, old.savedAt + 3600e3);
+    assert.equal(from, old.build || 0, f);
+    assert.equal(state.build, CONFIG.build, f + ': stamped with this build');
+    assert.ok(state.money >= old.money - 1e-6, f + ': money kept');
+    for (const id of Object.keys(old.species)) { assert.ok(state.species[id], f + ': species ' + id + ' kept'); assert.equal(G.genomeId(state.species[id].genome), id, f + ': ' + id + ' keeps its id'); }
+    S.advance(state, 2 * CONFIG.time.dayRealSeconds);
+    S.sleep(state, {});
+    const again = SV.openSave(SV.serialize(state), Date.now());
+    assert.equal(Object.keys(again.state.species).length, Object.keys(state.species).length, f + ': round trip');
+  }
+  // the stored-save path: a save this build cannot open goes to the rescue key, untouched
+  const store = new Map(); globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) };
+  try {
+    store.set(SV.SAVE_KEY, '{"version":1,"world":{},"species":{},"layout":8,"broken'); 
+    const r = SV.loadLocal(); assert.ok(r.rescued, 'reported');
+    assert.ok(JSON.parse(store.get(SV.RESCUE_KEY)).save.endsWith('"broken'), 'kept as it was');
+    const old = zlib.gunzipSync(fs.readFileSync(new URL(files[0], dir))).toString();
+    store.clear(); store.set(SV.SAVE_KEY, old);
+    const ok = SV.loadLocal(); assert.ok(ok.state, 'an old save loads');
+    assert.equal(JSON.parse(store.get(SV.BACKUP_KEY)).save, old, 'and the save from before the update is copied aside');
+  } finally { delete globalThis.localStorage; }
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');

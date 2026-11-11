@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import * as S from './sim.js';
 import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTree, buildingAt, MOVABLE, chunkOfTile , inBay, TRUCK_SPOT, isTruckTile , isCleared } from './world.js';
-import { saveLocal, loadLocal, clearLocal, serialize, deserialize, applyOffline } from './save.js';
+import { saveLocal, loadLocal, clearLocal, serialize, openSave, dropRescue } from './save.js';
 import { UI } from './ui.js';
 import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, truckArt, planterSprite, barrowSprite, barrowViewSprite, BARROW_W, BARROW_H, forkliftSprite, forkliftMastSprite } from './render/sprites.js';
 import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
@@ -70,18 +70,18 @@ export class Game {
   }
   boot() {
     if (new URLSearchParams(location.search).has('demo')) { this.demo = true; return S.makeModelFarm(); }
-    const saved = loadLocal();
-    if (saved && saved.layout === CONFIG.layout) {
-      const r = applyOffline(saved);
+    const r = loadLocal();
+    if (r?.state) {
       if (r.hours > 0.1) this.offlineReport = `Welcome back: ${r.hours.toFixed(1)} game hours passed while you were away.`;
-      return S.migrate(saved);
+      return r.state;
     }
-    if (saved) clearLocal();
+    if (r?.rescued) this.offlineReport = 'This version could not open your farm, so a new one has started. Your old farm is kept safe: Settings → Save.';
     return S.createState();
   }
   save() { if (this.demo) return; saveLocal(this.state); this.lastSave = performance.now(); }
   exportSave() { return serialize(this.state); }
-  importSave(text) { const s = deserialize(text); applyOffline(s); this.state = s; this.save(); this.ui.refresh(); }
+  importSave(text) { const { state } = openSave(text); this.state = state; this.save(); this.ui.refresh(); }   // upgraded like a stored save
+  retryRescue(text) { this.importSave(text); dropRescue(); }
   newGame() { clearLocal(); this.state = S.createState(); this.save(); this.ui.closePanel(); this.ui.refresh(); this.ui.toast('A fresh farm.'); }
   earned(amount) { if (amount > 0) { this.addFloat(`+${formatMoney(amount)}`, this.state.player.x, this.state.player.y - 1.2, '#f6c453'); this.sound.play('coin'); } }
   onPurchase(kind = 'buy') { this.ui.updateHud(); this.sound.play(kind); }

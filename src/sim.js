@@ -17,7 +17,7 @@ export const gameMinutesPerRealSecond = () => MIN_PER_DAY / CONFIG.time.dayRealS
 export function createState(seed = randomSeed()) {
   const species = starterSpecies();
   const state = {
-    version: 1, seed, savedAt: Date.now(),
+    version: 1, build: CONFIG.build, seed, savedAt: Date.now(),
     minutes: CONFIG.time.wakeHour * 60,      // game minutes since day 1 00:00
     money: CONFIG.economy.startMoney, lifetime: 0,
     energy: CONFIG.energy.max, energyMax: CONFIG.energy.max, hunger: 100, thirst: 100, layout: CONFIG.layout,

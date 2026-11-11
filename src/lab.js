@@ -1,7 +1,7 @@
 // Breeding lab (lab.html): a standalone page that runs the real cross() and crop renderer so the breeding visuals
 // and the gene maths can be judged without playing. Nothing here touches the game state or saves.
 import { CONFIG } from './config.js';
-import { GENES, RARE_TRAITS, TRAIT_WEIGHT, WILD_BASES, WILD_NAMES, makeSpecies, cross, rarityScore, tierOf, growRealMinutes, ratePerMinute, variantWord, baseName } from './genetics.js';
+import { GENES, RARE_TRAITS, TRAIT_WEIGHT, WILD_BASES, WILD_NAMES, SURFACES, SKINNED, shownSurface, normaliseGenome, makeSpecies, cross, rarityScore, tierOf, growRealMinutes, ratePerMinute, variantWord, baseName } from './genetics.js';
 import { cropSprite, produceSprite } from './render/crops.js';
 import { traitList } from './ui.js';
 import { formatMoney } from './economy.js';
@@ -55,15 +55,36 @@ function strip(sp, size = 64) {
   return wrap;
 }
 function kv(k, v) { return `<div class="kv"><span class="muted">${k}</span><span>${v}</span></div>`; }
-function card(el, title, sp, extra = '') {
+function card(el, title, sp, extra = '', sel = null) {
   const g = sp.genome;
   el.innerHTML = `<h2>${title}</h2><div class="name tier-${sp.tier}">${esc(sp.name)}${sp.sterile ? ' (sterile)' : ''}</div>`;
   el.appendChild(strip(sp));
+  if (sel) el.appendChild(skinRow(sp, sel));
   const info = document.createElement('div');   // appended as a node: innerHTML += on `el` would blank the canvases
   info.innerHTML = kv('Tier · rarity', `${sp.tier} · ${sp.rarity}`) + kv('Generation', g.gen || 0) + kv('Grows in', `${growRealMinutes(g).toFixed(1)} real min`)
     + kv('Harvest', `${g.count} × ${formatMoney(sp.value)} = ${formatMoney(sp.value * g.count)}`) + kv('Coins / min', formatMoney(ratePerMinute(sp.rarity)))
     + `<div class="muted" style="margin-top:6px">${esc(traitList(sp).join(' · '))}</div>` + extra;
   el.appendChild(info);
+}
+
+// Skin buttons under a parent: the same parent with another skin goes into the pool and is picked, so any body × skin can
+// be tried without waiting for a mutation. Bodies that do not show a skin (grain heads, flowers, cobs, stars) say so.
+function skinRow(sp, sel) {
+  const row = document.createElement('div'); row.className = 'controls'; row.style.margin = '4px 0';
+  const l = document.createElement('span'); l.className = 'muted'; l.textContent = 'Skin:'; row.appendChild(l);
+  if (!SKINNED.has(sp.genome.archetype)) { l.textContent = `Skin: none shows on a ${sp.genome.archetype}`; return row; }
+  for (const sf of SURFACES) {
+    const b = document.createElement('button'); b.textContent = sf; if (shownSurface(sp.genome) === sf) b.className = 'primary';
+    b.onclick = () => {
+      if (shownSurface(sp.genome) === sf) return;
+      const g = normaliseGenome({ ...sp.genome, surface: sf }), id = makeSpecies(g).id;
+      let i = pool.findIndex(p => p.id === id);
+      if (i < 0) { pool.push(makeSpecies(g, { name: `${sf[0].toUpperCase() + sf.slice(1)} ${sp.name.replace(/^(Smooth|Bumpy|Ribbed|Spiky) /, '')}` })); i = pool.length - 1; fillSelects(); }
+      $(sel).value = i; $(sel).dispatchEvent(new Event('change')); renderPickers();
+    };
+    row.appendChild(b);
+  }
+  return row;
 }
 
 // ---------- gene table ----------
@@ -80,8 +101,8 @@ function geneTable(res, A, B) {
   let html = `<tr><th>Gene</th><th>A</th><th>B</th><th>Child</th><th>Decision</th><th>Rarity +</th></tr>`;
   for (const l of res.log) {
     const spec = GENES.find(s => s.k === l.k);
-    const w = spec.w ? spec.w(l.after) || 0 : 0;
-    const wa = spec.w ? spec.w(l.a) || 0 : 0, wb = spec.w ? spec.w(l.b) || 0 : 0;
+    const w = spec.w ? spec.w(l.after, normaliseGenome(res.child)) || 0 : 0;
+    const wa = spec.w ? spec.w(l.a, A.genome) || 0 : 0, wb = spec.w ? spec.w(l.b, B.genome) || 0 : 0;
     html += `<tr class="${l.mutated ? 'mut' : ''}"><td>${l.k}</td><td>${fmt(spec, l.a)}${wa ? `<span class="tag">+${wa}</span>` : ''}</td><td>${fmt(spec, l.b)}${wb ? `<span class="tag">+${wb}</span>` : ''}</td><td><b>${fmt(spec, l.after)}</b></td>`
       + `<td><span class="tag ${l.from}">${HOW[l.from]}</span>${l.mutated ? `<span class="tag mut">MUTATED</span> <span class="muted">was ${fmt(spec, spec.type === 'int' ? Math.round(l.before) : l.before)}</span>` : ''}</td><td class="num">${w ? '+' + w : ''}</td></tr>`;
   }
@@ -140,7 +161,7 @@ function breed() {
   const A = pool[+$('selA').value], B = pool[+$('selB').value], seed = +$('seed').value || 0;
   const res = cross(A.genome, B.genome, seed);
   const C = childSpecies(res, A, B);
-  card($('cardA'), 'Parent A', A); card($('cardB'), 'Parent B', B);
+  card($('cardA'), 'Parent A', A, '', 'selA'); card($('cardB'), 'Parent B', B, '', 'selB');
   if (C) {
     const isNew = !pool.some(p => p.id === C.id);
     card($('cardC'), 'Child', C, isNew && res.outcome !== 'revert' ? `<div style="margin-top:8px"><button id="keep">Add to pool</button> <span class="muted">so it can be bred again</span></div>` : '');
@@ -163,9 +184,10 @@ function gallery() {
     const res = cross(A.genome, B.genome, seed);
     const g = document.createElement('div'); g.className = 'g';
     const sp = makeSpecies(res.child);
-    const c = spriteCanvas(cropSprite(sp, 3), 64);
-    if (res.outcome === 'sterile') c.style.borderColor = '#d9453d'; else if (res.outcome !== 'success') { c.style.borderColor = '#777'; c.style.opacity = 0.35; }
-    g.appendChild(c);
+    const c = spriteCanvas(cropSprite(sp, 3), 64), pc = spriteCanvas(produceSprite(sp), 64);   // the produce beside the plant: skins are too small to judge on the plant
+    pc.className = 'prod';
+    for (const k of [c, pc]) { if (res.outcome === 'sterile') k.style.borderColor = '#d9453d'; else if (res.outcome !== 'success') { k.style.borderColor = '#777'; k.style.opacity = 0.35; } }
+    g.appendChild(c); g.appendChild(pc);
     const l = document.createElement('div'); l.className = `tier-${sp.tier}`; l.innerHTML = `${esc(sp.name)}<br>${res.outcome === 'success' ? sp.tier + ' r' + sp.rarity : res.outcome}`; g.appendChild(l);
     g.title = `seed ${seed}: ${res.outcome}, ${sp.name}, rarity ${sp.rarity}, mutations: ${res.mutations.join(', ') || 'none'}`;
     g.onclick = () => { $('seed').value = seed; breed(); window.scrollTo(0, 0); };
@@ -200,7 +222,7 @@ function sheet() {
   const head = document.createElement('tr'); head.innerHTML = '<th>Species</th><th>Stages → produce</th><th>Tier · rarity</th><th>Grow</th><th>Harvest</th><th>$/min</th><th>Notes</th>'; t.appendChild(head);
   for (const sp of rows) {
     const g = sp.genome, tr = document.createElement('tr');
-    const name = document.createElement('td'); name.innerHTML = `<b class="tier-${sp.tier}">${esc(sp.name)}</b><br><span class="muted">${g.family} · ${g.archetype}</span>`; tr.appendChild(name);
+    const name = document.createElement('td'); name.innerHTML = `<b class="tier-${sp.tier}">${esc(sp.name)}</b><br><span class="muted">${g.family} · ${shownSurface(g) !== 'smooth' ? shownSurface(g) + ' ' : ''}${g.archetype}</span>`; tr.appendChild(name);
     const pics = document.createElement('td'); for (const st of [0, 1, 2, 3]) pics.appendChild(spriteCanvas(cropSprite(sp, st), 96)); pics.appendChild(spriteCanvas(produceSprite(sp), 96)); tr.appendChild(pics);
     const rest = document.createElement('td'); rest.innerHTML = `${sp.tier} · ${sp.rarity}`; tr.appendChild(rest);
     const grow = document.createElement('td'); grow.innerHTML = `${growRealMinutes(g).toFixed(1)} min`; tr.appendChild(grow);
@@ -215,9 +237,9 @@ function sheet() {
 // ---------- wire up ----------
 document.fonts?.ready.then(() => {});
 fillSelects();
-card($('cardA'), 'Parent A', pool[0]); card($('cardB'), 'Parent B', pool[3]);
-$('selA').onchange = () => card($('cardA'), 'Parent A', pool[+$('selA').value]);
-$('selB').onchange = () => card($('cardB'), 'Parent B', pool[+$('selB').value]);
+card($('cardA'), 'Parent A', pool[0], '', 'selA'); card($('cardB'), 'Parent B', pool[3], '', 'selB');
+$('selA').onchange = () => card($('cardA'), 'Parent A', pool[+$('selA').value], '', 'selA');
+$('selB').onchange = () => card($('cardB'), 'Parent B', pool[+$('selB').value], '', 'selB');
 $('breed').onclick = breed;
 $('reroll').onclick = () => { $('seed').value = Math.floor(Math.random() * 1e6); breed(); };
 $('gallery').onclick = gallery;

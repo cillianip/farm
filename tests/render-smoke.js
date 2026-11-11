@@ -9,6 +9,8 @@ const species = Object.values(G.starterSpecies());
 let drawn = 0;
 const genomes = species.map(s => s.genome);
 for (let i = 0; i < 200; i++) { const a = genomes[i % genomes.length], b = genomes[(i * 7 + 3) % genomes.length]; const { child } = G.cross(a, b, i, { mutationBonus: 4 }); genomes.push(child); }
+{ const fs = await import('node:fs'), zlib = await import('node:zlib'), dir = new URL('./fixtures/', import.meta.url);   // every crop in the old saves too
+  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json.gz'))) for (const sp of Object.values(JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL(f, dir)))).species)) genomes.push(sp.genome); }
 for (const g of genomes) { const sp = G.makeSpecies(g); for (const st of [0, 1, 2, 3, 'dead']) { cropSprite(sp, st); drawn++; } produceSprite(sp); }
 for (const fn of ['grassTile', 'soilTile', 'treeSprite', 'houseSprite', 'chestSprite', 'compostSprite', 'breederSprite', 'sprinklerSprite', 'witheredSprite']) sprites[fn](0, 0);
 for (let v = 0; v < 3; v++) sprites.treeSprite(v);
