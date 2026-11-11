@@ -1451,6 +1451,22 @@ await test('body and skin: a skin crosses apart from the shape (a ribbed carrot)
   }
   assert.ok(mixed, 'carrot × pumpkin can give a ribbed carrot'); assert.ok(past, 'a child can be wider than both parents');
 });
+await test('blended bodies: two solid shapes give a child in between, a backcross drifts back, a pure shape keeps its old id, and the lab breeds what the breeder breeds', () => {
+  const ca = G.WILD_BASES.carrot, to = G.WILD_BASES.tomato;
+  let blends = 0, n = 0, child = null;
+  for (let seed = 1; seed < 200; seed++) { const r = G.cross(ca, to, seed); if (r.log.find(l => l.k === 'archetype').mutated) continue; n++; if (r.child.shapeMix > 0) { blends++; child = child || r.child; } }
+  assert.ok(blends / n > 0.6, `most carrot × tomato children are in between (${blends}/${n})`);
+  assert.ok(['taper', 'crown'].includes(child.archetype) && ['taper', 'crown'].includes(child.shape2) && child.archetype !== child.shape2);
+  assert.ok(!G.canonical(ca).includes('shapeMix'), 'a pure shape adds nothing to the id');
+  assert.notEqual(G.genomeId(child), G.genomeId({ ...child, shapeMix: 0 }), 'a blend is its own species');
+  // backcross to the carrot: on average the carrot share goes up
+  let before = 0, after = 0, k = 0;
+  for (let seed = 1; seed < 200; seed++) { const r = G.cross(child, ca, seed); if (r.log.find(l => l.k === 'archetype').mutated) continue; const w = G.shapeWeights(r.child); before += G.shapeWeights(child).taper || 0; after += w.taper || 0; k++; }
+  assert.ok(after / k > before / k, 'crossing back to the carrot pulls the shape back toward the carrot');
+  const s = S.createState(5), A = byName(s, 'Carrot'), B = byName(s, 'Potato'), a = S.breedChild(A, B, 77), b = S.breedChild(B, A, 77);
+  assert.equal(a.res.outcome, b.res.outcome); if (a.sp) assert.equal(a.sp.id, b.sp.id, 'the same pair rolls the same child whichever way round');
+  if (a.sp) assert.ok(/^[A-Z][a-z]+( \(sterile\))?$/.test(a.sp.name), 'named after its parents, as in the game: ' + a.sp.name);
+});
 await test('old saves: every saved build in tests/fixtures opens, keeps its money and species, plays two days and saves again; a broken save is kept, not wiped', async () => {
   const fs = await import('node:fs'), zlib = await import('node:zlib'), SV = await import('../src/save.js');
   const dir = new URL('./fixtures/', import.meta.url), files = fs.readdirSync(dir).filter(f => f.endsWith('.json.gz'));

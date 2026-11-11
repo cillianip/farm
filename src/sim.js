@@ -1593,20 +1593,30 @@ export function startBreed(state, mutationBonus = 1) {
   state.stats.breeds++;
   return { ok: true, msg: b.queue ? 'Under the second glass… results in the morning' : 'Breeding… results in the morning' };
 }
+// One cross the way the breeder does it: the parents in a fixed order, the child named after both, sterile marked, a
+// name already taken given a variant word. The breeding lab calls this too, so it shows what the game would give.
+// species: id → species (for names already taken). Returns { res, sp } (sp null when it withered or reverted).
+export function breedChild(A, B, seed, { mutationBonus = 1, species = {}, day = 1 } = {}) {
+  const [P, Q] = breedOrder(A, B), res = cross(P.genome, Q.genome, seed, { mutationBonus });
+  if (res.outcome !== 'success' && res.outcome !== 'sterile') return { res, sp: null };
+  const sterile = res.outcome === 'sterile';
+  let sp = makeSpecies(res.child, { sterile, parents: [A.id, B.id], discoveredDay: day, name: blendName(A.name, B.name) }); sp.blended = true;
+  if (sterile) sp = { ...sp, id: sp.id + '_s', name: sp.name + ' (sterile)' };
+  if (!species[sp.id]) {
+    const names = new Set(Object.values(species).map(s => s.name));
+    if (names.has(sp.name)) { const v = `${variantWord(sp.genome)} ${sp.name}`; let name = v; for (let k = 2; names.has(name); k++) name = `${v} ${ROMAN[k] || k}`; sp.name = name; }
+  }
+  return { res, sp };
+}
 export function resolveBreed(state) {
   const run = state.breeder.running; if (!run) return null;
   const A = state.species[run.a], B = state.species[run.b];
-  const [P, Q] = breedOrder(A, B), res = cross(P.genome, Q.genome, run.seed, { mutationBonus: run.mutationBonus });
+  const { res, sp } = breedChild(A, B, run.seed, { mutationBonus: run.mutationBonus, species: state.species, day: dayOf(state) });
   const out = { outcome: res.outcome, instability: res.instability, mutations: res.mutations, parents: [A.name, B.name], species: null, seeds: 0, isNew: false };
   const r = makeRng(run.seed ^ 0x9e3779b9);
-  if (res.outcome === 'success' || res.outcome === 'sterile') {
+  if (sp) {
     const sterile = res.outcome === 'sterile';
-    let sp = makeSpecies(res.child, { sterile, parents: [A.id, B.id], discoveredDay: dayOf(state), name: blendName(A.name, B.name) }); sp.blended = true;
-    if (sterile) sp = { ...sp, id: sp.id + '_s', name: sp.name + ' (sterile)' };
     if (!state.species[sp.id]) {
-      // unique names: add a variant word when the plain name is taken
-      const names = new Set(Object.values(state.species).map(s => s.name));
-      if (names.has(sp.name)) { const v = `${variantWord(sp.genome)} ${sp.name}`; let name = v; for (let k = 2; names.has(name); k++) name = `${v} ${ROMAN[k] || k}`; sp.name = name; }
       state.species[sp.id] = sp;
       if (!sterile) { state.discovered.push(sp.id); state.stats.discoveries++; out.isNew = true; }
     }

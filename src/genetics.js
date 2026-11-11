@@ -15,6 +15,11 @@ export const defaultSurface = arch => SURFACE_OF[arch] || 'smooth';
 // the bodies a skin shows on; spikes of grain, flower heads, cobs and stars keep their own look and carry the skin hidden
 export const SKINNED = new Set(['taper', 'berry', 'lumpy', 'bulb', 'crown', 'elongated', 'ribbed', 'spiky', 'pod']);
 export const shownSurface = g => SKINNED.has(g.archetype) ? g.surface : defaultSurface(g.archetype);
+// Blended bodies (Build 103): a child of two solid shapes carries both, the lead one (archetype) and a second one (shape2)
+// at shapeMix (0 = pure, up to 0.5 = halfway), and is drawn in between. Crossing mixes the parents' shape weights, so a
+// line keeps its history: a carrot × tomato child crossed back to a carrot drifts back toward the carrot.
+export const shapeWeights = g => { const n = normaliseGenome(g); return n.shapeMix > 0 ? { [n.archetype]: 1 - n.shapeMix, [n.shape2]: n.shapeMix } : { [n.archetype]: 1 }; };
+const blendable = w => Object.keys(w).every(a => SKINNED.has(a));
 export const RARE_TRAITS = ['golden', 'glowing', 'multiHarvest', 'frostHardy'];   // needing less water is the thirst gene, not a trait
 
 // Gene table. type: cat (categorical) | num (0..1 unless min/max) | int | bool. w = rarity weight function.
@@ -57,6 +62,8 @@ const r2 = v => Math.round(v * 100) / 100;
 export function normaliseGenome(g) {
   const out = { ...g, traits: { ...(g.traits || {}) } };
   if (!SURFACES.includes(out.surface)) out.surface = defaultSurface(ARCHETYPES.includes(out.archetype) ? out.archetype : ARCHETYPES[0]);
+  if (!ARCHETYPES.includes(out.shape2) || !(out.shapeMix > 0)) { out.shape2 = ARCHETYPES.includes(out.archetype) ? out.archetype : ARCHETYPES[0]; out.shapeMix = 0; }
+  else out.shapeMix = r2(Math.min(0.5, out.shapeMix));
   for (const spec of GENES) {
     let v = out[spec.k];
     if (spec.type === 'cat') { if (!spec.values.includes(v)) v = spec.values[0]; }
@@ -77,6 +84,7 @@ export function normaliseGenome(g) {
 export function canonical(g) {
   const n = normaliseGenome(g);
   const parts = GENES.filter(s => !s.noId && !(s.k === 'surface' && n.surface === defaultSurface(n.archetype))).map(s => `${s.k}=${n[s.k]}`);   // the skin a shape always had is left out, so old ids hold
+  if (n.shapeMix > 0) parts.push(`shape2=${n.shape2}`, `shapeMix=${n.shapeMix}`);   // a pure shape adds nothing, so old ids hold
   parts.push('traits=' + RARE_TRAITS.filter(t => n.traits[t]).join('+'));
   return parts.join(';');
 }
@@ -306,6 +314,21 @@ export function cross(a, b, seed, opts = {}) {
   }
   if (child.traits.multiHarvest) child.regrow = true;
   child.gen = Math.max(A.gen || 0, B.gen || 0) + 1;
+  { // the body: unless it just mutated into something new, it lands somewhere between the parents' shapes (own dice,
+    // so the rest of the cross rolls as before)
+    const al = log.find(l => l.k === 'archetype'), wA = shapeWeights(A), wB = shapeWeights(B);
+    child.shape2 = child.archetype; child.shapeMix = 0;
+    if (!al.mutated && blendable(wA) && blendable(wB)) {
+      const t = makeRng(seed ^ 0x5bd1e995).range(0.1, 0.9), w = {};
+      for (const [a, v] of Object.entries(wA)) w[a] = (w[a] || 0) + v * (1 - t);
+      for (const [a, v] of Object.entries(wB)) w[a] = (w[a] || 0) + v * t;
+      const [[a1, v1], [a2, v2] = [a1, 0]] = Object.entries(w).sort((x, y) => y[1] - x[1]);
+      const mix = r2(v2 / (v1 + v2));
+      child.archetype = a1;
+      if (mix >= 0.12) { child.shape2 = a2; child.shapeMix = mix; }
+      al.after = child.archetype; al.from = 'blend'; al.shape2 = child.shapeMix ? child.shape2 : null; al.shapeMix = child.shapeMix;
+    }
+  }
 
   const norm = normaliseGenome(child);
   for (const l of log) l.after = norm[l.k];   // report the clamped/rounded value the child really gets

@@ -11,7 +11,7 @@ import { MARKET } from './market.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord, fertLook } from './fertiliser.js';
 import { growRealMinutes, RARE_TRAITS, shownSurface, defaultSurface } from './genetics.js';
 import { savedCopy } from './save.js';
-const shapeWord = g => `${shownSurface(g) !== defaultSurface(g.archetype) ? shownSurface(g) + ' ' : ''}${g.archetype} ${g.family}`;   // the skin only when it is not the shape's own
+const shapeWord = g => `${shownSurface(g) !== defaultSurface(g.archetype) ? shownSurface(g) + ' ' : ''}${g.archetype}${g.shapeMix > 0 ? '–' + g.shape2 : ''} ${g.family}`;   // the skin only when it is not the shape's own
 
 const $ = id => document.getElementById(id);
 // money a day for the cards: short, no cents past $10

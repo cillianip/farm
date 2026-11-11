@@ -228,7 +228,24 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
   const ell = (x, y, rw, rh) => (x * x) / (rw * rw + 0.01) + (y * y) / (rh * rh + 0.01) <= 1.05;
   const curve = (y) => Math.round(g.curve * (y / Math.max(1, h)) * (y / Math.max(1, h)) * w * 0.8);
   const fam = g.family;
-  switch (g.archetype) {
+  if (g.shapeMix > 0 && PROFILE[g.archetype] && PROFILE[g.shape2]) {
+    // a blended body: both shapes' outlines down the body, mixed; the lead shape's crown or stem on top
+    const pa = PROFILE[g.archetype], pb = PROFILE[g.shape2], m = g.shapeMix;
+    const asp = pa.asp * (1 - m) + pb.asp * m, R = (w + h) / 2;
+    const hw = Math.max(1.5, Math.min(icon ? cap : maxW + 1, R / Math.sqrt(asp) * (0.8 + g.width * 0.4)));
+    const hh = Math.max(2, Math.min(icon ? cap : maxH + 1, Math.round(R * Math.sqrt(asp) * (0.8 + g.elongation * 0.4))));
+    const prof = t => pa.f(t) * (1 - m) + pb.f(t) * m;
+    const inside = (x, y) => { const t = (y + hh) / (2 * hh); return t >= 0 && t <= 1 && Math.abs(x - curve(y)) <= hw * prof(t) + 0.35; };
+    fillShape(inside);
+    if (g.archetype === 'berry' || g.shape2 === 'berry') for (let y = -hh + 1; y < hh; y++) for (let x = -Math.ceil(hw); x <= hw; x++) {   // a strawberry in it keeps its seeds
+      if ((y & 1) || ((x + (y >> 1)) & 1)) continue;
+      if (N4.every(([dx, dy]) => inside(x + dx, y + dy)) && inside(x, y)) put(cx + x, cy + y, C.second);
+    }
+    if (fam === 'root' && (g.archetype === 'taper' || g.shape2 === 'taper')) for (let y = -hh + 2; y < hh; y += 2) { const rw = hw * prof((y + hh) / (2 * hh)); if (rw > 1.5) put(cx + curve(y) - Math.round(rw) + 1, cy + y, C.dark); }   // a carrot in it keeps its rings
+    let top = -hh; while (top < hh && !buf.has(K(cx + curve(top), cy + top))) top++;
+    if (g.archetype === 'pod') { put(cx + curve(top), cy + top - 1, C.stem); put(cx + curve(top) + 1, cy + top - 2, C.leafLight); }
+    else topCrown(put, cx + curve(top), cy + top - 1, C, g, fam !== 'root');
+  } else switch (g.archetype) {
     case 'taper': {            // carrot / chilli / strawberry: shoulders at the top, point below
       const hh = Math.max(2, h), round = fam !== 'root';
       const rwAt = y => { const t = (y + hh) / (2 * hh); const shoulder = round && t < 0.2 ? 0.75 + t * 1.25 : 1; return Math.max(0.5, w * shoulder * (1 - Math.pow(t, 1.6) * (0.5 + g.tip * 0.4))); };   // the width eases off, so the point is short rather than a long spike
@@ -344,16 +361,26 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) put(cx + Math.round(Math.cos(a) * (rr - 1)), cy + Math.round(Math.sin(a) * (rr - 1)), C.main);
         disc(cx, cy, Math.max(1, rr - 2), C.second); put(cx - 1, cy - 1, C.light);
       } else {
-        const rr = Math.max(2, Math.round((w + h) / 2));
-        for (let y = -rr; y <= rr; y++) for (let x = -rr; x <= rr; x++) {
-          const d = Math.sqrt(x * x + y * y); if (d > rr + 0.3) continue;
-          const ruffle = d > rr - 0.7 && ((x + y + rr) % 2 === 0);
-          if (ruffle) continue;
-          // outer leaves lit, the heart tight and darker; three dark veins run out from the centre so it reads as leaves, not a ball
-          const vein = (x === 0 && y < 0) || (y === 1 && x < -1) || (x === y && x > 0);
-          const c = d > rr - 1.2 ? ((x > 0 || y > 0) ? C.dark : C.light) : d > rr - 2.4 ? pattern(cx + x, cy + y, vein ? C.dark : C.main) : d > rr - 3.4 ? (vein ? C.outline : C.shade) : C.dark;
-          put(cx + x, cy + y, c);
+        // lettuce / cabbage (Build 103): a rosette of round leaves, back row first, each lit top-left and shaded
+        // bottom-right, a darker crease where one overlaps the last, and a pale midrib, so it reads as a head of leaves
+        const R = Math.max(2.5, (w + h) / 2), lr = Math.max(1.4, R * 0.55);
+        const leaves = [[-0.55, -0.15, 1], [0.55, -0.15, 1], [0, -0.45, 1], [-0.38, 0.32, 0.95], [0.38, 0.32, 0.95], [0, 0.05, 0.8]];
+        const drawn = new Set();
+        for (const [lx, ly, ls] of leaves) {
+          const ox = lx * R, oy = ly * R, rad = lr * ls, cells = [];
+          for (let y = Math.floor(oy - rad - 1); y <= Math.ceil(oy + rad + 1); y++) for (let x = Math.floor(ox - rad - 1); x <= Math.ceil(ox + rad + 1); x++) {
+            const dx = x - ox, dy = (y - oy) * 1.1, d = Math.sqrt(dx * dx + dy * dy);
+            if (d <= rad + 0.25) cells.push([x, y, dx, dy, d]);
+          }
+          for (const [x, y, dx, dy, d] of cells) {
+            const rim = d > rad - 0.9, lit = dx + dy < -rad * 0.5, dark = dx + dy > rad * 0.6;
+            let c = rim ? (drawn.has(K(cx + x, cy + y)) ? C.dark : dark ? C.shade : C.main) : lit ? C.light : dark ? C.shade : pattern(cx + x, cy + y, C.main);
+            if (!rim && Math.abs(dx) < 0.5 && dy > -rad * 0.6 && rad > 2) c = C.light;                  // the midrib
+            put(cx + x, cy + y, c);
+          }
+          for (const [x, y] of cells) drawn.add(K(cx + x, cy + y));
         }
+        put(cx, cy + Math.round(R * 0.75), C.light);                                                         // the stalk end
       }
       break;
     }
@@ -391,9 +418,17 @@ function finish(P, buf, g, C, r, clipY, icon) {
     const rows = new Map();
     for (const k of body()) { const [x, y] = xy(k); const row = rows.get(y) || [x, x]; rows.set(y, [Math.min(row[0], x), Math.max(row[1], x)]); }
     const ys = [...rows.keys()].sort((a, b) => a - b), widest = Math.max(...[...rows.values()].map(([a, b]) => b - a + 1));
-    const n = Math.max(1, Math.min(Math.floor((widest - 1) / 2) - 1, 1 + Math.round(g.ribs * 2)));
+    // as many grooves as the width takes (a groove every three pixels or so), one more for a high ribs gene; each groove
+    // has its shadow to the right and each segment a lit bulge in its upper half, so they read as segments, not lines
+    const n = Math.max(1, Math.min(Math.floor((widest - 1) / 2), Math.round(widest / 3.2) + (g.ribs > 0.5 ? 1 : 0)));
+    const y0 = ys[0], span = Math.max(1, ys[ys.length - 1] - y0);
     for (const y of ys.slice(1, -1)) { const [a, b] = rows.get(y), W = b - a + 1; if (W < 4) continue;
-      for (let k = 1; k <= n; k++) { const x = a + Math.round(W * k / (n + 1)); if (x > a && x < b && isBody(x, y)) buf.set(K(x, y), C.dark); } }
+      const nn = Math.min(n, Math.floor((W - 1) / 2)), xs = [];
+      for (let k = 1; k <= nn; k++) xs.push(a + Math.round(W * k / (nn + 1)));
+      const inner = (x) => x > a && x < b && isBody(x, y) && isBody(x, y - 1) && isBody(x, y + 1);
+      if ((y - y0) / span < 0.45) for (let k = 0; k <= nn; k++) { const l = k ? xs[k - 1] : a, r = k < nn ? xs[k] : b, mx = Math.round((l + r) / 2 - 0.5); if (r - l >= 3 && inner(mx)) buf.set(K(mx, y), C.light); }
+      for (const x of xs) { if (inner(x)) buf.set(K(x, y), C.dark); if (inner(x + 1) && !xs.includes(x + 1)) buf.set(K(x + 1, y), C.shade); }
+    }
   } else if (skin === 'bumpy') {
     // knobs pushed out of the edge, and dark eyes set into the flesh
     const edge = body().filter(k => { const [x, y] = xy(k); return N4.some(([dx, dy]) => open(x + dx, y + dy)); });
@@ -413,7 +448,7 @@ function finish(P, buf, g, C, r, clipY, icon) {
     const ring = [...line.keys()].filter(o => { const [x, y] = xy(o); return N4.some(([dx, dy]) => isBody(x + dx, y + dy)); });
     let mx = 0, my = 0; for (const o of ring) { const [x, y] = xy(o); mx += x / ring.length; my += y / ring.length; }
     ring.sort((a, b) => { const [ax, ay] = xy(a), [bx, by] = xy(b); return Math.atan2(ay - my, ax - mx) - Math.atan2(by - my, bx - mx); });
-    const step = Math.max(3, Math.round(ring.length / 8));
+    const step = ring.length > 24 ? 2 : 3;   // close-set short points: a serrated edge, not a few long legs
     for (let i = r.int(0, step - 1); i < ring.length; i += step) {
       const [x, y] = xy(ring[i]), d = N4.find(([dx, dy]) => isBody(x - dx, y - dy));
       if (!d || y + d[1] >= clipY || buf.has(K(x + d[0], y + d[1])) || line.has(K(x + d[0], y + d[1]))) continue;
@@ -422,8 +457,22 @@ function finish(P, buf, g, C, r, clipY, icon) {
   }
   for (const [k, c] of buf) { const [x, y] = xy(k); if (y < clipY) P.px(x, y, c); }
   for (const [k, c] of line) { const [x, y] = xy(k); if (y < clipY) P.px(x, y, c); }
-  for (const [x, y, tx, ty] of spikes) { if (buf.get(K(x, y)) !== C.dark) P.px(x, y, C.light); P.px(tx, ty, C.outline); }
+  for (const [x, y, tx, ty] of spikes) { if (x !== null && buf.get(K(x, y)) !== C.dark) P.px(x, y, C.light); P.px(tx, ty, C.outline); }
 }
+// Width down a solid body (t: 0 top, 1 bottom; 1 = full half-width) and its height over its width, for blending two
+// shapes. Each one is the outline its own drawing above makes.
+const circ = t => Math.sqrt(Math.max(0, 1 - (2 * t - 1) ** 2));
+const PROFILE = {
+  crown:     { asp: 1.0, f: t => circ(t) },
+  spiky:     { asp: 1.0, f: t => circ(t) },
+  lumpy:     { asp: 0.75, f: t => circ(t) ** 0.8 },
+  ribbed:    { asp: 0.65, f: t => circ(t) ** 0.55 },
+  bulb:      { asp: 1.15, f: t => t < 0.85 ? Math.max(0.12, circ(t / 0.85) ** 0.8) : 0.12 },   // round, with the root tail below
+  taper:     { asp: 2.0, f: t => t < 0.15 ? 0.75 + t * 1.6 : 0.99 * (1 - (t - 0.15) / 0.85) ** 1.1 + 0.08 },
+  berry:     { asp: 1.25, f: t => t < 0.3 ? 0.75 + t * 0.83 : 1 - ((t - 0.3) / 0.7) ** 1.6 * 0.82 },
+  elongated: { asp: 2.3, f: t => circ(t) ** 0.7 * (1 - 0.3 * t) },
+  pod:       { asp: 2.8, f: t => Math.sin(Math.PI * t) ** 0.6 * 0.55 },
+};
 function topCrown(put, cx, y, C, g, big = false) {
   if (g.top === 'none') return;
   if (g.top === 'stem') { put(cx, y, C.stem); put(cx, y - 1, C.stem); return; }
