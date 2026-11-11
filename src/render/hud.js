@@ -57,6 +57,28 @@ export function hotbarRects(vw, vh) {
   const slots = []; for (let i = 0; i < n; i++) slots.push({ x: hx + 4 * U + i * (slot + gap), y: hy + 4 * U, w: slot, h: slot });
   return { x: hx, y: hy, w: hw, h: 24 * U, slots };
 }
+// A chest's sign (Build 105): a 12×11 board, dark frame and paper face, with the item at half size. The half-size icon
+// keeps each 2×2 block's commonest colour rather than smoothing, so it stays crisp. Cached per item look.
+const signCache = new Map();
+export function chestSignSprite(it, species) {
+  const src = itemSprite(it, species); if (!src) return null;
+  const key = (it.kind || '') + ':' + (it.species || it.tool || it.product || '') + ':' + (it.level || 0) + ':' + (it.fert ? JSON.stringify(it.fert) : '');
+  if (signCache.has(key)) return signCache.get(key);
+  const c = document.createElement('canvas'); c.width = 12; c.height = 11;
+  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = COL.frameDark; ctx.fillRect(0, 0, 12, 10); ctx.fillStyle = COL.paper; ctx.fillRect(1, 1, 10, 8); ctx.fillStyle = COL.paperShade; ctx.fillRect(1, 8, 10, 1);
+  ctx.fillStyle = '#4a2f16'; ctx.fillRect(5, 10, 2, 1);                                                  // where it sits on the lid
+  const s16 = src.width === 16 ? src : (() => { const k = document.createElement('canvas'); k.width = 16; k.height = 16; const kc = k.getContext('2d'); kc.imageSmoothingEnabled = false; kc.drawImage(src, 0, 0, 16, 16); return k; })();
+  const d = s16.getContext('2d').getImageData(0, 0, 16, 16).data;
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const votes = new Map();
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const i = ((y * 2 + dy) * 16 + x * 2 + dx) * 4; if (d[i + 3] < 128) continue; const k = `${d[i]},${d[i + 1]},${d[i + 2]}`; votes.set(k, (votes.get(k) || 0) + 1); }
+    if (!votes.size) continue;
+    let best = null, n = 0; for (const [k, v] of votes) if (v > n) { best = k; n = v; }
+    ctx.fillStyle = `rgb(${best})`; ctx.fillRect(2 + x, 1 + y, 1, 1);
+  }
+  signCache.set(key, c); return c;
+}
 export function itemSprite(it, species, sized = false) {   // sized: drawn at the size gene, for produce held or lying in the world
   if (!it) return null;
   if (it.kind === 'tool') return toolIcon(it.tool);

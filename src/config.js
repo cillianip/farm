@@ -7,7 +7,7 @@ export const CONFIG = {
   render: (typeof localStorage !== 'undefined' && localStorage.getItem('farm-render')) || 'sharp',
   scale: (typeof localStorage !== 'undefined' && [3, 4].includes(+localStorage.getItem('farm-scale'))) ? +localStorage.getItem('farm-scale') : 4,
   screenEdge: 12,
-  build: 104,                  // bump every build: a save from an older build is copied aside before it is upgraded
+  build: 105,                  // bump every build: a save from an older build is copied aside before it is upgraded
   layout: 8,                   // never bump: the game is public, so a map change must move old saves over in migrate(), not drop them            // px of margin around the near-fullscreen canvas
   world: { w: 64, h: 48, border: 3, chunk: 4, startChunks: 4 },   // tree border depth; 4×4 chunks; start with 2×2 chunks = 16×16 tiles
 

@@ -551,6 +551,17 @@ export class UI {
       body.appendChild(el('div', 'pc-sec', `${field ? 'Field chest' : 'Chest'} · ${used} / ${chest.slots.length} slots`));
       body.appendChild(grid(chest, s.inventory, '', 'chest'));
       body.appendChild(el('div', 'pc-note', 'Click a stack to move it across, right-click moves one. Drag a stack onto a slot to put it there. Tools stay on the rack.'));
+      if (!barrow) {   // the sign on the chest (Build 105): what fills it most, an item pinned, or none
+        const row = el('div', 'pc-sec amt-row'); row.appendChild(el('span', null, 'Sign · '));
+        const mode = chest.sign === 'off' ? 'off' : chest.sign?.kind ? 'pin' : 'auto';
+        const auto = el('button', mode === 'auto' ? 'primary small' : 'small', 'What fills it most'); auto.onclick = () => { S.setChestSign(chest, null); this.refresh(); };
+        const none = el('button', mode === 'off' ? 'primary small' : 'small', 'No sign'); none.onclick = () => { S.setChestSign(chest, 'off'); this.refresh(); };
+        row.appendChild(auto); row.appendChild(none);
+        const kinds = new Map(); for (const it of chest.slots) if (it && it.kind !== 'tool') kinds.set(itemKey(it), it);
+        if (mode === 'pin' && !kinds.has(itemKey(chest.sign))) kinds.set(itemKey(chest.sign), chest.sign);
+        for (const [k, it] of kinds) { const on = mode === 'pin' && itemKey(chest.sign) === k, b = el('button', on ? 'primary small sign-pick' : 'small sign-pick'); b.title = 'Pin: ' + itemName(it, s.species); b.appendChild(itemIcon(it, s.species, 24)); b.onclick = () => { S.setChestSign(chest, it); this.refresh(); }; row.appendChild(b); }
+        body.appendChild(row);
+      }
     }, 'chest');
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
     this.onClosePanel = () => { endDrag(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
@@ -587,6 +598,11 @@ export class UI {
       setDetails(details, sum());
       row.appendChild(left); row.appendChild(details); body.appendChild(row);
       if (s.truck) { const gb = el('button', 'small', 'How the truck works'); gb.onclick = () => this.openTruckGuide(); body.appendChild(gb); }
+      if (s.truck && g.demo) {   // model farm only: try each size without buying it
+        const tr = el('div', 'pc-sec amt-row'); tr.appendChild(el('span', null, 'Model farm · try a truck: '));
+        CONFIG.truck.tiers.forEach((tier, i) => { const b = el('button', (s.truck.level || 0) === i ? 'primary small' : 'small', tier.name.replace(' truck', '')); b.onclick = () => { const r = S.demoTruck(s, i); this.toast(r.msg); g.sound.play('stake'); this.refresh(); }; tr.appendChild(b); });
+        body.appendChild(tr);
+      }
       const amt = this.crateAmount || 1;
       const amtRow = el('div', 'pc-sec amt-row'); amtRow.appendChild(el('span', null, 'Your produce and loose machines · click adds '));
       for (const n of [1, 5, 'all']) { const bb = el('button', n === amt ? 'primary small' : 'small', String(n)); bb.onclick = () => { this.crateAmount = n; this.refresh(); }; amtRow.appendChild(bb); }

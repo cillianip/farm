@@ -1384,10 +1384,17 @@ await test('generator tiers: more power and more cans a night; belt and line may
   assert.ok(S.sprinklerFed(s, 29, 25), 'the sprinkler is fed from the well through the windmill'); assert.ok(S.pumpInFlow(s, 34, 21));
   assert.ok(S.beltRunning(s, 31, 25) && S.beltRunning(s, 35, 28), 'the belts run, across the track too'); assert.ok(tile(35, 27).track && tile(35, 27).belt);
   assert.equal(S.splitOutputs(s, 32, 25).length, 2, 'the splitter has two ways out');
-  assert.equal(S.bayCrates(s).length, 2); assert.ok(S.hopperByCrate(35, 29, s), 'the bay hopper stands by a crate');
+  assert.equal(S.bayCrates(s).length, 5, 'two by the hopper, three full ones by the forklift'); assert.ok(S.hopperByCrate(35, 29, s), 'the bay hopper stands by a crate');
+  // the test kit: forklift, big basket, barrow, all three field chests (one signed), and every truck size from its panel
+  assert.ok(s.forklift && s.barrow && s.inventory.basket === 2);
+  assert.deepEqual([26, 27, 28].map(x => tile(x, 28).obj?.level), [0, 1, 2]);
+  assert.equal(S.chestSign(tile(28, 28).obj).kind, 'belt', 'a pinned sign'); assert.equal(S.chestSign(tile(27, 28).obj).kind, 'crop', 'an automatic sign shows what fills it most');
+  S.setChestSign(tile(27, 28).obj, 'off'); assert.equal(S.chestSign(tile(27, 28).obj), null); S.setChestSign(tile(27, 28).obj, null); assert.ok(S.chestSign(tile(27, 28).obj));
+  { const m = S.makeModelFarm(); for (const lv of [2, 1, 0]) { assert.ok(S.demoTruck(m, lv).ok); assert.equal(m.truck.level, lv); } assert.equal(m.world.tiles[27 * m.world.w + 36].t, 'grass', 'back to the small truck, the ground it stood on is free again'); }
+  const preload = 3 * CONFIG.truck.crateHolds;
   // a day passes: the picker picks, the splitter shares, the dryer dries, the hoppers fill
   for (let i = 0; i < 9 * 60; i++) tickMinutes(s, 1);
-  const got = tile(33, 26).obj.slots.filter(Boolean).reduce((n, i) => n + i.qty, 0) + S.bayWaiting(s) + S.heldCount(tile(35, 29).obj.held) + S.heldCount(tile(34, 25).obj.held) + S.heldCount(tile(34, 25).obj.out) + (tile(34, 25).obj.doing?.qty || 0);
+  const got = tile(33, 26).obj.slots.filter(Boolean).reduce((n, i) => n + i.qty, 0) + S.bayWaiting(s) - preload + S.heldCount(tile(35, 29).obj.held) + S.heldCount(tile(34, 25).obj.held) + S.heldCount(tile(34, 25).obj.out) + (tile(34, 25).obj.doing?.qty || 0);
   assert.ok(got > 0, 'crops moved through the line: ' + got); assert.ok(S.ledger(s).today.picked > 0);
   assert.ok(Object.values(W2.tiles).filter(t => t.crop && !t.crop.unknown).length >= 17, 'the planter keeps the block planted'); assert.ok(S.ledger(s).today.planted >= 8, 'it planted through the day: ' + S.ledger(s).today.planted);
   // a line laid on the track by hand
@@ -1504,6 +1511,11 @@ await test('old saves: every saved build in tests/fixtures opens, keeps its mone
     const ok = SV.loadLocal(); assert.ok(ok.state, 'an old save loads');
     assert.equal(JSON.parse(store.get(SV.BACKUP_KEY)).save, old, 'and the save from before the update is copied aside');
   } finally { delete globalThis.localStorage; }
+});
+await test('every source file parses as a module (the browser loads game.js, ui.js and the renderers, which these tests do not run)', async () => {
+  const { execFileSync } = await import('node:child_process'), fs = await import('node:fs');
+  const files = ['src', 'src/render'].flatMap(d => fs.readdirSync(new URL('../' + d, import.meta.url)).filter(f => f.endsWith('.js')).map(f => d + '/' + f));
+  for (const f of files) { try { execFileSync(process.execPath, ['--check', new URL('../' + f, import.meta.url).pathname], { stdio: 'pipe' }); } catch (e) { assert.fail(f + ': ' + String(e.stderr).split('\n').find(l => /Error/.test(l))); } }
 });
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {

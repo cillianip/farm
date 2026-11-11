@@ -5,7 +5,7 @@ import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTr
 import { saveLocal, loadLocal, clearLocal, serialize, openSave, dropRescue } from './save.js';
 import { UI } from './ui.js';
 import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, truckArt, planterSprite, barrowSprite, barrowViewSprite, BARROW_W, BARROW_H, forkliftSprite, forkliftMastSprite } from './render/sprites.js';
-import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
+import { drawHud, hotbarRects, itemSprite, chestSignSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
 import { drawText, textWidth } from './render/font.js';
@@ -77,6 +77,11 @@ export class Game {
     }
     if (r?.rescued) this.offlineReport = 'This version could not open your farm, so a new one has started. Your old farm is kept safe: Settings → Save.';
     return S.createState();
+  }
+  // the sign standing on a chest's lid: top: the chest sprite's top edge on screen
+  drawSign(chest, sx, top) {
+    const it = S.chestSign(chest), img = it && chestSignSprite(it, this.state.species); if (!img) return;
+    const u = CONFIG.scale; this.ctx.drawImage(img, sx + 2 * u, top - 7 * u, 12 * u, 11 * u);
   }
   save() { if (this.demo) return; saveLocal(this.state); this.lastSave = performance.now(); }
   exportSave() { return serialize(this.state); }
@@ -163,6 +168,10 @@ export class Game {
     for (const { x, y } of S.machineTiles(s, 'dryer')) out.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y), x, y]);
     for (const { x, y } of S.machineTiles(s, 'planter')) { const tw = S.isTower(tileAt(s.world, x, y)); out.push(['planter', { x, y: tw ? y - 0.75 : y, w: 1, h: tw ? 1.75 : 1 }, () => this.ui.openPlanter(x, y), x, y]); }   // a tower's box starts at its top, for the E cap
     if (s.truck) { out.push(['board', BUILDINGS.board, () => this.ui.openCrate()]); out.push(['truck', S.truckSpotOf(s), () => this.ui.openCrate()]); }
+    for (const e of out) {   // a chest with a sign: its box reaches up over the sign, so the E sits above it, not on it
+      const ch = e[0] === 'chest' ? s.chest : e[0] === 'fchest' ? tileAt(s.world, e[3], e[4])?.obj : null;
+      if (ch && S.chestSign(ch)) e[1] = { ...e[1], y: e[1].y - 0.45, h: e[1].h + 0.45 };
+    }
     return out;
   }
   // The one E would open: the station under the cursor if it is one and you are near it, else the nearest within reach.
@@ -706,7 +715,7 @@ export class Game {
       if (t.obj?.kind === 'planter' && t.obj.job) { const j = t.obj.job, lv = t.obj.level || 0; drawables.push({ y: Math.max(y, j.y) + 0.95, draw: () => this.drawBoom(sx, sy, j, lv, now, cx, cy, sy + T - 12 * CONFIG.scale, true) }); }
       if (t.obj?.kind === 'planter') { const on = S.machinePowered(s, x, y) && S.planterCount(t.obj) > 0, full = !!t.obj.seeds?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(planterSprite(on ? Math.floor(now / 900) % 2 : 0, full, t.obj.level || 0), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'dcrate') { const u = CONFIG.scale, n = S.dcrateCount(t.obj), lv = n >= CONFIG.truck.crateHolds ? 2 : n > 0 ? 1 : 0; drawables.push({ y: y + 1, draw: () => ctx.drawImage(crateSprite(lv, true), sx + u, sy + T - 12 * u, 14 * u, 13 * u) }); }   // a crate: smaller than the porch crate, a box you can lift
-      if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u); lamp(sx, sy, S.machineStatus(s, x, y), 16); } }); }
+      if (t.obj?.kind === 'chest') { const u = CONFIG.scale, open = !!this.ui.openPanel && this.ui.chestOpen === t.obj; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(chestSprite(open, true, t.obj.level || 0), sx - u, sy + T - 15 * u, 18 * u, 16 * u); if (!open) this.drawSign(t.obj, sx, sy + T - 15 * u); lamp(sx, sy, S.machineStatus(s, x, y), 16); } }); }
       if (t.obj?.kind === 'hopper') { const full = !!t.obj.held?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(hopperSprite(full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'dryer') { const on = !!t.obj.doing && S.machinePowered(s, x, y), full = !!t.obj.out?.length; drawables.push({ y: y + 1, draw: () => { ctx.drawImage(dryerSprite(on ? 1 + Math.floor(now / 450) % 2 : 0, full), sx, sy + T - 20 * CONFIG.scale, T, 20 * CONFIG.scale); if (t.obj.off) offDot(sx, sy); else lamp(sx, sy, S.machineStatus(s, x, y)); } }); }
       if (t.obj?.kind === 'pump') { const lv = t.obj.level || 0, run = fed.has(y * w.w + x) && S.pumpRunning(s, t), H = lv === 1 ? 32 : lv === 2 ? 20 : 16; drawables.push({ y: y + 1, draw: () => ctx.drawImage(pumpSprite(lv, run ? 1 + Math.floor(now / (lv === 1 ? 240 : 180)) % 2 : 0), sx, sy + T - H * CONFIG.scale, T, H * CONFIG.scale) }); }
@@ -795,7 +804,7 @@ export class Game {
         if (F.face === 'down') { ctx.drawImage(forkliftMastSprite(), fx0, fy0, T, 20 * u); for (let i = 0; i < F.crates.length; i++) crate(i, fy0 + 11 * u - i * 6 * u); }
         return; }
       drawFacing(ctx, forkliftSprite(), fx0, fy0, T, 20 * u, left); for (let i = 0; i < F.crates.length; i++) ctx.drawImage(crateSprite(S.dcrateCount(F.crates[i]) ? 1 : 0, true), Math.round(F.x * T) - cx + (left ? -4 : 11) * u, Math.round((F.y + 1) * T) - cy - 8 * u - i * 6 * u, 9 * u, 8 * u); } }); }
-    { const Ch = BUILDINGS.chest, u = CONFIG.scale; drawables.push({ y: Ch.y + 1, draw: () => ctx.drawImage(chestSprite(this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u) }); }
+    { const Ch = BUILDINGS.chest, u = CONFIG.scale, open = this.ui.openPanel?.key === 'chest' && this.ui.chestOpen === s.chest; drawables.push({ y: Ch.y + 1, draw: () => { ctx.drawImage(chestSprite(open), Ch.x * T - cx - u, (Ch.y + 1) * T - cy - 15 * u, 18 * u, 16 * u); if (!open) this.drawSign(s.chest, Ch.x * T - cx, (Ch.y + 1) * T - cy - 15 * u); } }); }
     const Cr = BUILDINGS.crate, crateLevel = S.crateCount(s) >= s.crate.capacity ? 2 : S.crateCount(s) > 0 ? 1 : 0;
     if (s.truck && s.parcels?.length) { const Sg = BUILDINGS.sign, u = CONFIG.scale; drawables.push({ y: Sg.y + 1.02, draw: () => ctx.drawImage(parcelSprite(), Sg.x * T - cx + 2 * u, (Sg.y + 1) * T - cy - 10 * u + Math.round(Math.sin(now / 300)) * u, 12 * u, 10 * u) }); }   // parcels wait at the foot of the sign once the crate is gone
     if (!s.truck) drawables.push({ y: Cr.y + 1, draw: () => {

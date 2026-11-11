@@ -70,6 +70,14 @@ Build stages 1–4 first.
 - Code-drawn crops for 3 starter species through 4 growth stages, with the hover card.
 - Then the Breeder (stage 4): genome, crossing, mutation, instability, naming, seed book.
 
+## Roadmap after the automation playtest (agreed 2026-11-11)
+- **Stage 3, the breeding chase:** rare colours and traits with their odds shown before you breed, luck boosters, and a
+  seed book that shows what is found and what is still missing.
+- **Stage 4, the kitchen:** crops (and dried goods, the first step already in) become dishes the player designs; a dish is
+  custom and pays far more than its crops. How dishes are made and judged is still open.
+- **The ending:** the World Tree (a legendary crop at the end of a long breeding line), then prestige: sell the farm, keep
+  the seed book and a permanent bonus, start again.
+
 ## Later
 Shared discovery log and leaderboards (small server), seasons/weather, processing, greenhouse, market gambling
 (in-game coins only — never real money for random rewards), prestige, the World Tree ending.
