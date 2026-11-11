@@ -9,7 +9,8 @@ import { catalog, placeOrder, cancelOrder, seedRotationIn, roles } from './catal
 import * as M from './market.js';
 import { MARKET } from './market.js';
 import { fertDescribe, STAT_LABEL, contributions, fertGrade, GRADE_WORD, starsWord, fertLook } from './fertiliser.js';
-import { growRealMinutes, RARE_TRAITS } from './genetics.js';
+import { growRealMinutes, RARE_TRAITS, shownSurface, defaultSurface } from './genetics.js';
+const shapeWord = g => `${shownSurface(g) !== defaultSurface(g.archetype) ? shownSurface(g) + ' ' : ''}${g.archetype} ${g.family}`;   // the skin only when it is not the shape's own
 
 const $ = id => document.getElementById(id);
 // money a day for the cards: short, no cents past $10
@@ -154,7 +155,7 @@ export class UI {
     let html = `<div class="pc-title${sp ? ' tier-' + sp.tier : ''}">${esc(itemName(it, s.species))}${it.qty > 1 && it.kind !== 'tool' ? ` <span class="muted">×${it.qty}</span>` : ''}</div>`;
     if (it.kind === 'crop' && sp) {
       const hunger = CONFIG.needs.eatBase + CONFIG.needs.eatPerSize * g.size, energy = Math.round(hunger * CONFIG.needs.eatEnergyPerHunger), [lo, hi] = S.seedRange(sp);
-      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
+      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(shapeWord(g))}</div>` + traitRows(sp);
       html += `<div class="pc-row"><span>Sells for</span><span>${formatMoney(salePrice(s, it))}${it.qty > 1 ? ` <span class="muted">×${it.qty} = ${formatMoney(salePrice(s, it) * it.qty)}</span>` : ''}</span></div>`;
       html += `<div class="pc-row"><span>Eat</span><span>+${Math.round(hunger)} food · +${energy} energy</span></div>`;
       html += sp.sterile ? `<div class="pc-row"><span>On the rack</span><span>nothing (sterile)</span></div>` : `<div class="pc-row"><span>On the rack</span><span>${lo === hi ? lo : `${lo}–${hi}`} seeds</span></div>`;
@@ -162,12 +163,12 @@ export class UI {
       html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>`;
       html += `<div class="pc-note">Click yourself to eat it. Drop it in the crate to sell.</div>`;
     } else if (it.kind === 'product' && sp) {
-      html += `<div class="pc-sub">dried ${esc(g.archetype)} ${esc(g.family)}</div>`;
+      html += `<div class="pc-sub">dried ${esc(shapeWord(g))}</div>`;
       html += `<div class="pc-row"><span>Sells for</span><span>${formatMoney(salePrice(s, it))}${it.qty > 1 ? ` <span class="muted">×${it.qty} = ${formatMoney(salePrice(s, it) * it.qty)}</span>` : ''}</span></div>`;
       html += `<div class="pc-row"><span>Fresh it was</span><span>${formatMoney(salePrice(s, { kind: 'crop', species: it.species, q: it.q }))} · dried ×${driedFactor(sp).toFixed(2)}</span></div>`;
       html += `<div class="pc-note">Its own line at the cart's buyer, apart from the fresh crop. Shoppers at the market ask for dried goods by name.${it.q ? ' Stars count for half once it is dried.' : ''}</div>`;
     } else if (it.kind === 'seed' && sp) {
-      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(g.archetype)} ${esc(g.family)}</div>` + traitRows(sp);
+      html += `<div class="pc-sub">${esc(sp.tier)} · ${esc(shapeWord(g))}</div>` + traitRows(sp);
       html += `<div class="pc-row"><span>Ripens in</span><span>${growRealMinutes(g).toFixed(1)} min</span></div>`;
       html += `<div class="pc-row"><span>Harvest</span><span>${g.count} × ${formatMoney(salePrice(s, { species: sp.id }))}</span></div>`;
       html += `<div class="pc-row"><span>Bed earns</span><span>${perDay(S.bedRatePerDay(s, sp))}</span></div><div class="pc-row"><span>Water</span><span>~${S.poursPerDay(g)} pours/day</span></div>`;
@@ -800,7 +801,7 @@ export function traitNotes(sp) {
 export const traitRows = sp => traitNotes(sp).map(n => `<div class="pc-row trait ${n.good > 0 ? 'good' : 'bad'}"><span>${n.good > 0 ? '▲' : '▼'} ${esc(n.word)}</span><span>${esc(n.why)}</span></div>`).join('');
 export function traitList(sp) {
   const g = sp.genome, out = [];
-  out.push(`${g.archetype} ${g.family}`);
+  out.push(shapeWord(g));
   if (g.pattern !== 'none') out.push(g.pattern);
   if (g.regrow) out.push('regrows');
   if (g.thirst < 0.3) out.push('needs little water'); else if (g.thirst > 0.7) out.push('thirsty');
@@ -811,7 +812,7 @@ export function traitList(sp) {
   return out;
 }
 // a gene name as a farmer would say it
-const MUT_WORD = { family: 'new family', archetype: 'new shape', pattern: 'new pattern', hue1: 'colour', sat1: 'colour', light1: 'colour', hue2: 'second colour', sat2: 'second colour', light2: 'second colour', leafHue: 'leaf colour', leafShape: 'leaf shape', leafDensity: 'leafiness', size: 'size', count: 'yield', growHours: 'growth speed', thirst: 'thirst', hardiness: 'hardiness', regrow: 'regrowth', elongation: 'shape', width: 'shape', tip: 'shape', curve: 'shape', ribs: 'shape', bumpiness: 'shape', height: 'height', top: 'top', ripeHours: 'ripening' };
+const MUT_WORD = { family: 'new family', archetype: 'new shape', surface: 'new skin', pattern: 'new pattern', hue1: 'colour', sat1: 'colour', light1: 'colour', hue2: 'second colour', sat2: 'second colour', light2: 'second colour', leafHue: 'leaf colour', leafShape: 'leaf shape', leafDensity: 'leafiness', size: 'size', count: 'yield', growHours: 'growth speed', thirst: 'thirst', hardiness: 'hardiness', regrow: 'regrowth', elongation: 'shape', width: 'shape', tip: 'shape', curve: 'shape', ribs: 'shape', bumpiness: 'shape', height: 'height', top: 'top', ripeHours: 'ripening' };
 export function mutationWord(m) { if (m.startsWith('trait:')) return '★ ' + m.slice(6).replace(/([A-Z])/g, ' $1').toLowerCase(); return MUT_WORD[m] || m; }
 export function describeBreed(s, r) {
   const name = r.species ? s.species[r.species]?.name : '';

@@ -7,12 +7,21 @@ export const ARCHETYPES = ['taper', 'lumpy', 'bulb', 'crown', 'cluster', 'pod', 
 export const PATTERNS = ['none', 'stripes', 'spots', 'gradient'];
 export const LEAF_SHAPES = ['round', 'pointed', 'frond', 'blade'];
 export const TOPS = ['crown', 'stem', 'none'];
+// The skin laid over any body shape (Build 101): crossing mixes body and skin freely, so a carrot × pumpkin can give a
+// ribbed carrot. Older genomes had the skin baked into the shape; they get it from SURFACE_OF and keep their ids.
+export const SURFACES = ['smooth', 'bumpy', 'ribbed', 'spiky'];
+export const SURFACE_OF = { lumpy: 'bumpy', ribbed: 'ribbed', spiky: 'spiky' };
+export const defaultSurface = arch => SURFACE_OF[arch] || 'smooth';
+// the bodies a skin shows on; spikes of grain, flower heads, cobs and stars keep their own look and carry the skin hidden
+export const SKINNED = new Set(['taper', 'berry', 'lumpy', 'bulb', 'crown', 'elongated', 'ribbed', 'spiky', 'pod']);
+export const shownSurface = g => SKINNED.has(g.archetype) ? g.surface : defaultSurface(g.archetype);
 export const RARE_TRAITS = ['golden', 'glowing', 'multiHarvest', 'frostHardy'];   // needing less water is the thirst gene, not a trait
 
 // Gene table. type: cat (categorical) | num (0..1 unless min/max) | int | bool. w = rarity weight function.
 export const GENES = [
   { k: 'family', type: 'cat', values: FAMILIES, w: v => ({ root: 0, bush: 0.5, gourd: 1, vine: 1, grain: 1, flower: 2 })[v] },
   { k: 'archetype', type: 'cat', values: ARCHETYPES, w: v => ({ taper: 0, lumpy: 0, bulb: 0, crown: 1, cluster: 1, pod: 1, elongated: 1, ribbed: 1.5, ear: 1.5, head: 1.5, spiky: 5, star: 7 })[v] },
+  { k: 'surface', type: 'cat', values: SURFACES, w: (v, g) => g && (v === defaultSurface(g.archetype) || shownSurface(g) !== v) ? 0 : ({ smooth: 0, bumpy: 0.5, ribbed: 1, spiky: 2 })[v] },
   { k: 'elongation', type: 'num' }, { k: 'width', type: 'num' }, { k: 'bumpiness', type: 'num' },
   { k: 'ribs', type: 'num' }, { k: 'tip', type: 'num' }, { k: 'curve', type: 'num' },
   { k: 'top', type: 'cat', values: TOPS },
@@ -47,6 +56,7 @@ const r2 = v => Math.round(v * 100) / 100;
 
 export function normaliseGenome(g) {
   const out = { ...g, traits: { ...(g.traits || {}) } };
+  if (!SURFACES.includes(out.surface)) out.surface = defaultSurface(ARCHETYPES.includes(out.archetype) ? out.archetype : ARCHETYPES[0]);
   for (const spec of GENES) {
     let v = out[spec.k];
     if (spec.type === 'cat') { if (!spec.values.includes(v)) v = spec.values[0]; }
@@ -66,7 +76,7 @@ export function normaliseGenome(g) {
 
 export function canonical(g) {
   const n = normaliseGenome(g);
-  const parts = GENES.filter(s => !s.noId).map(s => `${s.k}=${n[s.k]}`);
+  const parts = GENES.filter(s => !s.noId && !(s.k === 'surface' && n.surface === defaultSurface(n.archetype))).map(s => `${s.k}=${n[s.k]}`);   // the skin a shape always had is left out, so old ids hold
   parts.push('traits=' + RARE_TRAITS.filter(t => n.traits[t]).join('+'));
   return parts.join(';');
 }
@@ -75,7 +85,7 @@ export const genomeId = g => 'sp_' + hashString(canonical(g)).toString(36);
 // ---------- rarity, tier, price ----------
 export function rarityScore(g) {
   let s = 0;
-  for (const spec of GENES) if (spec.w) s += spec.w(g[spec.k]) || 0;
+  for (const spec of GENES) if (spec.w) s += spec.w(g[spec.k], g) || 0;
   for (const t of RARE_TRAITS) if (g.traits?.[t]) s += TRAIT_WEIGHT[t];
   s += Math.min(CONFIG.genetics.maxGenerationRarity, (g.gen || 0) * CONFIG.genetics.generationRarity);
   return r2(s);
@@ -114,6 +124,7 @@ export function colourWord(g) {
   return 'Crimson';
 }
 const PATTERN_WORD = { none: '', stripes: 'Striped', spots: 'Spotted', gradient: 'Dusky' };
+const SURFACE_WORD = { smooth: 'Smooth', bumpy: 'Knobbly', ribbed: 'Ribbed', spiky: 'Spiny' };
 const TRAIT_WORD = { glowing: 'Moon', multiHarvest: 'Bounty', frostHardy: 'Winter' };
 const NOUNS = {
   root:   { taper: 'Carrot', lumpy: 'Potato', bulb: 'Turnip', crown: 'Beet', cluster: 'Groundnut', pod: 'Peanut', elongated: 'Parsnip', ribbed: 'Yam', ear: 'Ginger', head: 'Radish', spiky: 'Thornroot', star: 'Starroot' },
@@ -156,6 +167,7 @@ export function baseName(g) {
   if (PATTERN_WORD[g.pattern]) words.push(PATTERN_WORD[g.pattern]);
   for (const t of ['glowing', 'multiHarvest', 'frostHardy']) if (g.traits?.[t]) { words.push(TRAIT_WORD[t]); break; }
   words.push(colourWord(g));
+  { const sf = shownSurface(g); if (sf !== defaultSurface(g.archetype)) words.push(SURFACE_WORD[sf]); }
   words.push(NOUNS[g.family][g.archetype]);
   return words.join(' ');
 }
@@ -269,7 +281,9 @@ export function cross(a, b, seed, opts = {}) {
         else { from = 'blend'; v = va + d * r.range(0.3, 0.7) + r.gauss() * G.numericNoise * 60; }
       } else {
         if (r() < 0.5) { from = r() < 0.5 ? 'A' : 'B'; v = from === 'A' ? va : vb; }
-        else { from = 'blend'; v = (va + vb) / 2 + (vb - va) * r.range(-0.2, 0.2) + r.gauss() * G.numericNoise * range; }
+        // anywhere from a bit short of one parent to a bit past the other (Build 101): a child can outgrow both, so the
+        // extremes are bred toward rather than averaged away
+        else { from = 'blend'; v = va + (vb - va) * r.range(-G.overshoot, 1 + G.overshoot) + r.gauss() * G.numericNoise * range; }
       }
       if (r.chance(mutChance)) { before = v; const jump = (r() < 0.5 ? -1 : 1) * r.range(0.15, G.mutationSize) * range; v += jump; mutations.push(spec.k); mutationMass += Math.abs(jump) / range * 2; }
       if (spec.type === 'int') v = Math.round(v);

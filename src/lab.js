@@ -108,7 +108,7 @@ function instabilityBox(res) {
 function rarityBox(sp) {
   const g = sp.genome;
   const parts = [];
-  for (const spec of GENES) if (spec.w) { const w = spec.w(g[spec.k]) || 0; if (w) parts.push(`${spec.k} +${w}`); }
+  for (const spec of GENES) if (spec.w) { const w = spec.w(g[spec.k], g) || 0; if (w) parts.push(`${spec.k} +${w}`); }
   for (const t of RARE_TRAITS) if (g.traits[t]) parts.push(`★${t} +${TRAIT_WEIGHT[t]}`);
   const gen = (g.gen || 0) * CONFIG.genetics.generationRarity;
   if (gen) parts.push(`generation ${g.gen} × ${CONFIG.genetics.generationRarity} = +${gen}`);

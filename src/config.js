@@ -178,7 +178,8 @@ export const CONFIG = {
 
   genetics: {
     mutationChance: 0.05,        // per gene
-    numericNoise: 0.08,          // blend noise (fraction of range)
+    numericNoise: 0.08,
+    overshoot: 0.3,              // a blended number lands up to this far (of the parents' gap) beyond either parent          // blend noise (fraction of range)
     mutationSize: 0.35,          // numeric mutation jump (fraction of range)
     familyDistancePenalty: 0.35, // instability added when parents are different families
     mutationInstability: 0.12,   // instability per unit of mutation mass

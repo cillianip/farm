@@ -4,7 +4,7 @@
 // lettuce, pea pod, lavender spike, ...), with the numeric genes bending it: width, elongation, tip, curve, ribs, bumps.
 import { hsl, pixelDrawer, makeCanvas, PAL } from './palette.js';
 import { makeRng, hashString } from '../rng.js';
-import { canonical } from '../genetics.js';
+import { canonical, shownSurface } from '../genetics.js';
 
 const cache = new Map();
 
@@ -24,7 +24,7 @@ export function produceSprite(species, sized = false) {
   if (cache.has(key)) return cache.get(key);
   const [c, ctx] = makeCanvas(16, 16);
   const P = pixelDrawer(ctx), g = species.genome;
-  drawProduce(P, g, 8, 8, sized ? produceScale(g) : 6, colours(g), 0, 16, true);
+  fitted(P, (Q, k) => drawProduce(Q, g, 8, 8, (sized ? produceScale(g) : 6) - k, colours(g), 0, 16, 6 - k));
   cache.set(key, c);
   return c;
 }
@@ -36,23 +36,36 @@ export function driedSprite(species, sized = false) {
   const [c, ctx] = makeCanvas(16, 16);
   const P = pixelDrawer(ctx), g = species.genome;
   const g2 = { ...g, hue1: g.hue1 - 10, sat1: g.sat1 * 0.55, light1: Math.max(0.18, g.light1 * 0.7), hue2: g.hue2 - 10, sat2: g.sat2 * 0.5, light2: Math.max(0.15, g.light2 * 0.7), traits: {} };
-  drawProduce(P, g2, 8, 9, sized ? produceScale(g) * 0.75 : 4.5, colours(g2), 0, 16, true);
+  fitted(P, (Q, k) => drawProduce(Q, g2, 8, 9, (sized ? produceScale(g) * 0.75 : 4.5) - k, colours(g2), 0, 16, 6 - k));
   P.px(7, 8, 'rgba(40,20,5,0.35)'); P.px(8, 10, 'rgba(40,20,5,0.35)'); P.px(9, 7, 'rgba(255,230,180,0.25)');
   cache.set(key, c);
   return c;
+}
+// A lone produce drawn a size smaller until it and its outline fit the 16 px sprite, then slid inside it.
+function fitted(P, draw) {
+  for (let k = 0; ; k++) {
+    const pts = []; draw({ px: (x, y, c) => pts.push([x | 0, y | 0, c]) }, k);
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    if ((x1 - x0 < 16 && y1 - y0 < 16) || k >= 3) {
+      const dx = x0 < 0 ? -x0 : x1 > 15 ? 15 - x1 : 0, dy = y0 < 0 ? -y0 : y1 > 15 ? 15 - y1 : 0;
+      for (const [x, y, c] of pts) P.px(x + dx, y + dy, c);
+      return;
+    }
+  }
 }
 export function colours(g) {
   const golden = g.traits?.golden;
   const h1 = golden ? 45 : g.hue1, s1 = golden ? 0.95 : g.sat1, l1 = golden ? 0.55 : g.light1;
   return {
     main: hsl(h1, s1, l1), dark: hsl(h1, s1, Math.max(0.1, l1 - 0.18)), shade: hsl(h1, s1, Math.max(0.1, l1 - 0.09)),
-    light: hsl(h1, Math.min(1, s1), Math.min(0.95, l1 + 0.17)), outline: hsl(h1, Math.min(1, s1 + 0.1), Math.max(0.06, l1 - 0.32)),
+    light: hsl(h1, Math.min(1, s1), Math.min(0.95, l1 + 0.17)), outline: hsl(h1, Math.min(1, s1 + 0.1), Math.min(0.26, Math.max(0.06, l1 - 0.32))),
     second: hsl(g.hue2, g.sat2, g.light2),
     leaf: hsl(g.leafHue, 0.55, 0.38), leafDark: hsl(g.leafHue, 0.55, 0.27), leafLight: hsl(g.leafHue, 0.6, 0.5),
-    stem: hsl(g.leafHue - 20, 0.4, 0.3), glow: hsl(h1, 0.9, 0.8, 0.45), frost: '#dff3ff',
+    stem: hsl(g.leafHue - 20, 0.4, 0.3), leafLine: hsl(g.leafHue - 10, 0.5, 0.16), glow: hsl(h1, 0.9, 0.8, 0.45), frost: '#dff3ff',
   };
 }
-const DEAD = { main: PAL.withered, dark: PAL.witheredDark, shade: PAL.witheredDark, light: '#a5957a', outline: '#4a4034', second: PAL.witheredDark, leaf: PAL.withered, leafDark: PAL.witheredDark, leafLight: '#a5957a', stem: PAL.witheredDark, glow: 'transparent', frost: 'transparent' };
+const DEAD = { leafLine: '#3a3229', main: PAL.withered, dark: PAL.witheredDark, shade: PAL.witheredDark, light: '#a5957a', outline: '#4a4034', second: PAL.witheredDark, leaf: PAL.withered, leafDark: PAL.witheredDark, leafLight: '#a5957a', stem: PAL.witheredDark, glow: 'transparent', frost: 'transparent' };
 
 // Where the seed landed: four arrangements of the three dots, so a row of beds does not repeat.
 const SEED_DOTS = [[[6, 12], [9, 11], [8, 13]], [[4, 7], [7, 8], [5, 10]], [[9, 5], [11, 7], [10, 9]], [[7, 4], [5, 6], [8, 7]]];
@@ -180,13 +193,18 @@ function drawProduceSet(P, g, C, r, anchors) {
 
 // Draw one produce item of pixel size `s` centred at (cx,cy). clipY: nothing below this row (roots). icon: drawn alone
 // in the inventory, so allow a bigger shape and add the decoration that makes it readable on its own.
+// Drawn into a buffer first (Build 101), then the skin goes on, then one closed outline round the whole silhouette, crown
+// and stem included, so nothing bleeds into the leaves or the ground behind it.
 export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = false) {
-  const cap = icon ? Math.min(7, Math.max(6, Math.round(s))) : 0;   // icons may grow to 7 for giants
-  const maxW = icon ? cap : 4, maxH = icon ? cap : 5;
-  const w = Math.min(maxW, Math.max(1, Math.round(s * (0.6 + g.width * 0.6))));
-  const h = Math.min(maxH, Math.max(1, Math.round(s * (0.6 + g.elongation * 0.8))));
+  const cap = icon === true ? 6 : icon || 0;
+  const ext = v => v + Math.max(0, v - 0.8) * 1.5;           // past 0.8 a gene shows more, so a bred extreme looks it
+  const maxW = icon ? cap : 4 + (g.width > 0.85 ? 1 : 0), maxH = icon ? cap : 5 + (g.elongation > 0.85 ? 1 : 0);
+  const w = Math.min(maxW, Math.max(1, Math.round(s * (0.6 + ext(g.width) * 0.6))));
+  const h = Math.min(maxH, Math.max(1, Math.round(s * (0.6 + ext(g.elongation) * 0.8))));
   const r = makeRng(hashString(canonical(g)) + Math.floor(seed * 1000));
-  const put = (x, y, c) => { if (y < clipY) P.px(x, y, c); };
+  const buf = new Map(), K = (x, y) => (y + 64) * 256 + (x + 64);
+  const put = (x, y, c) => { buf.set(K(Math.floor(x), Math.floor(y)), c); };
+  const disc = (x0, y0, rad, c) => { for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) if (x * x + y * y <= rad * rad + rad * 0.5) put(x0 + x, y0 + y, c); };
   const pattern = (x, y, base) => {
     if (g.traits.golden && ((x + y) % 5 === 0)) return C.light;
     if (g.pattern === 'stripes' && y % 2 === 0) return C.second;
@@ -234,7 +252,6 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
     case 'lumpy': {            // potato: an oval with bumps and a few dark eyes
       const bumps = Array.from({ length: 4 }, () => [r.range(-w, w), r.range(-h * 0.6, h * 0.6), 1 + r() * (1 + g.bumpiness * 2)]);
       fillShape((x, y) => ell(x, y, w, Math.max(1, h * 0.7)) || bumps.some(([bx, by, br]) => (x - bx) ** 2 + (y - by) ** 2 <= br * br));
-      for (let i = 0; i < 3; i++) put(cx + r.int(-w + 1, w - 1), cy + r.int(-1, 1), C.outline);
       break;
     }
     case 'bulb': {             // turnip / onion: round bulb, papery lines, a root tail, stalks or leaves on top
@@ -282,13 +299,10 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
     case 'ribbed': {           // pumpkin / melon: wide, ribbed, with a stem
       const rw = Math.max(2, w + 1), rh = Math.max(1, Math.round(h * 0.75));
       const inside = (x, y) => ell(x, y, rw, rh);
-      const ribs = g.ribs > 0.2 ? Math.max(1, Math.round(g.ribs * 3)) : 0;
       for (let y = -rh; y <= rh; y++) for (let x = -rw; x <= rw; x++) {
         if (!inside(x, y)) continue;
         const edge = !inside(x + 1, y) || !inside(x - 1, y) || !inside(x, y + 1) || !inside(x, y - 1);
-        let rib = false;
-        for (let k = 1; k <= ribs; k++) { const rx = Math.round(rw * k / (ribs + 1) * 2 - rw); if (x === rx + Math.round(Math.abs(y) / rh * 0.6 * Math.sign(x || 1)) && Math.abs(y) < rh) rib = true; }
-        const c = edge ? ((x > 0 || y > 0) ? C.dark : C.main) : rib ? C.dark : (x < 0 && y < 0 && x * x + y * y < rw) ? C.light : (y > rh * 0.3 || x > rw * 0.55) ? C.shade : pattern(cx + x, cy + y, C.main);
+        const c = edge ? ((x > 0 || y > 0) ? C.dark : C.main) : (x < 0 && y < 0 && x * x + y * y < rw) ? C.light : (y > rh * 0.3 || x > rw * 0.55) ? C.shade : pattern(cx + x, cy + y, C.main);
         put(cx + x, cy + y, c);
       }
       put(cx, cy - rh - 1, C.stem); put(cx, cy - rh - 2, C.stem); put(cx + 1, cy - rh - 2, C.leafDark);
@@ -328,7 +342,7 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
         const rr = Math.max(2, Math.round((w + h) / 2));
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) put(cx + Math.round(Math.cos(a) * rr), cy + Math.round(Math.sin(a) * rr), a < Math.PI ? C.dark : C.light);
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) put(cx + Math.round(Math.cos(a) * (rr - 1)), cy + Math.round(Math.sin(a) * (rr - 1)), C.main);
-        P.disc(cx, cy, Math.max(1, rr - 2), C.second); put(cx - 1, cy - 1, C.light);
+        disc(cx, cy, Math.max(1, rr - 2), C.second); put(cx - 1, cy - 1, C.light);
       } else {
         const rr = Math.max(2, Math.round((w + h) / 2));
         for (let y = -rr; y <= rr; y++) for (let x = -rr; x <= rr; x++) {
@@ -346,7 +360,6 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
     case 'spiky': {
       const rr = Math.max(1, Math.round((w + h) / 2.5));
       fillShape((x, y) => x * x + y * y <= rr * rr + 0.5);
-      for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) put(cx + Math.round(Math.cos(a) * (rr + 1)), cy + Math.round(Math.sin(a) * (rr + 1)), C.second);
       break;
     }
     case 'star': {
@@ -358,8 +371,58 @@ export function drawProduce(P, g, cx, cy, s, C, seed = 0, clipY = 16, icon = fal
       break;
     }
   }
-  if (icon && g.traits.frostHardy) { put(cx - w, cy - h, C.frost); put(cx + w - 1, cy - h + 1, C.frost); }
-  if (icon && g.traits.glowing) { for (let i = 0; i < 4; i++) put(cx + r.int(-w - 2, w + 2), cy + r.int(-h - 2, h + 2), C.glow); }
+  finish(P, buf, g, C, r, clipY, icon);
+  if (icon && g.traits.frostHardy) { P.px(cx - w, cy - h, C.frost); P.px(cx + w - 1, cy - h + 1, C.frost); }
+  if (icon && g.traits.glowing) { for (let i = 0; i < 4; i++) P.px(cx + r.int(-w - 2, w + 2), cy + r.int(-h - 2, h + 2), C.glow); }
+}
+const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+// Skin, outline and copy out. Body pixels are the produce's own colours; leaf and stem colours (crowns, husks, stalks) take
+// no skin and get a dark green line instead of the produce's own dark.
+function finish(P, buf, g, C, r, clipY, icon) {
+  const leafy = new Set([C.leaf, C.leafDark, C.leafLight, C.stem]);
+  const xy = k => [(k % 256) - 64, Math.floor(k / 256) - 64], K = (x, y) => (y + 64) * 256 + (x + 64);
+  const body = () => [...buf.keys()].filter(k => !leafy.has(buf.get(k)));
+  const isBody = (x, y) => buf.has(K(x, y)) && !leafy.has(buf.get(K(x, y)));
+  const open = (x, y) => !buf.has(K(x, y));
+  const skin = shownSurface(g);
+  let spikes = [];
+  if (skin === 'ribbed') {
+    // ribs run top to bottom at even fractions of each row, so they bow with the outline instead of standing straight
+    const rows = new Map();
+    for (const k of body()) { const [x, y] = xy(k); const row = rows.get(y) || [x, x]; rows.set(y, [Math.min(row[0], x), Math.max(row[1], x)]); }
+    const ys = [...rows.keys()].sort((a, b) => a - b), widest = Math.max(...[...rows.values()].map(([a, b]) => b - a + 1));
+    const n = Math.max(1, Math.min(Math.floor((widest - 1) / 2) - 1, 1 + Math.round(g.ribs * 2)));
+    for (const y of ys.slice(1, -1)) { const [a, b] = rows.get(y), W = b - a + 1; if (W < 4) continue;
+      for (let k = 1; k <= n; k++) { const x = a + Math.round(W * k / (n + 1)); if (x > a && x < b && isBody(x, y)) buf.set(K(x, y), C.dark); } }
+  } else if (skin === 'bumpy') {
+    // knobs pushed out of the edge, and dark eyes set into the flesh
+    const edge = body().filter(k => { const [x, y] = xy(k); return N4.some(([dx, dy]) => open(x + dx, y + dy)); });
+    const knobs = Math.min(4, Math.max(1, Math.round(edge.length / 6)));
+    for (let i = 0; i < knobs; i++) { const [x, y] = xy(edge[r.int(0, edge.length - 1)]); const d = N4.find(([dx, dy]) => open(x + dx, y + dy)); if (d && y + d[1] < clipY) buf.set(K(x + d[0], y + d[1]), d[0] > 0 || d[1] > 0 ? C.shade : C.main); }
+    const inner = body().filter(k => { const [x, y] = xy(k); return N4.every(([dx, dy]) => isBody(x + dx, y + dy)); });
+    for (let i = 0; i < Math.min(3, Math.floor(inner.length / 5)); i++) buf.set(inner[r.int(0, inner.length - 1)], C.outline);
+  }
+  // the outline: every empty pixel touching the shape
+  const line = new Map();
+  for (const k of buf.keys()) { const [x, y] = xy(k); for (const [dx, dy] of N4) { const o = K(x + dx, y + dy); if (!buf.has(o) && !line.has(o)) line.set(o, leafy.has(buf.get(k)) ? C.leafLine : C.outline); } }
+  // body pixels win over leaf ones where an outline pixel touches both
+  for (const [o] of line) { const [x, y] = xy(o); if (N4.some(([dx, dy]) => isBody(x + dx, y + dy))) line.set(o, C.outline); }
+  if (skin === 'spiky') {
+    // thorns: every few outline pixels round the body, a dark point one pixel past the outline (which stays whole) and a
+    // pale glint on the flesh at its root
+    const ring = [...line.keys()].filter(o => { const [x, y] = xy(o); return N4.some(([dx, dy]) => isBody(x + dx, y + dy)); });
+    let mx = 0, my = 0; for (const o of ring) { const [x, y] = xy(o); mx += x / ring.length; my += y / ring.length; }
+    ring.sort((a, b) => { const [ax, ay] = xy(a), [bx, by] = xy(b); return Math.atan2(ay - my, ax - mx) - Math.atan2(by - my, bx - mx); });
+    const step = Math.max(3, Math.round(ring.length / 8));
+    for (let i = r.int(0, step - 1); i < ring.length; i += step) {
+      const [x, y] = xy(ring[i]), d = N4.find(([dx, dy]) => isBody(x - dx, y - dy));
+      if (!d || y + d[1] >= clipY || buf.has(K(x + d[0], y + d[1])) || line.has(K(x + d[0], y + d[1]))) continue;
+      spikes.push([x - d[0], y - d[1], x + d[0], y + d[1]]);
+    }
+  }
+  for (const [k, c] of buf) { const [x, y] = xy(k); if (y < clipY) P.px(x, y, c); }
+  for (const [k, c] of line) { const [x, y] = xy(k); if (y < clipY) P.px(x, y, c); }
+  for (const [x, y, tx, ty] of spikes) { if (buf.get(K(x, y)) !== C.dark) P.px(x, y, C.light); P.px(tx, ty, C.outline); }
 }
 function topCrown(put, cx, y, C, g, big = false) {
   if (g.top === 'none') return;

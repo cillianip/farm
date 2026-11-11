@@ -1435,6 +1435,22 @@ await test('the forklift: parks in the bay once the truck is here; get on, lift 
   r = S.mountForklift(s); assert.ok(r.ok && !s.forklift.mounted); assert.equal(s.forklift.x, s.player.x - 0.5);
   assert.ok(S.mountForklift(s).ok); const M = await import('../src/market.js'); s.minutes = (S.dayOf(s) - 1) * 1440 + 9 * 60; assert.ok(M.depart(s, 'market').ok); assert.ok(!s.forklift.mounted, 'left behind');
 });
+await test('body and skin: a skin crosses apart from the shape (a ribbed carrot), the skin a shape always had is not in the id, and a blend can land past both parents', () => {
+  const ca = G.WILD_BASES.carrot, pk = G.WILD_BASES.pumpkin;
+  assert.equal(G.normaliseGenome(pk).surface, 'ribbed', 'a genome from before the skin gene gets its shape\'s own skin');
+  assert.equal(G.normaliseGenome(ca).surface, 'smooth');
+  assert.ok(!G.canonical(pk).includes('surface='), 'the default skin is left out of the id, so old ids hold');
+  assert.notEqual(G.genomeId({ ...ca, surface: 'spiky' }), G.genomeId(ca), 'a new skin is a new species');
+  assert.match(G.makeSpecies({ ...ca, surface: 'ribbed' }).name, /Ribbed/);
+  assert.ok(G.rarityScore({ ...G.normaliseGenome(ca), surface: 'spiky' }) > G.rarityScore(G.normaliseGenome(ca)), 'a skin a shape does not usually have is rarer');
+  let mixed = false, past = false;
+  for (let seed = 1; seed < 400; seed++) {
+    const r = G.cross(ca, pk, seed); if (!r.child) continue;
+    if (r.child.archetype === 'taper' && r.child.surface === 'ribbed') mixed = true;
+    if (r.child.width > Math.max(G.normaliseGenome(ca).width, G.normaliseGenome(pk).width) + 0.02) past = true;
+  }
+  assert.ok(mixed, 'carrot × pumpkin can give a ribbed carrot'); assert.ok(past, 'a child can be wider than both parents');
+});
 console.log('dryer');
 await test('sugar and skin: every species has them, they cross and jitter like other genes, and they are not part of the id', () => {
   const s = S.createState(3); const pk = byName(s, 'Pumpkin'), po = byName(s, 'Potato');
