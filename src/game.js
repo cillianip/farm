@@ -5,7 +5,7 @@ import { tileAt, isBlockedAt, BUILDINGS, chunkOrigin, CHUNK, buyableChunks, isTr
 import { saveLocal, loadLocal, clearLocal, serialize, openSave, dropRescue } from './save.js';
 import { UI } from './ui.js';
 import { towerSprite, keyCapSprite, grassTile, soilTile, treeSprite, houseSprite, sprinklerSprite, witheredSprite, playerSprite, PLAYER_H, rackSprite, wellSprite, birdSprite, splatSprite, toolOverlay, crateSprite, trackTile, seedRackSprite, signSprite, heldOverlay, cursorSprite, groundPatch, playerBob, benchSprite, parcelSprite, chestSprite, soilEdge, seedIcon, cartSprite, compostSprite, fertOverlay, spraySprite, pipeSprite, pumpSprite, lineSprite, buriedSprite, beltSprite, generatorSprite, pickerSprite, hopperSprite, stallSprite, roadSignSprite, villagerSprite, dryerSprite, cobbleTile, fountainSprite, tentBackSprite, tentFrontSprite, seatSprite, splitterSprite, filterSprite, truckSprite, bayTile, boardSprite, parkedTruckSprite, truckFrontSprite, TRUCK_BOX, truckArt, planterSprite, barrowSprite, barrowViewSprite, BARROW_W, BARROW_H, forkliftSprite, forkliftMastSprite } from './render/sprites.js';
-import { drawHud, hotbarRects, itemSprite, chestSignSprite } from './render/hud.js';
+import { drawHud, hotbarRects, itemSprite } from './render/hud.js';
 import { itemName } from './items.js';
 import { cropSprite, produceSprite, driedSprite } from './render/crops.js';
 import { drawText, textWidth } from './render/font.js';
@@ -20,6 +20,18 @@ const ACTION_PERIOD = { hoe: 0.3, drain: 0.3, clear: 0.3, wither: 0.3, pull: 0.3
 import { Sound } from './audio.js';
 
 const T = CONFIG.tile * CONFIG.scale;   // CSS pixels per tile
+// A label's name in at most two lines of eight, broken at spaces where it can be
+function labelLines(text) {
+  const out = []; let cur = '';
+  for (let w of text.trim().split(/ +/)) {
+    while (w.length > 8) { if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, 8)); w = w.slice(8); }
+    if (!w) continue;
+    if (!cur) cur = w; else if (cur.length + 1 + w.length <= 8) cur += ' ' + w; else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur);
+  if (out.length > 2) { const flat = text.trim(); return [flat.slice(0, 8), flat.slice(8, 16)].map(l => l.trim()).filter(Boolean); }   // words that will not go in two lines: cut it plainly so nothing is lost
+  return out;
+}
 
 // Draw a sprite, mirrored left-to-right when `flip` (the forklift facing left)
 function drawFacing(ctx, img, x, y, w, h, flip) { if (!flip) return ctx.drawImage(img, x, y, w, h); ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
@@ -78,10 +90,25 @@ export class Game {
     if (r?.rescued) this.offlineReport = 'This version could not open your farm, so a new one has started. Your old farm is kept safe: Settings → Save.';
     return S.createState();
   }
-  // the sign standing on a chest's lid: top: the chest sprite's top edge on screen
+  // A chest's label (Build 106), the player's own: the name on a board standing on the lid, one tile wide so chests side
+  // by side never cover each other's (as wide as the chest, two lines of eight), and the item in a frame on the chest's front, the way an
+  // item frame hangs on a chest in Minecraft. Drawn at half-pixel detail like the E marker, so the item keeps all 16 px.
+  // sx: the tile's left on screen, top: the chest sprite's top.
   drawSign(chest, sx, top) {
-    const it = S.chestSign(chest), img = it && chestSignSprite(it, this.state.species); if (!img) return;
-    const u = CONFIG.scale; this.ctx.drawImage(img, sx + 2 * u, top - 7 * u, 12 * u, 11 * u);
+    const L = S.chestLabel(chest); if (!L) return;
+    const ctx = this.ctx, u = CONFIG.scale, h = u / 2, img = L.item && itemSprite(L.item, this.state.species);
+    if (img) {   // the frame: 10 world px, dark wood round a darker board, over the latch
+      const fx = sx + 3 * u, fy = top + 6 * u;
+      ctx.fillStyle = '#3b2314'; ctx.fillRect(fx, fy, 10 * u, 10 * u); ctx.fillStyle = '#6b4423'; ctx.fillRect(fx + h, fy + h, 10 * u - 2 * h, 10 * u - 2 * h);
+      ctx.fillStyle = '#8c5a2b'; ctx.fillRect(fx + h, fy + h, 10 * u - 2 * h, h);
+      ctx.drawImage(img, fx + u, fy + u, 8 * u, 8 * u);
+    }
+    const lines = labelLines(L.text || ''); if (!lines.length) return;
+    const W = 36, inH = lines.length * 6 + 1, H = inH + 4, x0 = sx - u, y0 = Math.round(top / h + 4 - H) * h;   // the board: as wide as the chest sprite
+    ctx.fillStyle = '#3b2314'; ctx.fillRect(x0, y0, W * h, H * h); ctx.fillRect(x0 + 17 * h, y0 + H * h, 2 * h, 2 * h);
+    ctx.fillStyle = '#f5e6c3'; ctx.fillRect(x0 + 2 * h, y0 + 2 * h, (W - 4) * h, inH * h);
+    ctx.fillStyle = '#e0cda2'; ctx.fillRect(x0 + 2 * h, y0 + (1 + inH) * h, (W - 4) * h, h);
+    lines.forEach((ln, i) => drawText(ctx, ln, x0 + Math.round((W - textWidth(ln, 1)) / 2) * h, y0 + (3 + i * 6) * h, '#3b2314', h, null));
   }
   save() { if (this.demo) return; saveLocal(this.state); this.lastSave = performance.now(); }
   exportSave() { return serialize(this.state); }
@@ -97,6 +124,7 @@ export class Game {
     const c = this.canvas;
     window.addEventListener('keydown', e => {
       const k = e.key.toLowerCase(); this.sound.unlock();
+      if (/^(INPUT|TEXTAREA)$/.test(e.target?.tagName || '') && k !== 'escape') return;   // typing a label or a save: the keys are letters, not moves
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { e.preventDefault(); this.keys.add(k); }
       else if (/^[1-9]$/.test(k) && +k <= CONFIG.inventory.hotbar) { this.selected = +k - 1; }   // number keys pick a hotbar slot
       else if (k === 'e') this.interactKey();
@@ -168,9 +196,9 @@ export class Game {
     for (const { x, y } of S.machineTiles(s, 'dryer')) out.push(['dryer', { x, y, w: 1, h: 1 }, () => this.ui.openDryer(x, y), x, y]);
     for (const { x, y } of S.machineTiles(s, 'planter')) { const tw = S.isTower(tileAt(s.world, x, y)); out.push(['planter', { x, y: tw ? y - 0.75 : y, w: 1, h: tw ? 1.75 : 1 }, () => this.ui.openPlanter(x, y), x, y]); }   // a tower's box starts at its top, for the E cap
     if (s.truck) { out.push(['board', BUILDINGS.board, () => this.ui.openCrate()]); out.push(['truck', S.truckSpotOf(s), () => this.ui.openCrate()]); }
-    for (const e of out) {   // a chest with a sign: its box reaches up over the sign, so the E sits above it, not on it
-      const ch = e[0] === 'chest' ? s.chest : e[0] === 'fchest' ? tileAt(s.world, e[3], e[4])?.obj : null;
-      if (ch && S.chestSign(ch)) e[1] = { ...e[1], y: e[1].y - 0.45, h: e[1].h + 0.45 };
+    for (const e of out) {   // a labelled chest: its box reaches up over the label, so the E sits above it, not on it
+      const ch = e[0] === 'chest' ? s.chest : e[0] === 'fchest' ? tileAt(s.world, e[3], e[4])?.obj : null, L = ch && S.chestLabel(ch);
+      if (L?.text) { const up = labelLines(L.text).length > 1 ? 0.55 : 0.2; e[1] = { ...e[1], y: e[1].y - up, h: e[1].h + up }; }
     }
     return out;
   }

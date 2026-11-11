@@ -1388,8 +1388,12 @@ await test('generator tiers: more power and more cans a night; belt and line may
   // the test kit: forklift, big basket, barrow, all three field chests (one signed), and every truck size from its panel
   assert.ok(s.forklift && s.barrow && s.inventory.basket === 2);
   assert.deepEqual([26, 27, 28].map(x => tile(x, 28).obj?.level), [0, 1, 2]);
-  assert.equal(S.chestSign(tile(28, 28).obj).kind, 'belt', 'a pinned sign'); assert.equal(S.chestSign(tile(27, 28).obj).kind, 'crop', 'an automatic sign shows what fills it most');
-  S.setChestSign(tile(27, 28).obj, 'off'); assert.equal(S.chestSign(tile(27, 28).obj), null); S.setChestSign(tile(27, 28).obj, null); assert.ok(S.chestSign(tile(27, 28).obj));
+  // labels are the player's: a name and/or an item, nothing until made
+  assert.deepEqual(S.chestLabel(tile(28, 28).obj), { text: 'BUILDING', item: { kind: 'belt' } });
+  const ch = { slots: [{ kind: 'crop', species: 'x', qty: 5 }] }; assert.equal(S.chestLabel(ch), null, 'a chest has no label until you give it one');
+  S.setChestLabel(ch, { text: 'my seeds! ~ and more' }); assert.equal(S.chestLabel(ch).text, 'MY SEEDS!  A', 'capitals the font can draw, twelve at most');
+  S.setChestLabel(ch, { item: ch.slots[0] }); assert.deepEqual(S.chestLabel(ch).item, { kind: 'crop', species: 'x' }, 'the item is shown, not taken');
+  assert.equal(ch.slots[0].qty, 5); S.setChestLabel(ch, { text: '', item: null }); assert.equal(S.chestLabel(ch), null);
   { const m = S.makeModelFarm(); for (const lv of [2, 1, 0]) { assert.ok(S.demoTruck(m, lv).ok); assert.equal(m.truck.level, lv); } assert.equal(m.world.tiles[27 * m.world.w + 36].t, 'grass', 'back to the small truck, the ground it stood on is free again'); }
   const preload = 3 * CONFIG.truck.crateHolds;
   // a day passes: the picker picks, the splitter shares, the dryer dries, the hoppers fill

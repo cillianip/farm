@@ -753,17 +753,17 @@ export function pickUpChest(state, x, y) {
   state.carriedChest = t.obj; t.obj = null; state.carrying = 'chest'; state.beltRev = (state.beltRev || 0) + 1;
   return { ok: true, msg: '' };
 }
-// The sign on a chest (Build 105): what it shows. chest.sign is unset (show what fills it most), 'off', or an item pinned
-// from the chest panel. Works for the porch chest and field chests alike.
-export function chestSign(chest) {
-  if (!chest || chest.sign === 'off') return null;
-  if (chest.sign?.kind) return chest.sign;
-  const tally = new Map();
-  for (const it of chest.slots) if (it) { const k = itemKey(it), e = tally.get(k) || { it, n: 0 }; e.n += it.qty || 1; tally.set(k, e); }
-  let best = null; for (const e of tally.values()) if (!best || e.n > best.n) best = e;
-  return best ? best.it : null;
+// A chest's label (Build 106): the player's own, like a sign in Minecraft: a name, an item set beside it to show, or both.
+// None until you make one. chest.label = { text, item }; works for the porch chest and field chests alike.
+export const LABEL_MAX = 12;
+export const cleanLabel = text => String(text || '').toUpperCase().replace(/[^0-9A-Z$+\-.: !%/',()]/g, '').slice(0, LABEL_MAX);
+export function chestLabel(chest) { const l = chest?.label; return l && (l.text || l.item) ? l : null; }
+export function setChestLabel(chest, { text, item } = {}) {
+  const l = { ...(chest.label || {}) };
+  if (text !== undefined) l.text = cleanLabel(text).trim() ? cleanLabel(text) : '';
+  if (item !== undefined) { if (item) { const { qty, ...look } = item; l.item = look; } else delete l.item; }
+  chest.label = l.text || l.item ? l : undefined;
 }
-export function setChestSign(chest, item) { if (item === 'off' || item === null) chest.sign = item === 'off' ? 'off' : undefined; else { const { qty, ...look } = item; chest.sign = look; } }
 // The model farm only (Build 105): park another size of truck to try it. Crates past the new bed's room go back to the bay.
 export function demoTruck(state, level) {
   if (!state.truck) return fail('No truck');
@@ -1461,10 +1461,10 @@ export function makeModelFarm() {
   for (const x of [36, 37, 38]) tile(x, 30).obj = { kind: 'dcrate', items: [{ species: carrot.id, q: 0, qty: CONFIG.truck.crateHolds }] };
   state.inventory.basket = 2;                                                               // the big basket
   { const B = BUILDINGS.chest; state.barrow = makeBarrow(B.x + 1, B.y); addItem(state.barrow.slots, { kind: 'crop', species: carrot.id, qty: 40 }); }
-  // the three sizes of field chest along the forest edge, stocked, one with its sign pinned
+  // the three sizes of field chest by the beds, stocked and labelled
   const stock = [[{ kind: 'seed', species: carrot.id, qty: 40 }, { kind: 'fuel', qty: 12 }], [{ kind: 'crop', species: carrot.id, qty: 99 }, { kind: 'crop', species: carrot.id, qty: 60 }], [{ kind: 'belt', qty: 30 }, { kind: 'line', qty: 30 }, { kind: 'pipe', qty: 20 }]];
   [26, 27, 28].forEach((x, lv) => { const o = { kind: "chest", level: lv, slots: new Array(chestSlots(lv)).fill(null) }; for (const it of stock[lv]) addItem(o, it); tile(x, 28).obj = o; });
-  setChestSign(tile(28, 28).obj, { kind: "belt" });
+  setChestLabel(tile(26, 28).obj, { text: 'SEEDS', item: { kind: 'seed', species: carrot.id } }); setChestLabel(tile(27, 28).obj, { text: 'CARROTS' }); setChestLabel(tile(28, 28).obj, { text: 'BUILDING', item: { kind: 'belt' } });
   state.lineRev = 1; state.beltRev = 1; state.pipeRev = 1;
   state.player.x = 29.5; state.player.y = 28.5; state.player.dir = 'up';
   state.minutes = (dayOf(state) - 1) * 1440 + 9 * 60;

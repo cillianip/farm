@@ -545,23 +545,27 @@ export class UI {
       this.refresh();
     };
     this.show(barrow ? 'Wheelbarrow' : field ? 'Field chest' : 'Chest', body => {
+      if (!barrow) {   // the label (Build 106), first so a big chest's grid never hides it: a name you type and an item set beside it, both your choice
+        const lab = chest.label || {};
+        const row = el('div', 'pc-sec amt-row'); row.appendChild(el('span', null, 'Label · '));
+        const name = el('input'); name.type = 'text'; name.maxLength = S.LABEL_MAX; name.placeholder = 'name it'; name.value = lab.text || ''; name.className = 'label-name';
+        name.oninput = () => { const v = S.cleanLabel(name.value); if (v !== name.value) name.value = v; S.setChestLabel(chest, { text: v }); };
+        row.appendChild(name);
+        const clear = el('button', 'small', 'Clear'); clear.onclick = () => { S.setChestLabel(chest, { text: '', item: null }); this.refresh(); }; row.appendChild(clear);
+        body.appendChild(row);
+        const irow = el('div', 'pc-sec amt-row'); irow.appendChild(el('span', null, 'Show an item · '));
+        const kinds = new Map(); for (const inv of [chest, s.inventory]) for (const it of inv.slots) if (it) kinds.set(itemKey(it), it);
+        if (lab.item && !kinds.has(itemKey(lab.item))) kinds.set(itemKey(lab.item), lab.item);
+        for (const [k, it] of kinds) { const on = lab.item && itemKey(lab.item) === k, b = el('button', on ? 'primary small sign-pick' : 'small sign-pick'); b.title = itemName(it, s.species); b.appendChild(itemIcon(it, s.species, 24)); b.onclick = () => { S.setChestLabel(chest, { item: on ? null : it }); this.refresh(); }; irow.appendChild(b); }
+        if (!kinds.size) irow.appendChild(el('span', 'muted', 'anything in the chest or your pockets'));
+        body.appendChild(irow);
+      }
       body.appendChild(el('div', 'pc-sec', `Pockets · ${S.carriedCount(s)} things${S.isHeavy(s) ? ' · heavy' : ''}`));
       body.appendChild(grid(s.inventory, chest, 'pocket', 'pocket'));
       const used = chest.slots.filter(Boolean).length;
       body.appendChild(el('div', 'pc-sec', `${field ? 'Field chest' : 'Chest'} · ${used} / ${chest.slots.length} slots`));
       body.appendChild(grid(chest, s.inventory, '', 'chest'));
       body.appendChild(el('div', 'pc-note', 'Click a stack to move it across, right-click moves one. Drag a stack onto a slot to put it there. Tools stay on the rack.'));
-      if (!barrow) {   // the sign on the chest (Build 105): what fills it most, an item pinned, or none
-        const row = el('div', 'pc-sec amt-row'); row.appendChild(el('span', null, 'Sign · '));
-        const mode = chest.sign === 'off' ? 'off' : chest.sign?.kind ? 'pin' : 'auto';
-        const auto = el('button', mode === 'auto' ? 'primary small' : 'small', 'What fills it most'); auto.onclick = () => { S.setChestSign(chest, null); this.refresh(); };
-        const none = el('button', mode === 'off' ? 'primary small' : 'small', 'No sign'); none.onclick = () => { S.setChestSign(chest, 'off'); this.refresh(); };
-        row.appendChild(auto); row.appendChild(none);
-        const kinds = new Map(); for (const it of chest.slots) if (it && it.kind !== 'tool') kinds.set(itemKey(it), it);
-        if (mode === 'pin' && !kinds.has(itemKey(chest.sign))) kinds.set(itemKey(chest.sign), chest.sign);
-        for (const [k, it] of kinds) { const on = mode === 'pin' && itemKey(chest.sign) === k, b = el('button', on ? 'primary small sign-pick' : 'small sign-pick'); b.title = 'Pin: ' + itemName(it, s.species); b.appendChild(itemIcon(it, s.species, 24)); b.onclick = () => { S.setChestSign(chest, it); this.refresh(); }; row.appendChild(b); }
-        body.appendChild(row);
-      }
     }, 'chest');
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
     this.onClosePanel = () => { endDrag(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
